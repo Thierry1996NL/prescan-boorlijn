@@ -2,43 +2,39 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getProjecten, getProjectMetContext, updateProject } from "@/lib/supabase-queries";
+import { getProjectMetContext, updateProject } from "@/lib/supabase-queries";
 import PrescanChat from "@/components/PrescanChat";
 import Sidebar from "@/components/Sidebar";
+import dynamic from "next/dynamic";
+
+const MapTrace = dynamic(() => import("@/components/MapTrace"), { ssr: false });
 
 export default function ProjectDetailPagina() {
   const { id } = useParams();
   const router = useRouter();
   const [project, setProject] = useState(null);
-  const [projecten, setProjecten] = useState([]);
   const [laden, setLaden] = useState(true);
   const [actieveTab, setActieveTab] = useState("details");
   const [bewerkModaal, setBewerkModaal] = useState(false);
   const [bewerkData, setBewerkData] = useState({});
   const [opslaan, setOpslaan] = useState(false);
 
-  useEffect(() => {
-    laadData();
-  }, [id]);
+  useEffect(() => { laadProject(); }, [id]);
 
-  async function laadData() {
+  async function laadProject() {
     try {
-      const [proj, lijst] = await Promise.all([
-        getProjectMetContext(id),
-        getProjecten(),
-      ]);
-      setProject(proj);
-      setProjecten(lijst);
+      const data = await getProjectMetContext(id);
+      setProject(data);
       setBewerkData({
-        naam: proj.naam ?? "",
-        opdrachtgever: proj.opdrachtgever ?? "",
-        locatie: proj.locatie ?? "",
-        boorlengte_m: proj.boorlengte_m ?? "",
-        diameter_mm: proj.diameter_mm ?? "",
-        materiaal: proj.materiaal ?? "PE100",
-        bodemtype: proj.bodemtype ?? "",
-        bijzonderheden: proj.bijzonderheden ?? "",
-        status: proj.status ?? "actief",
+        naam: data.naam ?? "",
+        opdrachtgever: data.opdrachtgever ?? "",
+        locatie: data.locatie ?? "",
+        boorlengte_m: data.boorlengte_m ?? "",
+        diameter_mm: data.diameter_mm ?? "",
+        materiaal: data.materiaal ?? "PE100",
+        bodemtype: data.bodemtype ?? "",
+        bijzonderheden: data.bijzonderheden ?? "",
+        status: data.status ?? "actief",
       });
     } catch (err) {
       console.error(err);
@@ -56,13 +52,18 @@ export default function ProjectDetailPagina() {
         boorlengte_m: bewerkData.boorlengte_m ? Number(bewerkData.boorlengte_m) : null,
         diameter_mm: bewerkData.diameter_mm ? Number(bewerkData.diameter_mm) : null,
       });
-      await laadData();
+      await laadProject();
       setBewerkModaal(false);
     } catch (err) {
       console.error(err);
     } finally {
       setOpslaan(false);
     }
+  }
+
+  async function handleTraceOpgeslagen(geojson) {
+    await updateProject(id, { boortrace_geojson: geojson });
+    await laadProject();
   }
 
   const risicoBadge = (risico) => {
@@ -81,7 +82,7 @@ export default function ProjectDetailPagina() {
   if (laden) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar projecten={[]} actiefProjectId={id} />
+        <Sidebar actiefProjectId={id} />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-gray-400">Laden...</p>
         </div>
@@ -92,7 +93,7 @@ export default function ProjectDetailPagina() {
   if (!project) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar projecten={[]} />
+        <Sidebar />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-red-500">Project niet gevonden.</p>
         </div>
@@ -121,12 +122,12 @@ export default function ProjectDetailPagina() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar projecten={projecten} actiefProjectId={id} />
+      <Sidebar actiefProjectId={id} />
 
       {/* Project tabs sidebar */}
       <aside className="w-44 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4">
-        <div className="px-3 mb-2">
-          <div className="text-xs text-gray-400 font-medium px-3 mb-1">{project.naam}</div>
+        <div className="px-4 mb-2">
+          <div className="text-xs text-gray-400 font-medium mb-1 truncate">{project.naam}</div>
         </div>
         <nav className="flex flex-col gap-0.5 px-3">
           {tabs.map((tab) => (
@@ -139,7 +140,7 @@ export default function ProjectDetailPagina() {
                   : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
               }`}
             >
-              <span className="text-sm">{tab.icon}</span>
+              <span>{tab.icon}</span>
               <span className="flex-1 truncate">{tab.label}</span>
               {tab.count !== undefined && tab.count > 0 && (
                 <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tab.count}</span>
@@ -151,7 +152,7 @@ export default function ProjectDetailPagina() {
 
       {/* Hoofdinhoud */}
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
           <h1 className="text-sm font-semibold text-gray-900">
             {tabs.find(t => t.id === actieveTab)?.icon} {tabs.find(t => t.id === actieveTab)?.label}
           </h1>
@@ -171,7 +172,7 @@ export default function ProjectDetailPagina() {
                 <h2 className="text-base font-semibold text-gray-900">Projectinformatie</h2>
                 <button
                   onClick={() => setBewerkModaal(true)}
-                  className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-blue-600 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
                 >
                   ✏️ Bewerken
                 </button>
@@ -189,41 +190,10 @@ export default function ProjectDetailPagina() {
             </div>
           )}
 
-          {/* Tracé */}
+          {/* Tracé — GIS kaart */}
           {actieveTab === "trace" && (
-            <div className="p-6 max-w-4xl mx-auto">
-              {project.boortrace_geojson ? (
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <pre className="text-xs text-gray-600 overflow-auto">
-                    {JSON.stringify(project.boortrace_geojson, null, 2)}
-                  </pre>
-                </div>
-              ) : (
-                <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-                  <div className="text-3xl mb-3">📍</div>
-                  <p className="text-gray-600 text-sm font-medium">Nog geen tracé toegevoegd</p>
-                  <p className="text-gray-400 text-xs mt-1 max-w-xs mx-auto">Upload een GeoJSON of voer coördinaten in.</p>
-                  <div className="mt-4 flex gap-2 justify-center">
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors">GeoJSON uploaden</button>
-                    <button className="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold px-4 py-2 rounded-lg transition-colors">Coördinaten invoeren</button>
-                  </div>
-                </div>
-              )}
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                {[
-                  { label: "Boorlengte", waarde: project.boorlengte_m ? `${project.boorlengte_m} m` : "—" },
-                  { label: "Diameter", waarde: project.diameter_mm ? `Ø${project.diameter_mm} mm` : "—" },
-                  { label: "Materiaal", waarde: project.materiaal ?? "—" },
-                  { label: "Bodemtype", waarde: project.bodemtype ?? "—" },
-                  { label: "Locatie", waarde: project.locatie ?? "—" },
-                  { label: "Kruisingen", waarde: project.kruisingen?.length ?? 0 },
-                ].map(({ label, waarde }, i) => (
-                  <div key={i} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-                    <div className="text-xs text-gray-400 mb-1">{label}</div>
-                    <div className="text-sm font-semibold text-gray-900">{waarde}</div>
-                  </div>
-                ))}
-              </div>
+            <div className="p-4 h-full flex flex-col" style={{ minHeight: "calc(100vh - 100px)" }}>
+              <MapTrace project={project} onTraceOpgeslagen={handleTraceOpgeslagen} />
             </div>
           )}
 
@@ -300,23 +270,23 @@ export default function ProjectDetailPagina() {
               ))}
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5 font-medium">Buismateriaal</label>
-                <select value={bewerkData.materiaal} onChange={(e) => setBewerkData(prev => ({ ...prev, materiaal: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors">
+                <select value={bewerkData.materiaal} onChange={(e) => setBewerkData(prev => ({ ...prev, materiaal: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors">
                   {["PE100", "PE80", "Staal", "GVK", "PVC", "Anders"].map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5 font-medium">Status</label>
-                <select value={bewerkData.status} onChange={(e) => setBewerkData(prev => ({ ...prev, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors">
+                <select value={bewerkData.status} onChange={(e) => setBewerkData(prev => ({ ...prev, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors">
                   {["actief", "afgerond", "on-hold"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5 font-medium">Bijzonderheden</label>
-                <textarea value={bewerkData.bijzonderheden} onChange={(e) => setBewerkData(prev => ({ ...prev, bijzonderheden: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors resize-none" />
+                <textarea value={bewerkData.bijzonderheden} onChange={(e) => setBewerkData(prev => ({ ...prev, bijzonderheden: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors resize-none" />
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
-                <button type="submit" disabled={opslaan} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">{opslaan ? "Opslaan..." : "Opslaan"}</button>
+                <button type="submit" disabled={opslaan} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">{opslaan ? "Opslaan..." : "Opslaan"}</button>
               </div>
             </form>
           </div>
