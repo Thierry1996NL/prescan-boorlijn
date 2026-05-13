@@ -1,5 +1,4 @@
 // app/api/bgt/route.js
-// Proxy voor PDOK BGT via OGC API Features — omzeilt CORS
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -10,60 +9,47 @@ export async function GET(request) {
     return Response.json({ error: "lat en lng zijn verplicht" }, { status: 400 });
   }
 
-  const delta = 0.0003; // ~30m radius
-  // OGC API Features gebruikt lng,lat volgorde (x,y)
+  const delta = 0.0005;
   const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
 
-  const COLLECTIES = [
-    { naam: "wegdeel", prop: "fysiekVoorkomen" },
-    { naam: "begroeidterreindeel", prop: "fysiekVoorkomen" },
-    { naam: "onbegroeidterreindeel", prop: "fysiekVoorkomen" },
-    { naam: "ondersteunendwegdeel", prop: "fysiekVoorkomen" },
-    { naam: "waterdeel", prop: "typeWater" },
-  ];
+  const debugLog = [];
 
-  for (const { naam, prop } of COLLECTIES) {
-    try {
-      const url = `https://service.pdok.nl/lv/bgt/ogc/v1_0/collections/${naam}/items?bbox=${bbox}&limit=1&f=json`;
-      
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "PrescanBoorlijnAI/1.0",
-          "Accept": "application/geo+json, application/json",
-        },
-        next: { revalidate: 0 },
-      });
-
-      if (!res.ok) {
-        console.log(`BGT ${naam}: HTTP ${res.status}`);
-        continue;
-      }
-
-      const json = await res.json();
-      const features = json.features ?? [];
-
-      if (features.length > 0) {
-        const props = features[0].properties ?? {};
-        // Probeer meerdere property namen
-        const type = props[prop]
-          ?? props[`plus-${prop}`]
-          ?? props[`plus_${prop}`]
-          ?? props["fysiekVoorkomen"]
-          ?? props["typeWater"]
-          ?? null;
-
-        if (type && type !== "transitie" && type.trim() !== "") {
-          return Response.json({ laag: naam, type: type.trim(), bron: "ogc" });
+  // Test 1: OGC API Features
+  try {
+    const url = `https://service.pdok.nl/lv/bgt/ogc/v1_0/collections/wegdeel/items?bbox=${bbox}&limit=1&f=json`;
+    debugLog.push({ test: "ogc_url", url });
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    debugLog.push({ test: "ogc_status", status: res.status, ok: res.ok });
+    if (res.ok) {
+      const text = await res.text();
+      debugLog.push({ test: "ogc_response", preview: text.substring(0, 500) });
+      try {
+        const json = JSON.parse(text);
+        debugLog.push({ test: "ogc_features_count", count: json.features?.length ?? 0 });
+        if (json.features?.length > 0) {
+          debugLog.push({ test: "ogc_first_props", props: json.features[0].properties });
         }
+      } catch (e) {
+        debugLog.push({ test: "ogc_parse_error", error: e.message });
       }
-    } catch (e) {
-      console.error(`BGT ${naam} fout:`, e.message);
     }
+  } catch (e) {
+    debugLog.push({ test: "ogc_error", error: e.message });
   }
 
-  return Response.json({ 
-    laag: null, 
-    type: null, 
-    debug: { lat, lng, bbox }
-  });
+  // Test 2: WFS met lng,lat volgorde
+  try {
+    const wfsUrl = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=bgt:wegdeel&bbox=${lng-delta},${lat-delta},${lng+delta},${lat+delta}&outputFormat=application/json&count=1`;
+    debugLog.push({ test: "wfs_url", url: wfsUrl });
+    const res = await fetch(wfsUrl, { headers: { "Accept": "application/json" } });
+    debugLog.push({ test: "wfs_status", status: res.status });
+    if (res.ok) {
+      const text = await res.text();
+      debugLog.push({ test: "wfs_response", preview: text.substring(0, 300) });
+    }
+  } catch (e) {
+    debugLog.push({ test: "wfs_error", error: e.message });
+  }
+
+  return Response.json({ laag: null, type: null, debug: debugLog });
 }
