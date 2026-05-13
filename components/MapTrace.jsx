@@ -121,7 +121,6 @@ const LAGEN = [
   },
 ];
 
-// PDOK BGT WFS endpoint voor oppervlaktype ophalen
 async function haalOppervlakOp(lat, lng) {
   const delta = 0.00005;
   const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
@@ -132,19 +131,16 @@ async function haalOppervlakOp(lat, lng) {
       const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${laag}&bbox=${bbox}&outputFormat=application/json&count=1`;
       const res = await fetch(url);
       const json = await res.json();
-      if (json.features && json.features.length > 0) {
+      if (json.features?.length > 0) {
         const props = json.features[0].properties;
         const type = props.fysiekVoorkomen || props.plus_fysiekVoorkomen || props.typeWater || null;
         if (type) return { laag, type };
       }
-    } catch (e) {
-      // stil falen
-    }
+    } catch (e) {}
   }
   return null;
 }
 
-// Vertaal BGT codes naar leesbare labels
 function vertaalOppervlak(type) {
   const map = {
     "gesloten verharding": { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣" },
@@ -154,17 +150,13 @@ function vertaalOppervlak(type) {
     "gras- en kruidachtigen": { label: "Grasberm", kleur: "#16a34a", icoon: "🌿" },
     "groenvoorziening": { label: "Groen / Plantsoen", kleur: "#15803d", icoon: "🌳" },
     "struiken": { label: "Struiken", kleur: "#166534", icoon: "🌿" },
-    "bos: gemengd bos": { label: "Bos", kleur: "#14532d", icoon: "🌲" },
-    "bos: loofbos": { label: "Loofbos", kleur: "#14532d", icoon: "🌲" },
-    "bos: naaldbos": { label: "Naaldbos", kleur: "#14532d", icoon: "🌲" },
+    "bos": { label: "Bos", kleur: "#14532d", icoon: "🌲" },
     "zand": { label: "Zand", kleur: "#d97706", icoon: "🏖" },
-    "rietland en moeras": { label: "Riet / Moeras", kleur: "#0369a1", icoon: "🌾" },
-    "transitie": { label: "Overgangszone", kleur: "#9ca3af", icoon: "↔️" },
+    "rietland": { label: "Riet / Moeras", kleur: "#0369a1", icoon: "🌾" },
   };
-
   const lc = (type || "").toLowerCase();
   for (const [key, val] of Object.entries(map)) {
-    if (lc.includes(key.toLowerCase())) return val;
+    if (lc.includes(key)) return val;
   }
   return { label: type || "Onbekend", kleur: "#9ca3af", icoon: "❓" };
 }
@@ -174,8 +166,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const leafletMapRef = useRef(null);
   const laagRefs = useRef({});
   const tekenLijnLaagRef = useRef(null);
-  const markerRefs = useRef([]);
   const tekenModusRef = useRef(false);
+  const puntenRef = useRef([]);
 
   const [actieveLagen, setActieveLagen] = useState(
     Object.fromEntries(LAGEN.map(l => [l.id, l.standaardAan]))
@@ -184,7 +176,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [punten, setPunten] = useState([]);
   const [opgeslagen, setOpgeslagen] = useState(false);
   const [legendaOpen, setLegendaOpen] = useState(true);
-  const [oppervlakken, setOppervlakken] = useState([]);
+
+  // Live oppervlakken — per punt bijgehouden
+  const [livePunten, setLivePunten] = useState([]);
   const [analyseBezig, setAnalyseBezig] = useState(false);
 
   useEffect(() => {
@@ -250,14 +244,38 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       } catch (e) {}
     }
 
-    kaart.on("click", (e) => {
+    kaart.on("click", async (e) => {
       if (!tekenModusRef.current) return;
       const { lat, lng } = e.latlng;
-      setPunten(prev => {
-        const nieuw = [...prev, [lat, lng]];
-        tekenLijn(kaart, nieuw);
+
+      // Punt toevoegen aan lijn
+      const nieuwePunten = [...puntenRef.current, [lat, lng]];
+      puntenRef.current = nieuwePunten;
+      setPunten([...nieuwePunten]);
+      tekenLijn(kaart, nieuwePunten);
+
+      // Direct BGT oppervlak ophalen voor dit punt
+      setAnalyseBezig(true);
+      const result = await haalOppervlakOp(lat, lng);
+      const vertaald = result ? vertaalOppervlak(result.type) : { label: "Onbekend", kleur: "#9ca3af", icoon: "❓" };
+
+      setLivePunten(prev => {
+        const nieuw = [...prev, { lat, lng, ...vertaald, origineel: result?.type }];
+        // Toon popup op kaart
+        if (leafletMapRef.current) {
+          L.circleMarker([lat, lng], {
+            radius: 6,
+            fillColor: vertaald.kleur,
+            color: "#fff",
+            weight: 2,
+            fillOpacity: 1,
+          })
+            .bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
+            .addTo(leafletMapRef.current);
+        }
         return nieuw;
       });
+      setAnalyseBezig(false);
     });
   }
 
@@ -290,34 +308,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   }
 
   function resetTekenen() {
+    puntenRef.current = [];
     setPunten([]);
-    setOppervlakken([]);
+    setLivePunten([]);
     if (tekenLijnLaagRef.current && leafletMapRef.current) {
       leafletMapRef.current.removeLayer(tekenLijnLaagRef.current);
       tekenLijnLaagRef.current = null;
     }
-  }
-
-  async function analyseOppervlakken(pts) {
-    setAnalyseBezig(true);
-    // Sample elke ~10 meter — neem max 20 punten voor snelheid
-    const stap = Math.max(1, Math.floor(pts.length / 20));
-    const steekproef = pts.filter((_, i) => i % stap === 0);
-
-    const resultaten = [];
-    for (const [lat, lng] of steekproef) {
-      const res = await haalOppervlakOp(lat, lng);
-      if (res) {
-        const vertaald = vertaalOppervlak(res.type);
-        // Deduplicate opeenvolgende gelijke typen
-        const vorige = resultaten[resultaten.length - 1];
-        if (!vorige || vorige.label !== vertaald.label) {
-          resultaten.push({ ...vertaald, origineel: res.type });
-        }
-      }
-    }
-    setOppervlakken(resultaten);
-    setAnalyseBezig(false);
   }
 
   async function opslaanTrace() {
@@ -327,136 +324,150 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       coordinates: punten.map(([lat, lng]) => [lng, lat]),
     };
     await onTraceOpgeslagen(geojson);
-    await analyseOppervlakken(punten);
     setOpgeslagen(true);
     setTekenModus(false);
     setTimeout(() => setOpgeslagen(false), 3000);
   }
 
-  return (
-    <div className="flex flex-col h-full gap-3">
+  // Unieke oppervlakken samenvatten
+  const uniekeOppervlakken = livePunten.reduce((acc, p) => {
+    if (!acc.find(a => a.label === p.label)) acc.push(p);
+    return acc;
+  }, []);
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
-          <span className="text-xs text-gray-400 font-medium mr-1">Lagen</span>
-          <button
-            onClick={() => setLegendaOpen(!legendaOpen)}
-            className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-          >
-            {legendaOpen ? "Verbergen ▲" : "Tonen ▼"}
-          </button>
+  return (
+    <div className="flex gap-4 h-full">
+
+      {/* Kaart kolom */}
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+            <span className="text-xs text-gray-400 font-medium mr-1">Lagen</span>
+            <button
+              onClick={() => setLegendaOpen(!legendaOpen)}
+              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+            >
+              {legendaOpen ? "Verbergen ▲" : "Tonen ▼"}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 ml-auto">
+            {!tekenModus ? (
+              <button
+                onClick={() => { setTekenModus(true); resetTekenen(); }}
+                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
+              >
+                ✏️ Tracé tekenen
+              </button>
+            ) : (
+              <>
+                <span className="text-xs text-blue-600 font-medium mr-2">
+                  {punten.length === 0 ? "Klik op kaart om te beginnen" : `${punten.length} punt${punten.length !== 1 ? "en" : ""}`}
+                </span>
+                {analyseBezig && <span className="text-xs text-gray-400 mr-1">⏳</span>}
+                <button onClick={resetTekenen} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors">Reset</button>
+                <button onClick={() => { setTekenModus(false); resetTekenen(); }} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors">Annuleren</button>
+                {punten.length >= 2 && (
+                  <button onClick={opslaanTrace} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md transition-colors">
+                    {opgeslagen ? "✓ Opgeslagen!" : "Opslaan"}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 ml-auto">
-          {!tekenModus ? (
-            <button
-              onClick={() => { setTekenModus(true); resetTekenen(); }}
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
-            >
-              ✏️ Tracé tekenen
-            </button>
-          ) : (
-            <>
-              <span className="text-xs text-blue-600 font-medium mr-2">
-                {punten.length === 0 ? "Klik op kaart om te beginnen" : `${punten.length} punt${punten.length !== 1 ? "en" : ""} gezet`}
-              </span>
-              <button onClick={resetTekenen} className="text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors">Reset</button>
-              <button onClick={() => { setTekenModus(false); resetTekenen(); }} className="text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1 rounded-md hover:bg-gray-100 transition-colors">Annuleren</button>
-              {punten.length >= 2 && (
-                <button onClick={opslaanTrace} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md transition-colors">
-                  {opgeslagen ? "✓ Opgeslagen!" : "Opslaan & analyseren"}
+        {/* Lagen legenda */}
+        {legendaOpen && (
+          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4">
+              {LAGEN.map(laag => (
+                <button
+                  key={laag.id}
+                  onClick={() => toggleLaag(laag.id)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 text-left ${
+                    actieveLagen[laag.id]
+                      ? "bg-gray-50 border border-gray-200 text-gray-800"
+                      : "border border-transparent text-gray-400 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: laag.kleur, opacity: actieveLagen[laag.id] ? 1 : 0.3 }} />
+                  <span className="truncate">{laag.label}</span>
+                  <span className={`ml-auto flex-shrink-0 w-3 h-3 rounded-full border transition-colors ${actieveLagen[laag.id] ? "bg-blue-500 border-blue-500" : "border-gray-300"}`} />
                 </button>
-              )}
-            </>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Kaart */}
+        <div ref={mapRef} className="flex-1 rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ minHeight: "440px" }} />
+      </div>
+
+      {/* Analyse paneel rechts */}
+      {tekenModus && (
+        <div className="w-64 flex-shrink-0 flex flex-col gap-3">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex-1">
+            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">
+              🗺 Live oppervlakteanalyse
+            </h3>
+
+            {livePunten.length === 0 ? (
+              <p className="text-xs text-gray-400">Klik op de kaart om het oppervlaktype te analyseren.</p>
+            ) : (
+              <>
+                {/* Unieke types */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-2">Gedetecteerde typen</div>
+                  <div className="flex flex-col gap-1.5">
+                    {uniekeOppervlakken.map((o, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
+                        style={{ backgroundColor: o.kleur + "12", color: o.kleur, border: `1px solid ${o.kleur}30` }}
+                      >
+                        <span className="text-sm">{o.icoon}</span>
+                        <span>{o.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Per punt log */}
+                <div>
+                  <div className="text-xs text-gray-400 mb-2">Punten ({livePunten.length})</div>
+                  <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                    {livePunten.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs py-1 border-b border-gray-50">
+                        <span className="text-gray-400 font-mono w-4">{i + 1}</span>
+                        <span>{p.icoon}</span>
+                        <span className="text-gray-600 truncate">{p.label}</span>
+                      </div>
+                    ))}
+                    {analyseBezig && (
+                      <div className="flex items-center gap-2 text-xs py-1 text-gray-400">
+                        <span className="font-mono w-4">{livePunten.length + 1}</span>
+                        <span>⏳</span>
+                        <span>Analyseren...</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {uniekeOppervlakken.length > 0 && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+              <p className="text-xs text-blue-700">
+                💡 Sla het tracé op en vraag de AI Assistent om hersteladvies per oppervlaktype.
+              </p>
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Lagen legenda */}
-      {legendaOpen && (
-        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-          <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5">
-            {LAGEN.map(laag => (
-              <button
-                key={laag.id}
-                onClick={() => toggleLaag(laag.id)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 text-left ${
-                  actieveLagen[laag.id]
-                    ? "bg-gray-50 border border-gray-200 text-gray-800"
-                    : "border border-transparent text-gray-400 hover:bg-gray-50"
-                }`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                  style={{ backgroundColor: laag.kleur, opacity: actieveLagen[laag.id] ? 1 : 0.3 }}
-                />
-                <span className="truncate">{laag.label}</span>
-                <span className={`ml-auto flex-shrink-0 w-3 h-3 rounded-full border transition-colors ${
-                  actieveLagen[laag.id] ? "bg-blue-500 border-blue-500" : "border-gray-300"
-                }`} />
-              </button>
-            ))}
-          </div>
-        </div>
       )}
-
-      {/* Kaart */}
-      <div
-        ref={mapRef}
-        className="flex-1 rounded-xl border border-gray-200 overflow-hidden shadow-sm"
-        style={{ minHeight: "440px" }}
-      />
-
-      {/* Oppervlakteanalyse */}
-      {analyseBezig && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="flex gap-1">
-            {[0, 1, 2].map(i => (
-              <span key={i} className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-            ))}
-          </div>
-          <span className="text-sm text-blue-700 font-medium">Oppervlaktetypen analyseren via PDOK BGT...</span>
-        </div>
-      )}
-
-      {oppervlakken.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">🗺 Oppervlakteanalyse tracé</h3>
-            <span className="text-xs text-gray-400">{oppervlakken.length} zones gedetecteerd</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {oppervlakken.map((o, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium"
-                style={{ borderColor: o.kleur + "40", backgroundColor: o.kleur + "10", color: o.kleur }}
-              >
-                <span>{o.icoon}</span>
-                <span>{o.label}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-400 mt-3">
-            💡 Tip: vraag de AI Assistent om een hersteladvies op basis van deze oppervlaktetypen.
-          </p>
-        </div>
-      )}
-
-      {/* Legenda onderin */}
-      <div className="flex items-center gap-4 text-xs text-gray-400 px-1 flex-wrap">
-        <span className="flex items-center gap-1.5">
-          <span className="w-6 border-t-2 border-blue-600 border-dashed" />
-          Boortracé
-        </span>
-        {LAGEN.filter(l => actieveLagen[l.id]).map(l => (
-          <span key={l.id} className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.kleur, opacity: 0.7 }} />
-            {l.label}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
