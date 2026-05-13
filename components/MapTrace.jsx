@@ -18,32 +18,38 @@ const LAGEN = [
   { id: "ahn", label: "AHN Hoogte", kleur: "#84cc16", standaardAan: false, type: "wms", url: "https://service.pdok.nl/rws/ahn/wms/v1_0", layers: "dtm_05m" },
 ];
 
-const BGT_LAGEN = [
-  { typeName: "bgt:wegdeel", prop: "fysiekVoorkomen" },
-  { typeName: "bgt:begroeidterreindeel", prop: "fysiekVoorkomen" },
-  { typeName: "bgt:onbegroeidterreindeel", prop: "fysiekVoorkomen" },
-  { typeName: "bgt:ondersteunendwegdeel", prop: "fysiekVoorkomen" },
-  { typeName: "bgt:waterdeel", prop: "typeWater" },
+const BGT_WMS_LAGEN = [
+  { laag: "wegdeel", prop: "fysiekVoorkomen" },
+  { laag: "begroeidterreindeel", prop: "fysiekVoorkomen" },
+  { laag: "onbegroeidterreindeel", prop: "fysiekVoorkomen" },
+  { laag: "ondersteunendwegdeel", prop: "fysiekVoorkomen" },
+  { laag: "waterdeel", prop: "typeWater" },
 ];
 
 async function haalOppervlakOp(lat, lng) {
-  const delta = 0.0002;
-  for (const { typeName, prop } of BGT_LAGEN) {
+  const delta = 0.0005;
+  const W = 101, H = 101;
+  const I = Math.round(((lng - (lng - delta)) / (2 * delta)) * W);
+  const J = Math.round((((lat + delta) - lat) / (2 * delta)) * H);
+  for (const { laag, prop } of BGT_WMS_LAGEN) {
     try {
       const params = new URLSearchParams({
-        service: "WFS", version: "2.0.0", request: "GetFeature", typeName,
-        bbox: `${lat - delta},${lng - delta},${lat + delta},${lng + delta},urn:ogc:def:crs:EPSG::4326`,
-        outputFormat: "application/json", count: "1", srsName: "EPSG:4326",
+        SERVICE: "WMS", VERSION: "1.3.0", REQUEST: "GetFeatureInfo",
+        LAYERS: laag, QUERY_LAYERS: laag, CRS: "EPSG:4326",
+        BBOX: `${lat - delta},${lng - delta},${lat + delta},${lng + delta}`,
+        WIDTH: String(W), HEIGHT: String(H), I: String(I), J: String(J),
+        INFO_FORMAT: "application/json", FEATURE_COUNT: "1",
       });
-      const res = await fetch(`https://service.pdok.nl/lv/bgt/wfs/v1_0?${params}`);
+      const res = await fetch(`https://service.pdok.nl/lv/bgt/wms/v1_0?${params}`);
       if (!res.ok) continue;
       const json = await res.json();
-      if (json.features?.length > 0) {
-        const props = json.features[0].properties;
-        const type = props[prop] || null;
-        if (type && type !== "transitie") return { laag: typeName, type };
+      const features = json.features ?? [];
+      if (features.length > 0) {
+        const props = features[0].properties ?? {};
+        const type = props[prop] ?? null;
+        if (type && type !== "transitie" && type !== "") return { laag, type };
       }
-    } catch (e) {}
+    } catch (e) { console.warn("BGT fout:", laag, e); }
   }
   return null;
 }
