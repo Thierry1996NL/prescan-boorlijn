@@ -107,7 +107,6 @@ function Dwarsprofiel({ punten, livePunten, project }) {
     cumulatief.push(totaalM);
   }
 
-  // Dieptebereik: 0m tot -5m
   const minDiepte = -5;
   const maxDiepte = 1;
   const diepteBereik = maxDiepte - minDiepte;
@@ -115,80 +114,150 @@ function Dwarsprofiel({ punten, livePunten, project }) {
   function xPos(m) { return PADDING.left + (m / totaalM) * plotW; }
   function yPos(d) { return PADDING.top + ((maxDiepte - d) / diepteBereik) * plotH; }
 
-  // Boringdiepte
   const boringDiepte = -1.5;
-  const boringDiameter = project?.diameter_mm ? project.diameter_mm / 1000 : 0.315;
 
-  // Oppervlaktestroken
-  const oppervlakSegmenten = livePunten.map((p, i) => {
-    const m = cumulatief[i] ?? (i / livePunten.length) * totaalM;
-    return { m, ...p };
+  // Oppervlaktestroken met cumulatieve positie
+  const oppervlakSegmenten = livePunten.map((p, i) => ({
+    m: cumulatief[Math.min(i, cumulatief.length - 1)] ?? (i / livePunten.length) * totaalM,
+    ...p,
+  }));
+
+  // Groepeer aaneengesloten zelfde types tot segmenten
+  const groepen = [];
+  oppervlakSegmenten.forEach((seg, i) => {
+    const vorige = groepen[groepen.length - 1];
+    if (vorige && vorige.label === seg.label) {
+      vorige.eindeM = cumulatief[Math.min(i + 1, cumulatief.length - 1)] ?? totaalM;
+    } else {
+      groepen.push({
+        label: seg.label,
+        icoon: seg.icoon,
+        kleur: seg.kleur,
+        herstel: seg.herstel,
+        startM: seg.m,
+        eindeM: cumulatief[Math.min(i + 1, cumulatief.length - 1)] ?? totaalM,
+      });
+    }
   });
+  if (groepen.length > 0) groepen[groepen.length - 1].eindeM = totaalM;
 
-  // Kruisingen uit project (mock als er geen zijn)
+  // Overgangen (transities)
+  const overgangen = groepen.slice(1).map((g, i) => ({
+    m: groepen[i].eindeM,
+    van: groepen[i],
+    naar: g,
+  }));
+
   const kruisingen = project?.kruisingen?.length > 0 ? project.kruisingen : [];
 
+  // BAR hoogte
+  const BAR_H = 28;
+  const BAR_Y = 8;
+  const BAR_LABEL_Y = BAR_Y + BAR_H + 11;
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boortracé</h3>
         <div className="flex items-center gap-4 text-xs text-gray-400">
           <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring ({project?.diameter_mm ?? "—"} mm)</span>
-          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-red-400" /> Kruisingen</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-gray-200 rounded-sm" /> Maaiveld</span>
+          {kruisingen.length > 0 && <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-red-400" /> Kruisingen</span>}
           <span className="text-gray-300">Totaal: {Math.round(totaalM)} m</span>
         </div>
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
+      {/* Straatwerk analyse balk */}
+      {groepen.length > 0 && (
+        <div className="px-5 pt-4 pb-2 border-b border-gray-100">
+          <div className="text-xs font-medium text-gray-500 mb-2">Straatwerk analyse</div>
+          <svg viewBox={`0 0 ${W} ${BAR_LABEL_Y + 10}`} className="w-full" style={{ height: BAR_LABEL_Y + 14 }}>
 
-        {/* Achtergrond */}
-        <rect x={PADDING.left} y={PADDING.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
+            {/* Segmenten */}
+            {groepen.map((g, i) => {
+              const x1 = xPos(g.startM);
+              const x2 = xPos(g.eindeM);
+              const breedte = Math.max(x2 - x1, 2);
+              const midden = x1 + breedte / 2;
+              const lengte = Math.round(g.eindeM - g.startM);
+              return (
+                <g key={i}>
+                  {/* Segment blok */}
+                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" rx={i === 0 ? "4 0 0 4" : i === groepen.length - 1 ? "0 4 4 0" : "0"} />
+                  {/* Label */}
+                  {breedte > 40 && (
+                    <text x={midden} y={BAR_Y + BAR_H / 2 + 1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">
+                      {g.icoon} {g.label}
+                    </text>
+                  )}
+                  {breedte > 25 && (
+                    <text x={midden} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">
+                      {lengte}m
+                    </text>
+                  )}
+                </g>
+              );
+            })}
 
-        {/* Grondvlak — grijs blok */}
-        <rect x={PADDING.left} y={yPos(0)} width={plotW} height={yPos(minDiepte) - yPos(0)} fill="#e5e7eb" opacity="0.4" />
+            {/* Startpunt */}
+            <circle cx={xPos(0)} cy={BAR_Y + BAR_H / 2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(0)} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
 
-        {/* Oppervlaktestroken bovenaan */}
-        {oppervlakSegmenten.map((seg, i) => {
-          const volgende = oppervlakSegmenten[i + 1];
-          const x1 = xPos(seg.m);
-          const x2 = volgende ? xPos(volgende.m) : xPos(totaalM);
-          const breedte = Math.max(x2 - x1, 2);
-          return (
-            <g key={i}>
-              <rect x={x1} y={PADDING.top - 14} width={breedte} height={12} fill={seg.kleur} opacity="0.8" rx="1" />
-              {breedte > 30 && (
-                <text x={x1 + breedte / 2} y={PADDING.top - 5} textAnchor="middle" fontSize="7" fill={seg.kleur} fontWeight="600">
-                  {seg.icoon} {seg.label}
-                </text>
-              )}
+            {/* Eindpunt */}
+            <circle cx={xPos(totaalM)} cy={BAR_Y + BAR_H / 2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(totaalM)} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
+
+            {/* Overgangsmarkeringen */}
+            {overgangen.map((o, i) => {
+              const x = xPos(o.m);
+              return (
+                <g key={i}>
+                  <line x1={x} y1={BAR_Y - 2} x2={x} y2={BAR_Y + BAR_H + 2} stroke="white" strokeWidth="2" />
+                  <polygon points={`${x},${BAR_Y - 6} ${x - 4},${BAR_Y - 2} ${x + 4},${BAR_Y - 2}`} fill="#374151" />
+                  <text x={x} y={BAR_Y - 8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
+
+      {/* Dwarsprofiel SVG */}
+      <div className="px-5 pt-3 pb-4">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
+          <rect x={PADDING.left} y={PADDING.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
+          <rect x={PADDING.left} y={yPos(0)} width={plotW} height={yPos(minDiepte) - yPos(0)} fill="#e5e7eb" opacity="0.4" />
+          <line x1={PADDING.left} y1={yPos(0)} x2={PADDING.left + plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
+
+          {/* Kleurstroken van segmenten op maaiveld */}
+          {groepen.map((g, i) => {
+            const x1 = xPos(g.startM);
+            const x2 = xPos(g.eindeM);
+            return (
+              <rect key={i} x={x1} y={yPos(0) - 6} width={Math.max(x2 - x1, 2)} height={6} fill={g.kleur} opacity="0.5" />
+            );
+          })}
+
+          {/* Y-as */}
+          {[0, -1, -2, -3, -4, -5].map(d => (
+            <g key={d}>
+              <line x1={PADDING.left - 4} y1={yPos(d)} x2={PADDING.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
+              <text x={PADDING.left - 6} y={yPos(d) + 3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
+              <line x1={PADDING.left} y1={yPos(d)} x2={PADDING.left + plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
             </g>
-          );
-        })}
+          ))}
 
-        {/* Maaiveld lijn */}
-        <line x1={PADDING.left} y1={yPos(0)} x2={PADDING.left + plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
-
-        {/* Y-as labels (diepte) */}
-        {[0, -1, -2, -3, -4, -5].map(d => (
-          <g key={d}>
-            <line x1={PADDING.left - 4} y1={yPos(d)} x2={PADDING.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
-            <text x={PADDING.left - 6} y={yPos(d) + 3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
-            <line x1={PADDING.left} y1={yPos(d)} x2={PADDING.left + plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
-          </g>
-        ))}
-
-        {/* X-as labels (positie) */}
-        {[0, 0.25, 0.5, 0.75, 1].map(frac => {
-          const m = frac * totaalM;
-          const x = xPos(m);
-          return (
-            <g key={frac}>
-              <line x1={x} y1={PADDING.top + plotH} x2={x} y2={PADDING.top + plotH + 4} stroke="#d1d5db" strokeWidth="1" />
-              <text x={x} y={PADDING.top + plotH + 13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text>
-            </g>
-          );
-        })}
+          {/* X-as */}
+          {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+            const m = frac * totaalM;
+            const x = xPos(m);
+            return (
+              <g key={frac}>
+                <line x1={x} y1={PADDING.top + plotH} x2={x} y2={PADDING.top + plotH + 4} stroke="#d1d5db" strokeWidth="1" />
+                <text x={x} y={PADDING.top + plotH + 13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text>
+              </g>
+            );
+          })}
 
         {/* Boring lijn */}
         <line
@@ -444,42 +513,66 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         )}
       </div>
 
-      {/* Analyse paneel rechts */}
-      {tekenModus && (
-        <div className="w-60 flex-shrink-0 flex flex-col gap-3">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex-1">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">🗺 Live oppervlakteanalyse</h3>
-            {livePunten.length === 0 ? (
-              <p className="text-xs text-gray-400">Klik op de kaart om het oppervlaktype te analyseren.</p>
+      {/* Analyse paneel rechts — altijd zichtbaar */}
+      <div className="w-60 flex-shrink-0 flex flex-col gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 600 }}>
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">🗺 BGT Oppervlakteanalyse</h3>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+            {livePunten.length === 0 && !tekenModus ? (
+              <div className="text-center py-6">
+                <div className="text-2xl mb-2">✏️</div>
+                <p className="text-xs text-gray-400 leading-relaxed">Teken een tracé om het oppervlaktype per punt te analyseren.</p>
+              </div>
+            ) : livePunten.length === 0 && tekenModus ? (
+              <div className="text-center py-6">
+                <div className="text-2xl mb-2">📍</div>
+                <p className="text-xs text-gray-400 leading-relaxed">Klik op de kaart om het oppervlaktype te analyseren.</p>
+              </div>
             ) : (
               <>
-                <div className="mb-4">
-                  <div className="text-xs text-gray-400 mb-2">Gedetecteerde typen</div>
+                {/* Gedetecteerde typen */}
+                <div>
+                  <div className="text-xs text-gray-400 font-medium mb-2">Gedetecteerde typen</div>
                   <div className="flex flex-col gap-1.5">
                     {uniekeOppervlakken.map((o, i) => (
                       <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
                         style={{ backgroundColor: o.kleur + "12", color: o.kleur, border: `1px solid ${o.kleur}30` }}>
-                        <span>{o.icoon}</span>
+                        <span className="text-sm">{o.icoon}</span>
                         <span className="flex-1">{o.label}</span>
-                        {o.herstel && <span className="opacity-50 text-xs">{o.herstel}</span>}
+                        {o.herstel && (
+                          <span className="text-xs opacity-50 whitespace-nowrap">
+                            {o.herstel === "Hoog" ? "🔴" : o.herstel === "Midden" ? "🟠" : o.herstel === "Laag" ? "🟢" : "⚪"} {o.herstel}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
+
+                {/* Puntenlijst */}
                 <div>
-                  <div className="text-xs text-gray-400 mb-2">Punten ({livePunten.length})</div>
-                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs text-gray-400 font-medium">Punten langs tracé</div>
+                    <span className="text-xs text-gray-300">{livePunten.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
                     {livePunten.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs py-1 border-b border-gray-50">
-                        <span className="text-gray-400 font-mono w-4">{i + 1}</span>
-                        <span>{p.icoon}</span>
+                      <div key={i} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg hover:bg-gray-50 transition-colors">
+                        <span className="text-gray-300 font-mono text-xs w-5 text-right flex-shrink-0">{i + 1}</span>
+                        <span className="flex-shrink-0">{p.icoon}</span>
                         <span className="text-gray-600 truncate">{p.label}</span>
+                        <span className="ml-auto flex-shrink-0 w-2 h-2 rounded-full" style={{ backgroundColor: p.kleur }} />
                       </div>
                     ))}
                     {analyseBezig && (
-                      <div className="flex items-center gap-2 text-xs py-1 text-gray-400">
-                        <span className="font-mono w-4">{livePunten.length + 1}</span>
-                        <span>⏳</span><span>Analyseren...</span>
+                      <div className="flex items-center gap-2 text-xs py-1.5 px-2 text-gray-400">
+                        <span className="text-gray-300 font-mono w-5 text-right">{livePunten.length + 1}</span>
+                        <span>⏳</span>
+                        <span>Analyseren...</span>
                       </div>
                     )}
                   </div>
@@ -487,13 +580,34 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               </>
             )}
           </div>
+
+          {/* Herstelklasse legenda */}
           {uniekeOppervlakken.length > 0 && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-              <p className="text-xs text-blue-700">💡 Sla op en vraag de AI om hersteladvies per oppervlaktype.</p>
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+              <div className="text-xs text-gray-400 font-medium mb-1.5">Herstelklasse</div>
+              <div className="flex flex-col gap-1">
+                {[
+                  { label: "Hoog — asfalt/beton", icoon: "🔴" },
+                  { label: "Midden — klinkers", icoon: "🟠" },
+                  { label: "Laag — gras/onverhard", icoon: "🟢" },
+                ].map((r, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span>{r.icoon}</span>
+                    <span>{r.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
-      )}
+
+        {/* Tip */}
+        {uniekeOppervlakken.length > 0 && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+            <p className="text-xs text-blue-700 leading-relaxed">💡 Vraag de AI Assistent om hersteladvies en kostenraming per oppervlaktype.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
