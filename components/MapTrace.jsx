@@ -306,6 +306,7 @@ function Dwarsprofiel({ punten, livePunten, project }) {
         </div>
       )}
     </div>
+    </div>
   );
 }
 
