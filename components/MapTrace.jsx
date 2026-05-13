@@ -19,15 +19,22 @@ const LAGEN = [
 ];
 
 
-// Haal BGT oppervlaktype op via eigen proxy (omzeilt CORS)
+// Haal oppervlaktype op via eigen proxy (OpenStreetMap)
 async function haalOppervlakOp(lat, lng) {
   try {
     const res = await fetch(`/api/bgt?lat=${lat}&lng=${lng}`);
     if (!res.ok) return null;
     const data = await res.json();
-    if (data.type) return { laag: data.laag, type: data.type };
+    if (data.type) {
+      return {
+        laag: data.laag,
+        type: data.type,
+        // Gebruik vertaald object als het er is, anders vertaal zelf
+        _vertaald: data.vertaald ?? null,
+      };
+    }
   } catch (e) {
-    console.error("BGT proxy fout:", e);
+    console.error("Oppervlak proxy fout:", e);
   }
   return null;
 }
@@ -369,7 +376,11 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       tekenLijn(kaart, nieuwePunten);
       setAnalyseBezig(true);
       const result = await haalOppervlakOp(lat, lng);
-      const vertaald = result ? vertaalOppervlak(result.type) : { label: "Geen BGT data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+      const vertaald = result?._vertaald
+        ? result._vertaald
+        : result
+        ? vertaalOppervlak(result.type)
+        : { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
       L.circleMarker([lat, lng], { radius: 7, fillColor: vertaald.kleur, color: "#fff", weight: 2, fillOpacity: 1 })
         .bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
         .addTo(kaart);
