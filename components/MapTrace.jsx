@@ -18,38 +18,16 @@ const LAGEN = [
   { id: "ahn", label: "AHN Hoogte", kleur: "#84cc16", standaardAan: false, type: "wms", url: "https://service.pdok.nl/rws/ahn/wms/v1_0", layers: "dtm_05m" },
 ];
 
-const BGT_WMS_LAGEN = [
-  { laag: "wegdeel", prop: "fysiekVoorkomen" },
-  { laag: "begroeidterreindeel", prop: "fysiekVoorkomen" },
-  { laag: "onbegroeidterreindeel", prop: "fysiekVoorkomen" },
-  { laag: "ondersteunendwegdeel", prop: "fysiekVoorkomen" },
-  { laag: "waterdeel", prop: "typeWater" },
-];
 
+// Haal BGT oppervlaktype op via eigen proxy (omzeilt CORS)
 async function haalOppervlakOp(lat, lng) {
-  const delta = 0.0005;
-  const W = 101, H = 101;
-  const I = Math.round(((lng - (lng - delta)) / (2 * delta)) * W);
-  const J = Math.round((((lat + delta) - lat) / (2 * delta)) * H);
-  for (const { laag, prop } of BGT_WMS_LAGEN) {
-    try {
-      const params = new URLSearchParams({
-        SERVICE: "WMS", VERSION: "1.3.0", REQUEST: "GetFeatureInfo",
-        LAYERS: laag, QUERY_LAYERS: laag, CRS: "EPSG:4326",
-        BBOX: `${lat - delta},${lng - delta},${lat + delta},${lng + delta}`,
-        WIDTH: String(W), HEIGHT: String(H), I: String(I), J: String(J),
-        INFO_FORMAT: "application/json", FEATURE_COUNT: "1",
-      });
-      const res = await fetch(`https://service.pdok.nl/lv/bgt/wms/v1_0?${params}`);
-      if (!res.ok) continue;
-      const json = await res.json();
-      const features = json.features ?? [];
-      if (features.length > 0) {
-        const props = features[0].properties ?? {};
-        const type = props[prop] ?? null;
-        if (type && type !== "transitie" && type !== "") return { laag, type };
-      }
-    } catch (e) { console.warn("BGT fout:", laag, e); }
+  try {
+    const res = await fetch(`/api/bgt?lat=${lat}&lng=${lng}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.type) return { laag: data.laag, type: data.type };
+  } catch (e) {
+    console.error("BGT proxy fout:", e);
   }
   return null;
 }
