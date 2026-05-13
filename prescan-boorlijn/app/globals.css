@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --blauw: #1B6EF3;
+  --donker: #0f1117;
+  --panel: #141824;
+  --rand: #1e2433;
+  --tekst: #c8d0e0;
+  --gedempt: #5a6278;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--donker);
+  color: var(--tekst);
+  font-family: "DM Sans", "Helvetica Neue", sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--rand); border-radius: 4px; }
