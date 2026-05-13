@@ -15,68 +15,58 @@ export default function LoginPagina() {
     e.preventDefault();
     setFout(null);
     setLaden(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password: wachtwoord,
-    });
-
+    const { error } = await supabase.auth.signInWithPassword({ email, password: wachtwoord });
     if (error) {
       setFout("E-mailadres of wachtwoord onjuist.");
       setLaden(false);
       return;
     }
-
     router.push("/projecten");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f1117]">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-2">
-            <span className="text-2xl font-bold text-white">Prescan</span>
-            <span className="text-2xl font-bold text-[#1B6EF3]">AI</span>
+            <span className="text-2xl font-bold text-gray-900">Prescan</span>
+            <span className="text-2xl font-bold text-blue-600">AI</span>
           </div>
-          <p className="text-sm text-[#5a6278]">Gestuurde boringen · HDD</p>
+          <p className="text-sm text-gray-400">Gestuurde boringen · HDD</p>
         </div>
 
-        {/* Form */}
-        <div className="bg-[#141824] border border-[#1e2433] rounded-xl p-6">
-          <h1 className="text-base font-semibold text-white mb-5">Inloggen</h1>
+        {/* Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <h1 className="text-base font-semibold text-gray-900 mb-5">Inloggen</h1>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
-              <label className="block text-xs text-[#5a6278] mb-1.5 font-medium">
-                E-mailadres
-              </label>
+              <label className="block text-xs text-gray-500 mb-1.5 font-medium">E-mailadres</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="naam@bedrijf.nl"
-                className="w-full bg-[#0f1117] border border-[#1e2433] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#3d4558] outline-none focus:border-[#1B6EF3] transition-colors"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-[#5a6278] mb-1.5 font-medium">
-                Wachtwoord
-              </label>
+              <label className="block text-xs text-gray-500 mb-1.5 font-medium">Wachtwoord</label>
               <input
                 type="password"
                 value={wachtwoord}
                 onChange={(e) => setWachtwoord(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full bg-[#0f1117] border border-[#1e2433] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#3d4558] outline-none focus:border-[#1B6EF3] transition-colors"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
               />
             </div>
 
             {fout && (
-              <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                 {fout}
               </p>
             )}
@@ -84,9 +74,9 @@ export default function LoginPagina() {
             <button
               type="submit"
               disabled={laden}
-              className="w-full bg-[#1B6EF3] hover:bg-[#1558d4] disabled:bg-[#1e2433] disabled:text-[#3d4558] text-white text-sm font-semibold py-2.5 rounded-lg transition-colors mt-1"
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors mt-1"
             >
-              {laden ? "Bezig met inloggen..." : "Inloggen"}
+              {laden ? "Bezig..." : "Inloggen"}
             </button>
           </form>
         </div>
