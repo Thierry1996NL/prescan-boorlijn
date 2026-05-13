@@ -1,13 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { logout } from "@/lib/supabase-queries";
+import { getProjecten, logout } from "@/lib/supabase-queries";
 
-export default function Sidebar({ projecten = [], actiefProjectId = null }) {
+export default function Sidebar({ actiefProjectId = null }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ingeklapt, setIngeklapt] = useState(false);
+  const [projecten, setProjecten] = useState([]);
+
+  useEffect(() => {
+    laadProjecten();
+  }, []);
+
+  async function laadProjecten() {
+    try {
+      const data = await getProjecten();
+      setProjecten(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function handleLogout() {
     await logout();
@@ -32,7 +46,6 @@ export default function Sidebar({ projecten = [], actiefProjectId = null }) {
         <button
           onClick={() => setIngeklapt(!ingeklapt)}
           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
-          title={ingeklapt ? "Uitklappen" : "Inklappen"}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             {ingeklapt ? (
@@ -44,9 +57,8 @@ export default function Sidebar({ projecten = [], actiefProjectId = null }) {
         </button>
       </div>
 
-      {/* Projecten sectie */}
+      {/* Alle projecten */}
       <div className="flex-1 overflow-y-auto py-3">
-        {/* Alle projecten link */}
         <div className="px-3 mb-1">
           <button
             onClick={() => router.push("/projecten")}
@@ -64,12 +76,12 @@ export default function Sidebar({ projecten = [], actiefProjectId = null }) {
         {/* Projectenlijst */}
         {!ingeklapt && projecten.length > 0 && (
           <div className="px-3 mt-3">
-            <div className="text-xs text-gray-400 font-medium px-3 mb-1 uppercase tracking-wide">Projecten</div>
+            <div className="text-xs text-gray-400 font-medium px-3 mb-1 uppercase tracking-wide">Recente projecten</div>
             {projecten.map((p) => (
               <button
                 key={p.id}
                 onClick={() => router.push(`/project/${p.id}`)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left group ${
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left ${
                   actiefProjectId === p.id
                     ? "bg-blue-50 text-blue-700 font-medium"
                     : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
