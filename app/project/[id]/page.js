@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getProjectMetContext, logout } from "@/lib/supabase-queries";
+import { getProjectMetContext, logout, updateProject } from "@/lib/supabase-queries";
 import PrescanChat from "@/components/PrescanChat";
 
 export default function ProjectDetailPagina() {
@@ -11,6 +11,9 @@ export default function ProjectDetailPagina() {
   const [project, setProject] = useState(null);
   const [laden, setLaden] = useState(true);
   const [actieveTab, setActieveTab] = useState("details");
+  const [bewerkModaal, setBewerkModaal] = useState(false);
+  const [bewerkData, setBewerkData] = useState({});
+  const [opslaan, setOpslaan] = useState(false);
 
   useEffect(() => {
     laadProject();
@@ -20,10 +23,39 @@ export default function ProjectDetailPagina() {
     try {
       const data = await getProjectMetContext(id);
       setProject(data);
+      setBewerkData({
+        naam: data.naam ?? "",
+        opdrachtgever: data.opdrachtgever ?? "",
+        locatie: data.locatie ?? "",
+        boorlengte_m: data.boorlengte_m ?? "",
+        diameter_mm: data.diameter_mm ?? "",
+        materiaal: data.materiaal ?? "PE100",
+        bodemtype: data.bodemtype ?? "",
+        bijzonderheden: data.bijzonderheden ?? "",
+        status: data.status ?? "actief",
+      });
     } catch (err) {
       console.error(err);
     } finally {
       setLaden(false);
+    }
+  }
+
+  async function handleOpslaan(e) {
+    e.preventDefault();
+    setOpslaan(true);
+    try {
+      await updateProject(id, {
+        ...bewerkData,
+        boorlengte_m: bewerkData.boorlengte_m ? Number(bewerkData.boorlengte_m) : null,
+        diameter_mm: bewerkData.diameter_mm ? Number(bewerkData.diameter_mm) : null,
+      });
+      await laadProject();
+      setBewerkModaal(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setOpslaan(false);
     }
   }
 
@@ -63,13 +95,23 @@ export default function ProjectDetailPagina() {
     { id: "chat", label: "AI Assistent", icon: "🛠" },
   ];
 
+  const velden = [
+    { label: "Projectnaam", key: "naam" },
+    { label: "Opdrachtgever", key: "opdrachtgever" },
+    { label: "Locatie", key: "locatie" },
+    { label: "Boorlengte", key: "boorlengte_m", format: (v) => v ? `${v} m` : "—" },
+    { label: "Diameter", key: "diameter_mm", format: (v) => v ? `Ø${v} mm` : "—" },
+    { label: "Materiaal", key: "materiaal" },
+    { label: "Bodemtype", key: "bodemtype" },
+    { label: "Status", key: "status" },
+    { label: "Bijzonderheden", key: "bijzonderheden" },
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
 
       {/* SIDEBAR */}
       <aside className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-
-        {/* Logo */}
         <div className="px-4 py-4 border-b border-gray-100">
           <div className="flex items-center gap-1.5">
             <span className="font-bold text-gray-900 text-sm">Prescan</span>
@@ -77,7 +119,6 @@ export default function ProjectDetailPagina() {
           </div>
         </div>
 
-        {/* Terug */}
         <div className="px-3 py-3 border-b border-gray-100">
           <button
             onClick={() => router.push("/projecten")}
@@ -88,7 +129,6 @@ export default function ProjectDetailPagina() {
           </button>
         </div>
 
-        {/* Project naam */}
         <div className="px-4 py-3 border-b border-gray-100">
           <div className="text-xs text-gray-400 mb-0.5">Project</div>
           <div className="text-sm font-semibold text-gray-900 truncate">{project.naam}</div>
@@ -97,7 +137,6 @@ export default function ProjectDetailPagina() {
           )}
         </div>
 
-        {/* Navigatie */}
         <nav className="flex-1 px-3 py-3 flex flex-col gap-1">
           {tabs.map((tab) => (
             <button
@@ -120,7 +159,6 @@ export default function ProjectDetailPagina() {
           ))}
         </nav>
 
-        {/* Uitloggen */}
         <div className="px-3 py-3 border-t border-gray-100">
           <button
             onClick={async () => { await logout(); router.push("/login"); }}
@@ -134,8 +172,6 @@ export default function ProjectDetailPagina() {
 
       {/* HOOFDINHOUD */}
       <main className="flex-1 flex flex-col min-w-0">
-
-        {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
           <h1 className="text-sm font-semibold text-gray-900">
             {tabs.find(t => t.id === actieveTab)?.icon} {tabs.find(t => t.id === actieveTab)?.label}
@@ -147,36 +183,33 @@ export default function ProjectDetailPagina() {
           </div>
         </header>
 
-        {/* Inhoud */}
         <div className="flex-1 overflow-auto">
 
           {/* Projectinformatie */}
           {actieveTab === "details" && (
             <div className="p-6 max-w-lg">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold text-gray-900">Projectinformatie</h2>
+                <button
+                  onClick={() => setBewerkModaal(true)}
+                  className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  ✏️ Bewerken
+                </button>
+              </div>
+
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                {[
-                  { label: "Projectnaam", waarde: project.naam },
-                  { label: "Opdrachtgever", waarde: project.opdrachtgever },
-                  { label: "Locatie", waarde: project.locatie },
-                  { label: "Boorlengte", waarde: project.boorlengte_m ? `${project.boorlengte_m} m` : null },
-                  { label: "Diameter", waarde: project.diameter_mm ? `Ø${project.diameter_mm} mm` : null },
-                  { label: "Materiaal", waarde: project.materiaal },
-                  { label: "Bodemtype", waarde: project.bodemtype },
-                  { label: "Status", waarde: project.status },
-                ].map(({ label, waarde }, i) => (
-                  waarde && (
-                    <div key={i} className={`flex items-start justify-between gap-4 px-4 py-3 ${i !== 0 ? "border-t border-gray-100" : ""}`}>
-                      <span className="text-xs text-gray-400 font-medium">{label}</span>
-                      <span className="text-xs text-gray-900 text-right font-medium">{waarde}</span>
-                    </div>
-                  )
-                ))}
-                {project.bijzonderheden && (
-                  <div className="border-t border-gray-100 px-4 py-3">
-                    <span className="text-xs text-gray-400 font-medium block mb-1">Bijzonderheden</span>
-                    <span className="text-xs text-gray-700">{project.bijzonderheden}</span>
+                {velden.map(({ label, key, format }, i) => (
+                  <div key={key} className={`flex items-start justify-between gap-4 px-4 py-3 ${i !== 0 ? "border-t border-gray-100" : ""}`}>
+                    <span className="text-xs text-gray-400 font-medium flex-shrink-0">{label}</span>
+                    <span className="text-xs text-gray-900 text-right font-medium">
+                      {format
+                        ? format(project[key])
+                        : project[key] || <span className="text-gray-300">—</span>
+                      }
+                    </span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           )}
@@ -273,6 +306,93 @@ export default function ProjectDetailPagina() {
           )}
         </div>
       </main>
+
+      {/* BEWERK MODAAL */}
+      {bewerkModaal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 text-sm">Project bewerken</h2>
+              <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-700 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleOpslaan} className="p-5 flex flex-col gap-4">
+              {[
+                { label: "Projectnaam *", key: "naam", required: true },
+                { label: "Opdrachtgever", key: "opdrachtgever" },
+                { label: "Locatie", key: "locatie" },
+                { label: "Boorlengte (m)", key: "boorlengte_m", type: "number" },
+                { label: "Diameter (mm)", key: "diameter_mm", type: "number" },
+                { label: "Bodemtype", key: "bodemtype" },
+              ].map(({ label, key, required, type }) => (
+                <div key={key}>
+                  <label className="block text-xs text-gray-500 mb-1.5 font-medium">{label}</label>
+                  <input
+                    type={type || "text"}
+                    value={bewerkData[key]}
+                    onChange={(e) => setBewerkData(prev => ({ ...prev, [key]: e.target.value }))}
+                    required={required}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+              ))}
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Buismateriaal</label>
+                <select
+                  value={bewerkData.materiaal}
+                  onChange={(e) => setBewerkData(prev => ({ ...prev, materiaal: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors"
+                >
+                  {["PE100", "PE80", "Staal", "GVK", "PVC", "Anders"].map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Status</label>
+                <select
+                  value={bewerkData.status}
+                  onChange={(e) => setBewerkData(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors"
+                >
+                  {["actief", "afgerond", "on-hold"].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Bijzonderheden</label>
+                <textarea
+                  value={bewerkData.bijzonderheden}
+                  onChange={(e) => setBewerkData(prev => ({ ...prev, bijzonderheden: e.target.value }))}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setBewerkModaal(false)}
+                  className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Annuleren
+                </button>
+                <button
+                  type="submit"
+                  disabled={opslaan}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
+                >
+                  {opslaan ? "Opslaan..." : "Opslaan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
