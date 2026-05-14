@@ -238,125 +238,6 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
   );
 }
 
-  const W = 900, H = 200;
-  const PAD = { top: 20, right: 20, bottom: 40, left: 50 };
-  const plotW = W - PAD.left - PAD.right;
-  const plotH = H - PAD.top - PAD.bottom;
-
-  let totaalM = 0;
-  const cumul = [0];
-  for (let i = 1; i < controlePunten.length; i++) {
-    totaalM += afstandM(controlePunten[i-1], controlePunten[i]);
-    cumul.push(totaalM);
-  }
-
-  const minD = -5, maxD = 1, bereik = maxD - minD;
-  const xPos = m => PAD.left + (m / totaalM) * plotW;
-  const yPos = d => PAD.top + ((maxD - d) / bereik) * plotH;
-  const boringD = -1.5;
-  const BAR_H = 28, BAR_Y = 8;
-
-  // Bouw segmenten: van punt naar punt, kleur van het startpunt
-  const gesorteerdeAnalyse = [...analysePunten].sort((a, b) => a.positieM - b.positieM);
-  const groepen = [];
-  if (gesorteerdeAnalyse.length > 0) {
-    // Voor startpunt (0m) tot eerste analysepunt: geen kleur bekend
-    if (gesorteerdeAnalyse[0].positieM > 0) {
-      groepen.push({ label: "?", kleur: "#e5e7eb", icoon: "", startM: 0, eindeM: gesorteerdeAnalyse[0].positieM });
-    }
-    gesorteerdeAnalyse.forEach((p, i) => {
-      const volgende = gesorteerdeAnalyse[i + 1];
-      groepen.push({
-        label: p.vertaald?.label ?? "?",
-        kleur: p.vertaald?.kleur ?? "#9ca3af",
-        icoon: p.vertaald?.icoon ?? "📍",
-        startM: p.positieM,
-        eindeM: volgende ? volgende.positieM : totaalM,
-      });
-    });
-  }
-
-  const overgangen = groepen.slice(1).map((g, i) => ({ m: groepen[i].eindeM, van: groepen[i], naar: g }));
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
-        <div className="flex items-center gap-4 text-xs text-gray-400">
-          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring ({project?.diameter_mm ?? "—"} mm)</span>
-          <span className="text-gray-300">Totaal: {Math.round(totaalM)} m</span>
-        </div>
-      </div>
-
-      {groepen.length > 0 && (
-        <div className="px-5 pt-4 pb-2 border-b border-gray-100">
-          <div className="text-xs font-medium text-gray-500 mb-2">Straatwerk analyse</div>
-          <svg viewBox={`0 0 ${W} ${BAR_Y + BAR_H + 22}`} className="w-full" style={{ height: BAR_Y + BAR_H + 26 }}>
-            {groepen.map((g, i) => {
-              const x1 = xPos(g.startM), x2 = xPos(g.eindeM);
-              const breedte = Math.max(x2 - x1, 2);
-              return (
-                <g key={i}>
-                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" />
-                  {breedte > 40 && <text x={x1+breedte/2} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{g.icoon} {g.label}</text>}
-                  {breedte > 25 && <text x={x1+breedte/2} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">{Math.round(g.eindeM-g.startM)}m</text>}
-                </g>
-              );
-            })}
-            <circle cx={xPos(0)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
-            <text x={xPos(0)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
-            <circle cx={xPos(totaalM)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
-            <text x={xPos(totaalM)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
-            {overgangen.map((o, i) => (
-              <g key={i}>
-                <line x1={xPos(o.m)} y1={BAR_Y-2} x2={xPos(o.m)} y2={BAR_Y+BAR_H+2} stroke="white" strokeWidth="2" />
-                <polygon points={`${xPos(o.m)},${BAR_Y-6} ${xPos(o.m)-4},${BAR_Y-2} ${xPos(o.m)+4},${BAR_Y-2}`} fill="#374151" />
-                <text x={xPos(o.m)} y={BAR_Y-8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
-              </g>
-            ))}
-          </svg>
-        </div>
-      )}
-
-      <div className="px-5 pt-3 pb-4">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
-          <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
-          <rect x={PAD.left} y={yPos(0)} width={plotW} height={yPos(minD)-yPos(0)} fill="#e5e7eb" opacity="0.4" />
-          {groepen.map((g, i) => <rect key={i} x={xPos(g.startM)} y={yPos(0)-6} width={Math.max(xPos(g.eindeM)-xPos(g.startM),2)} height={6} fill={g.kleur} opacity="0.5" />)}
-          <line x1={PAD.left} y1={yPos(0)} x2={PAD.left+plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
-          {[0,-1,-2,-3,-4,-5].map(d => (
-            <g key={d}>
-              <line x1={PAD.left-4} y1={yPos(d)} x2={PAD.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
-              <text x={PAD.left-6} y={yPos(d)+3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
-              <line x1={PAD.left} y1={yPos(d)} x2={PAD.left+plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
-            </g>
-          ))}
-          {[0,0.25,0.5,0.75,1].map(f => {
-            const m = f*totaalM, x = xPos(m);
-            return (<g key={f}><line x1={x} y1={PAD.top+plotH} x2={x} y2={PAD.top+plotH+4} stroke="#d1d5db" strokeWidth="1" /><text x={x} y={PAD.top+plotH+13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text></g>);
-          })}
-          <line x1={PAD.left} y1={yPos(boringD)} x2={PAD.left+plotW} y2={yPos(boringD)} stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
-          <rect x={PAD.left} y={yPos(boringD)-2} width={plotW} height={4} fill="#2563eb" opacity="0.15" rx="2" />
-          <text x={PAD.left+plotW-4} y={yPos(boringD)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="600">{project?.materiaal ?? "PE"} Ø{project?.diameter_mm ?? "—"}mm</text>
-          {analysePunten.map((p, i) => {
-            const x = xPos(p.positieM ?? 0);
-            const kleur = p.vertaald?.kleur ?? "#9ca3af";
-            return (
-              <g key={i}>
-                <line x1={x} y1={PAD.top} x2={x} y2={PAD.top+plotH} stroke={kleur} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
-                <circle cx={x} cy={yPos(0)} r="4" fill={kleur} opacity="0.9" />
-              </g>
-            );
-          })}
-          <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
-          <line x1={PAD.left} y1={PAD.top+plotH} x2={PAD.left+plotW} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
-          <text x={PAD.left-40} y={PAD.top+plotH/2} textAnchor="middle" fontSize="9" fill="#6b7280" transform={`rotate(-90,${PAD.left-40},${PAD.top+plotH/2})`}>Diepte (m NAP)</text>
-          <text x={PAD.left+plotW/2} y={H-2} textAnchor="middle" fontSize="9" fill="#6b7280">Positie langs tracé (m)</text>
-        </svg>
-      </div>
-    </div>
-  );
-}
 
 // ─── HOOFD COMPONENT ──────────────────────────────────────────
 export default function MapTrace({ project, onTraceOpgeslagen }) {
@@ -749,6 +630,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     setControlePunten([]);
     setModus("niets");
     const kaart = leafletMapRef.current;
+    if (hoverMarkerRef.current && kaart?.hasLayer(hoverMarkerRef.current)) kaart.removeLayer(hoverMarkerRef.current);
     if (traceLaagRef.current && kaart) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
   }
 
@@ -760,6 +642,16 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     wisControlepunten();
     if (traceLaagRef.current && kaart) kaart.removeLayer(traceLaagRef.current);
     traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+
+    // Herbereken positie van alle analysepunten op de nieuwe boorlijn
+    if (analysePunten.length > 0) {
+      setAnalysePunten(prev => prev.map(p => {
+        const snap = snapNaarLijn(p.lat, p.lng, controlePunten);
+        if (p._marker) p._marker.setLatLng([snap.lat, snap.lng]);
+        return { ...p, lat: snap.lat, lng: snap.lng, positieM: snap.positieM };
+      }).sort((a, b) => a.positieM - b.positieM));
+    }
+
     await onTraceOpgeslagen(geojson);
     setOpgeslagen(true);
     setModus("niets");
@@ -978,7 +870,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
             <div className="text-2xl mb-3 text-center">🗑</div>
             <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Boorlijn verwijderen?</h3>
-            <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">Het boorlijn en alle analysepunten worden permanent verwijderd.</p>
+            <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">De boorlijn, alle analysepunten en het dwarsprofiel worden permanent verwijderd.</p>
             <div className="flex gap-3">
               <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50">Annuleren</button>
               <button
