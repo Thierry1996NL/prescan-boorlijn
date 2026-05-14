@@ -681,6 +681,52 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     return snapNaarLijn(lat, lng, pts).positieM;
   }
 
+
+  async function plaatsAnalysePunt(kaart, L, lat, lng) {
+    const pts2 = modeRef._controlePunten ?? [];
+    const snap = snapNaarLijn(lat, lng, pts2);
+    setAnalyseBezig(true);
+    const result = await haalOppervlakOp(snap.lat, snap.lng);
+    const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+
+    const nieuwPunt = { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null };
+    const icon0 = maakAnalyseIcon(L, 1, vertaald.kleur);
+    const marker = L.marker([snap.lat, snap.lng], { icon: icon0, zIndexOffset: 2000, draggable: true })
+      .bindTooltip(`1 — ${vertaald.icoon} ${vertaald.label}`, { direction: "top" })
+      .addTo(kaart);
+    nieuwPunt._marker = marker;
+
+    const hernummer = (arr) => {
+      arr.forEach((x, idx) => {
+        if (x._marker) {
+          x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af"));
+          x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`);
+        }
+      });
+    };
+
+    marker.on("drag", (ev) => {
+      const s = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
+      marker.setLatLng([s.lat, s.lng]);
+      nieuwPunt.lat = s.lat; nieuwPunt.lng = s.lng; nieuwPunt.positieM = s.positieM;
+    });
+    marker.on("dragend", () => {
+      setAnalysePunten(h => { const n = h.map(x => x._marker === marker ? { ...x, lat: nieuwPunt.lat, lng: nieuwPunt.lng, positieM: nieuwPunt.positieM } : x).sort((a,b)=>a.positieM-b.positieM); hernummer(n); return n; });
+    });
+    marker.on("click", (ev) => {
+      L.DomEvent.stopPropagation(ev);
+      kaart.removeLayer(marker);
+      setAnalysePunten(h => { const n = h.filter(x => x._marker !== marker).sort((a,b)=>a.positieM-b.positieM); hernummer(n); return n; });
+    });
+
+    setAnalysePunten(prev => {
+      const gesorteerd = [...prev, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
+      hernummer(gesorteerd);
+      return gesorteerd;
+    });
+    setAnalyseBezig(false);
+  }
+
   const eventPolylineRef = useRef(null); // onzichtbare brede lijn voor events
 
   // Voeg event capture polyline toe — onzichtbaar maar breed voor hover/klik
@@ -742,56 +788,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-      if (mode === "analyse") {
-        const pts2 = modeRef._controlePunten ?? [];
-        const snap = snapNaarLijn(lat, lng, pts2);
-        setAnalyseBezig(true);
-        const result = await haalOppervlakOp(snap.lat, snap.lng);
-        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
-
-        setAnalysePunten(prev => {
-          const gesorteerd = [...prev, { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null }]
-            .sort((a, b) => a.positieM - b.positieM);
-
-          gesorteerd.forEach(p => { if (p._marker) { kaart.removeLayer(p._marker); p._marker = null; } });
-
-          gesorteerd.forEach((p, i) => {
-            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
-            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
-              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
-              .addTo(kaart);
-
-            marker.on("drag", (ev) => {
-              const s = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
-              marker.setLatLng([s.lat, s.lng]);
-              p.lat = s.lat; p.lng = s.lng; p.positieM = s.positieM;
-            });
-
-            marker.on("dragend", () => {
-              setAnalysePunten(huidig => {
-                const nieuw = huidig.map(x => x._marker === marker ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM } : x).sort((a,b)=>a.positieM-b.positieM);
-                nieuw.forEach((x, idx) => { if (x._marker) { x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af")); x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`); } });
-                return nieuw;
-              });
-            });
-
-            marker.on("click", (ev) => {
-              L.DomEvent.stopPropagation(ev);
-              kaart.removeLayer(marker);
-              setAnalysePunten(huidig => {
-                const nieuw = huidig.filter(x => x._marker !== marker).sort((a,b)=>a.positieM-b.positieM);
-                nieuw.forEach((x, idx) => { if (x._marker) { x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af")); x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`); } });
-                return nieuw;
-              });
-            });
-
-            p._marker = marker;
-          });
-
-          return gesorteerd;
-        });
-        setAnalyseBezig(false);
-      }
+      if (mode === "analyse") { await plaatsAnalysePunt(kaart, L, lat, lng); }
     });
   }
 
@@ -855,69 +852,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") {
-        // Snap naar de lijn
-        const pts = modeRef._controlePunten ?? [];
-        const snap = snapNaarLijn(lat, lng, pts);
-        setAnalyseBezig(true);
-        const result = await haalOppervlakOp(snap.lat, snap.lng);
-        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
-
-        setAnalysePunten(prev => {
-          const gesorteerd = [...prev, { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null }]
-            .sort((a, b) => a.positieM - b.positieM);
-
-          // Verwijder oude markers en hermaak genummerd
-          gesorteerd.forEach(p => { if (p._marker) { kaart.removeLayer(p._marker); p._marker = null; } });
-
-          gesorteerd.forEach((p, i) => {
-            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
-            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
-              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
-              .addTo(kaart);
-
-            marker.on("drag", (ev) => {
-              const snapD = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
-              marker.setLatLng([snapD.lat, snapD.lng]);
-              p.lat = snapD.lat; p.lng = snapD.lng; p.positieM = snapD.positieM;
-            });
-
-            marker.on("dragend", () => {
-              setAnalysePunten(huidig => {
-                const nieuw = huidig.map(x => x._marker === marker ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM } : x)
-                  .sort((a, b) => a.positieM - b.positieM);
-                nieuw.forEach((x, idx) => {
-                  if (x._marker) {
-                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
-                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
-                  }
-                });
-                return nieuw;
-              });
-            });
-
-            marker.on("click", (ev) => {
-              L.DomEvent.stopPropagation(ev);
-              kaart.removeLayer(marker);
-              setAnalysePunten(huidig => {
-                const nieuw = huidig.filter(x => x._marker !== marker).sort((a, b) => a.positieM - b.positieM);
-                nieuw.forEach((x, idx) => {
-                  if (x._marker) {
-                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
-                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
-                  }
-                });
-                return nieuw;
-              });
-            });
-
-            p._marker = marker;
-          });
-
-          return gesorteerd;
-        });
-        setAnalyseBezig(false);
-      }
+      if (mode === "analyse") { await plaatsAnalysePunt(kaart, L, lat, lng); }
     });
   }
 
