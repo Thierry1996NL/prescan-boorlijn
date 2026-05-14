@@ -82,7 +82,20 @@ function afstandTussenPunten(p1, p2) {
 
 // Dwarsprofiel SVG component
 function Dwarsprofiel({ punten, livePunten, project }) {
-  if (punten.length < 2) return null;
+  if (punten.length < 2) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boortracé</h3>
+        </div>
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="text-3xl mb-3">📐</div>
+          <p className="text-sm text-gray-400 font-medium">Nog geen tracé getekend</p>
+          <p className="text-xs text-gray-300 mt-1">Teken een tracé om het dwarsprofiel te zien.</p>
+        </div>
+      </div>
+    );
+  }
 
   const W = 900;
   const H = 200;
@@ -322,6 +335,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const leafletMapRef = useRef(null);
   const laagRefs = useRef({});
   const tekenLijnLaagRef = useRef(null);
+  const traceLaagRef = useRef(null);   // opgeslagen tracé laag
+  const markerGroepRef = useRef(null); // alle cirkel markers
   const tekenModusRef = useRef(false);
   const puntenRef = useRef([]);
 
@@ -332,7 +347,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [legendaOpen, setLegendaOpen] = useState(true);
   const [livePunten, setLivePunten] = useState([]);
   const [analyseBezig, setAnalyseBezig] = useState(false);
-  const [toonDwarsprofiel, setToonDwarsprofiel] = useState(false);
   const [toonVerwijderPopup, setToonVerwijderPopup] = useState(false);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
 
@@ -354,6 +368,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     if (!mapRef.current || leafletMapRef.current) return;
     const kaart = L.map(mapRef.current, { center: [52.15, 5.38], zoom: 8 });
     leafletMapRef.current = kaart;
+
+    // Marker groep — makkelijk in één keer verwijderen
+    markerGroepRef.current = L.layerGroup().addTo(kaart);
+
     L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png", { attribution: "© PDOK BRT", maxZoom: 19 }).addTo(kaart);
     LAGEN.forEach(laag => {
       const l = laag.type === "wmts"
@@ -362,13 +380,15 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       laagRefs.current[laag.id] = l;
       if (laag.standaardAan) l.addTo(kaart);
     });
+
     if (project?.boortrace_geojson) {
       try {
         const geojson = typeof project.boortrace_geojson === "string" ? JSON.parse(project.boortrace_geojson) : project.boortrace_geojson;
-        const traceLaag = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
-        kaart.fitBounds(traceLaag.getBounds(), { padding: [40, 40] });
+        traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+        kaart.fitBounds(traceLaagRef.current.getBounds(), { padding: [40, 40] });
       } catch (e) {}
     }
+
     kaart.on("click", async (e) => {
       if (!tekenModusRef.current) return;
       const { lat, lng } = e.latlng;
@@ -383,12 +403,29 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         : result
         ? vertaalOppervlak(result.type)
         : { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
-      L.circleMarker([lat, lng], { radius: 7, fillColor: vertaald.kleur, color: "#fff", weight: 2, fillOpacity: 1 })
+
+      // Voeg marker toe aan groep
+      const L2 = window.L;
+      L2.circleMarker([lat, lng], { radius: 7, fillColor: vertaald.kleur, color: "#fff", weight: 2, fillOpacity: 1 })
         .bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
-        .addTo(kaart);
+        .addTo(markerGroepRef.current);
+
       setLivePunten(prev => [...prev, { lat, lng, ...vertaald, origineel: result?.type }]);
       setAnalyseBezig(false);
     });
+  }
+
+  // Verwijder alles van de kaart en reset state
+  function wisAlles() {
+    puntenRef.current = [];
+    setPunten([]);
+    setLivePunten([]);
+    setTekenModus(false);
+    const kaart = leafletMapRef.current;
+    if (!kaart) return;
+    if (tekenLijnLaagRef.current) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
+    if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+    if (markerGroepRef.current) { markerGroepRef.current.clearLayers(); }
   }
 
   useEffect(() => {
@@ -418,16 +455,23 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     puntenRef.current = [];
     setPunten([]);
     setLivePunten([]);
-    setToonDwarsprofiel(false);
-    if (tekenLijnLaagRef.current && leafletMapRef.current) { leafletMapRef.current.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
+    const kaart = leafletMapRef.current;
+    if (tekenLijnLaagRef.current && kaart) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
+    if (markerGroepRef.current) markerGroepRef.current.clearLayers();
   }
 
   async function opslaanTrace() {
     if (punten.length < 2) return;
-    await onTraceOpgeslagen({ type: "LineString", coordinates: punten.map(([lat, lng]) => [lng, lat]) });
+    const geojson = { type: "LineString", coordinates: punten.map(([lat, lng]) => [lng, lat]) };
+    // Vervang tijdelijke tekenlijn door definitieve laag
+    const kaart = leafletMapRef.current;
+    const L = window.L;
+    if (tekenLijnLaagRef.current && kaart) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
+    if (traceLaagRef.current && kaart) { kaart.removeLayer(traceLaagRef.current); }
+    traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+    await onTraceOpgeslagen(geojson);
     setOpgeslagen(true);
     setTekenModus(false);
-    setToonDwarsprofiel(true);
     setTimeout(() => setOpgeslagen(false), 3000);
   }
 
@@ -520,20 +564,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 400 }} />
 
         {/* Dwarsprofiel */}
-        {(toonDwarsprofiel || heeftTrace) && (
-          <Dwarsprofiel
-            punten={punten.length >= 2 ? punten : (() => {
-              try {
-                const g = project?.boortrace_geojson;
-                if (!g) return [];
-                const parsed = typeof g === "string" ? JSON.parse(g) : g;
-                return parsed.coordinates?.map(([lng, lat]) => [lat, lng]) ?? [];
-              } catch { return []; }
-            })()}
-            livePunten={livePunten}
-            project={project}
-          />
-        )}
+        {/* Dwarsprofiel — altijd zichtbaar */}
+        {(() => {
+          const tracePunten = punten.length >= 2 ? punten : (() => {
+            try {
+              const g = project?.boortrace_geojson;
+              if (!g) return [];
+              const parsed = typeof g === "string" ? JSON.parse(g) : g;
+              return parsed.coordinates?.map(([lng, lat]) => [lat, lng]) ?? [];
+            } catch { return []; }
+          })();
+          return (
+            <Dwarsprofiel
+              punten={tracePunten}
+              livePunten={livePunten}
+              project={project}
+            />
+          );
+        })()}
       </div>
 
       {/* Analyse paneel rechts — altijd zichtbaar */}
@@ -646,7 +694,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
                 <div className="flex gap-3">
                   <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
                   <button
-                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); resetTekenen(); setToonVerwijderPopup(false); setTekenModus(true); setVerwijderBezig(false); }}
+                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setTekenModus(true); setVerwijderBezig(false); }}
                     disabled={verwijderBezig}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
                   >
@@ -664,7 +712,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
                 <div className="flex gap-3">
                   <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
                   <button
-                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); resetTekenen(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
+                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
                     disabled={verwijderBezig}
                     className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
                   >
