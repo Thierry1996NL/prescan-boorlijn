@@ -261,36 +261,46 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       const mode = modeRef.current;
 
       if (mode === "tekenen") {
-        // Voeg controlepunt toe
         setControlePunten(prev => {
           const nieuw = [...prev, [lat, lng]];
           tekenPolyline(kaart, nieuw);
-          voegControlepuntMarkerToe(kaart, nieuw, nieuw.length - 1);
+          hertekenAlleMarkers(kaart, nieuw);
           return nieuw;
         });
       }
 
       if (mode === "analyse") {
-        // Voeg analysepunt toe
         setAnalyseBezig(true);
         const result = await haalOppervlakOp(lat, lng);
         const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
         const huidigePunten = modeRef._controlePunten ?? [];
         const positieM = berekenPositieOpLijn(lat, lng, huidigePunten);
-        const nieuwPunt = { lat, lng, vertaald, positieM };
 
-        // Voeg analyse marker toe op kaart
-        const marker = L.circleMarker([lat, lng], {
-          radius: 9, fillColor: vertaald.kleur, color: "#fff", weight: 2.5, fillOpacity: 1,
-        }).bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" }).addTo(kaart);
+        setAnalysePunten(prev => {
+          const nummer = prev.length + 1;
+          const icon = maakAnalyseIcon(L, nummer, vertaald.kleur);
+          const marker = L.marker([lat, lng], { icon, zIndexOffset: 2000 })
+            .bindTooltip(`<b>${nummer}</b> — ${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
+            .addTo(kaart);
 
-        marker.on("click", (ev) => {
-          L.DomEvent.stopPropagation(ev);
-          kaart.removeLayer(marker);
-          setAnalysePunten(prev => prev.filter(p => p.lat !== lat || p.lng !== lng));
+          marker.on("click", (ev) => {
+            L.DomEvent.stopPropagation(ev);
+            kaart.removeLayer(marker);
+            setAnalysePunten(p => {
+              const nieuw = p.filter(x => x._marker !== marker);
+              // Hernummer overige markers
+              nieuw.forEach((x, i) => {
+                if (x._marker) {
+                  x._marker.setIcon(maakAnalyseIcon(L, i + 1, x.vertaald?.kleur ?? "#9ca3af"));
+                  x._marker.setTooltipContent(`<b>${i+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
+                }
+              });
+              return nieuw;
+            });
+          });
+
+          return [...prev, { lat, lng, vertaald, positieM, _marker: marker }];
         });
-
-        setAnalysePunten(prev => [...prev, { ...nieuwPunt, _marker: marker }]);
         setAnalyseBezig(false);
       }
     });
@@ -317,32 +327,96 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const L = window.L;
     if (polylineRef.current) kaart.removeLayer(polylineRef.current);
     if (pts.length < 2) return;
-    polylineRef.current = L.polyline(pts, { color: "#2563eb", weight: 4, opacity: 0.9 }).addTo(kaart);
+    const lijn = L.polyline(pts, { color: "#2563eb", weight: 4, opacity: 0.9 }).addTo(kaart);
+    polylineRef.current = lijn;
+
+    // Klik op lijn om punt in te voegen (bewerken + tekenen modus)
+    lijn.on("click", (e) => {
+      L.DomEvent.stopPropagation(e);
+      const mode = modeRef.current;
+      if (mode !== "bewerken" && mode !== "tekenen") return;
+      const { lat, lng } = e.latlng;
+
+      setControlePunten(prev => {
+        // Vind het dichtstbijzijnde segment
+        let besteIdx = prev.length - 1;
+        let minDist = Infinity;
+        for (let i = 0; i < prev.length - 1; i++) {
+          const mid = [(prev[i][0] + prev[i+1][0]) / 2, (prev[i][1] + prev[i+1][1]) / 2];
+          const d = afstandM([lat, lng], mid);
+          if (d < minDist) { minDist = d; besteIdx = i; }
+        }
+        const nieuw = [...prev.slice(0, besteIdx + 1), [lat, lng], ...prev.slice(besteIdx + 1)];
+        tekenPolyline(kaart, nieuw);
+        hertekenAlleMarkers(kaart, nieuw);
+        return nieuw;
+      });
+    });
   }
 
-  // Vierkant icoon voor controlepunten
-  function maakControlepuntIcon(L, index, totaal) {
-    const isEerste = index === 0;
-    const isLaatste = index === totaal - 1;
-    const kleur = isEerste || isLaatste ? "#1d4ed8" : "#2563eb";
+  // Maak genummerd icoon
+  function maakControlepuntIcon(L, nummer, isEerste, isLaatste) {
+    const kleur = isEerste ? "#15803d" : isLaatste ? "#dc2626" : "#2563eb";
+    const vorm = isEerste || isLaatste ? "50%" : "3px";
     return L.divIcon({
       className: "",
-      html: `<div style="width:12px;height:12px;background:${kleur};border:2px solid white;border-radius:${isEerste || isLaatste ? "50%" : "2px"};cursor:move;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>`,
-      iconSize: [12, 12],
-      iconAnchor: [6, 6],
+      html: `<div style="
+        width:20px;height:20px;
+        background:${kleur};
+        border:2px solid white;
+        border-radius:${vorm};
+        cursor:move;
+        box-shadow:0 1px 4px rgba(0,0,0,0.4);
+        display:flex;align-items:center;justify-content:center;
+        font-size:9px;font-weight:700;color:white;
+        font-family:sans-serif;
+      ">${nummer}</div>`,
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
     });
+  }
+
+  // Maak genummerd analyse icoon
+  function maakAnalyseIcon(L, nummer, kleur) {
+    return L.divIcon({
+      className: "",
+      html: `<div style="
+        width:22px;height:22px;
+        background:${kleur};
+        border:2.5px solid white;
+        border-radius:50%;
+        cursor:pointer;
+        box-shadow:0 1px 4px rgba(0,0,0,0.4);
+        display:flex;align-items:center;justify-content:center;
+        font-size:9px;font-weight:700;color:white;
+        font-family:sans-serif;
+      ">${nummer}</div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+  }
+
+  // Verwijder en hermaak alle controlepunt markers met juiste nummers
+  function hertekenAlleMarkers(kaart, pts) {
+    const L = window.L;
+    controlepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
+    controlepuntMarkersRef.current = [];
+    pts.forEach((_, i) => voegControlepuntMarkerToe(kaart, pts, i));
   }
 
   function voegControlepuntMarkerToe(kaart, allePunten, index) {
     const L = window.L;
     const [lat, lng] = allePunten[index];
+    const isEerste = index === 0;
+    const isLaatste = index === allePunten.length - 1;
+    const nummer = index + 1;
 
     const marker = L.marker([lat, lng], {
       draggable: true,
-      icon: maakControlepuntIcon(L, index, allePunten.length),
+      icon: maakControlepuntIcon(L, nummer, isEerste, isLaatste),
+      zIndexOffset: 1000,
     }).addTo(kaart);
 
-    // Sleep om lijn aan te passen
     marker.on("drag", (e) => {
       const { lat: nLat, lng: nLng } = e.latlng;
       setControlePunten(prev => {
@@ -353,19 +427,18 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       });
     });
 
-    // Rechtsklik om te verwijderen
     marker.on("contextmenu", (e) => {
       L.DomEvent.stopPropagation(e);
-      kaart.removeLayer(marker);
-      controlepuntMarkersRef.current = controlepuntMarkersRef.current.filter(m => m !== marker);
       setControlePunten(prev => {
         const nieuw = prev.filter((_, i) => i !== index);
         tekenPolyline(kaart, nieuw);
+        hertekenAlleMarkers(kaart, nieuw);
         return nieuw;
       });
     });
 
-    marker.bindTooltip(index === 0 ? "Startpunt" : index === allePunten.length - 1 ? "Eindpunt" : `Punt ${index + 1}<br><small>Rechtsklik om te verwijderen</small>`, { direction: "top" });
+    const tooltip = isEerste ? `<b>1</b> — Startpunt` : isLaatste ? `<b>${nummer}</b> — Eindpunt` : `<b>${nummer}</b> — Sleep om aan te passen<br><small>Rechtsklik om te verwijderen</small>`;
+    marker.bindTooltip(tooltip, { direction: "top" });
     controlepuntMarkersRef.current.push(marker);
   }
 
@@ -383,14 +456,12 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const kaart = leafletMapRef.current;
     if (!kaart) return;
     wisControlepunten();
-
-    // Laad bestaand tracé als sleepbare punten
     const pts = bestaandTrace;
     setControlePunten(pts);
     setModus("bewerken");
     if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
     tekenPolyline(kaart, pts);
-    pts.forEach((_, i) => voegControlepuntMarkerToe(kaart, pts, i));
+    hertekenAlleMarkers(kaart, pts);
   }
 
   function wisControlepunten() {
@@ -538,8 +609,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         {legendaOpen && (
           <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-4 mb-2 text-xs text-gray-400 font-medium">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-600 rounded-sm inline-block" /> Sleepbaar controlepunt (tracé)</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-green-500 rounded-full inline-block" /> Analysepunt (klik om te verwijderen)</span>
+              <span className="flex items-center gap-1.5"><span className="w-5 h-5 bg-blue-600 rounded-sm inline-flex items-center justify-center text-white text-xs font-bold">1</span> Sleepbaar punt boorlijn (rechtsklik = verwijderen, klik op lijn = invoegen)</span>
+              <span className="flex items-center gap-1.5"><span className="w-5 h-5 bg-green-500 rounded-full inline-flex items-center justify-center text-white text-xs font-bold">1</span> Analysepunt (klik om te verwijderen)</span>
             </div>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 border-t border-gray-100 pt-2">
               {LAGEN.map(laag => (
