@@ -3,21 +3,50 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getProjectMetContext, updateProject } from "@/lib/supabase-queries";
-import PrescanChat from "@/components/PrescanChat";
 import Sidebar from "@/components/Sidebar";
 import dynamic from "next/dynamic";
 
-const MapTrace = dynamic(() => import("@/components/MapTrace"), { ssr: false });
+const MapTrace   = dynamic(() => import("@/components/MapTrace"),   { ssr: false });
+const PrescanChat = dynamic(() => import("@/components/PrescanChat"), { ssr: false });
 
+// ──────────────────────────────────────────────────────────────────
+//  Labels voor de stap-header
+// ──────────────────────────────────────────────────────────────────
+const STAP_LABELS = {
+  1:  "Projectinformatie",
+  2:  "Ontwerp inladen",
+  3:  "Boorlijn tekenen",
+  4:  "Oppervlakteanalyse",
+  5:  "Diepteligging & dwarsprofiel",
+  6:  "Machine- & bentonietlocatie",
+  7:  "Eindontwerp",
+  8:  "AI optimalisatie & kruisingen",
+  9:  "Pre-scan en tekeningen",
+  10: "Contactpersonen (KLIC)",
+  11: "Exporteren",
+};
+
+const STAP_MAX_UITGEWERKT = 7; // stappen 8-11 zijn nog leeg
+
+// ──────────────────────────────────────────────────────────────────
+//  Hoofd component
+// ──────────────────────────────────────────────────────────────────
 export default function ProjectDetailPagina() {
-  const { id } = useParams();
-  const router = useRouter();
-  const [project, setProject] = useState(null);
-  const [laden, setLaden] = useState(true);
-  const [actieveTab, setActieveTab] = useState("details");
+  const { id }   = useParams();
+  const router   = useRouter();
+
+  const [project,     setProject]     = useState(null);
+  const [laden,       setLaden]       = useState(true);
+  const [actieveStap, setActieveStap] = useState(1);
+  const [gebruiker,   setGebruiker]   = useState(null);
+
+  // Bewerkformulier (stap 1)
   const [bewerkModaal, setBewerkModaal] = useState(false);
-  const [bewerkData, setBewerkData] = useState({});
-  const [opslaan, setOpslaan] = useState(false);
+  const [bewerkData,   setBewerkData]   = useState({});
+  const [opslaan,      setOpslaan]      = useState(false);
+
+  // Bestand-upload status (stap 2)
+  const [uploadStatus, setUploadStatus] = useState({});
 
   useEffect(() => { laadProject(); }, [id]);
 
@@ -26,16 +55,29 @@ export default function ProjectDetailPagina() {
       const data = await getProjectMetContext(id);
       setProject(data);
       setBewerkData({
-        naam: data.naam ?? "",
-        opdrachtgever: data.opdrachtgever ?? "",
-        locatie: data.locatie ?? "",
-        boorlengte_m: data.boorlengte_m ?? "",
-        diameter_mm: data.diameter_mm ?? "",
-        materiaal: data.materiaal ?? "PE100",
-        bodemtype: data.bodemtype ?? "",
+        naam:           data.naam           ?? "",
+        opdrachtgever:  data.opdrachtgever  ?? "",
+        locatie:        data.locatie         ?? "",
+        boorlengte_m:   data.boorlengte_m   ?? "",
+        diameter_mm:    data.diameter_mm    ?? "",
+        materiaal:      data.materiaal      ?? "PE100",
+        bodemtype:      data.bodemtype      ?? "",
         bijzonderheden: data.bijzonderheden ?? "",
-        status: data.status ?? "actief",
+        status:         data.status         ?? "actief",
       });
+
+      // Gebruiker ophalen
+      try {
+        const mod     = await import("@/lib/supabase");
+        const sb      = mod.createClient ? mod.createClient() : mod.default;
+        const { data: { user } } = await sb.auth.getUser();
+        if (user) {
+          setGebruiker({
+            email: user.email,
+            naam:  user.user_metadata?.full_name ?? null,
+          });
+        }
+      } catch { /* auth optioneel */ }
     } catch (err) {
       console.error(err);
     } finally {
@@ -50,7 +92,7 @@ export default function ProjectDetailPagina() {
       await updateProject(id, {
         ...bewerkData,
         boorlengte_m: bewerkData.boorlengte_m ? Number(bewerkData.boorlengte_m) : null,
-        diameter_mm: bewerkData.diameter_mm ? Number(bewerkData.diameter_mm) : null,
+        diameter_mm:  bewerkData.diameter_mm  ? Number(bewerkData.diameter_mm)  : null,
       });
       await laadProject();
       setBewerkModaal(false);
@@ -61,42 +103,20 @@ export default function ProjectDetailPagina() {
     }
   }
 
-  async function handleTraceOpgeslagen(data) {
-    if (!data) {
-      // Verwijderen
-      await updateProject(id, { boortrace_geojson: null, diepte_punten: null, analyse_punten: null });
-    } else if (data._alleenDiepte) {
-      // Alleen dieptepunten opslaan
-      await updateProject(id, { diepte_punten: data.diepte_punten });
-    } else if (data._alleenAnalyse) {
-      // Alleen analysepunten opslaan
-      await updateProject(id, { analyse_punten: data.analyse_punten });
-    } else {
-      // Volledige boorlijn opslaan
-      await updateProject(id, { boortrace_geojson: data });
-    }
-    await laadProject();
-  }
-
-  const risicoBadge = (risico) => {
-    const stijlen = {
-      rood: "bg-red-50 text-red-600 border-red-200",
-      oranje: "bg-orange-50 text-orange-600 border-orange-200",
-      groen: "bg-green-50 text-green-600 border-green-200",
-    };
-    return (
-      <span className={`text-xs border px-2 py-0.5 rounded-full font-medium ${stijlen[risico] || ""}`}>
-        ● {risico}
-      </span>
-    );
-  };
-
+  // ────────────────────────────────────────────────────────────────
+  //  Laadscherm / niet gevonden
+  // ────────────────────────────────────────────────────────────────
   if (laden) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar actiefProjectId={id} />
+        <Sidebar
+          actiefProjectId={id}
+          actieveStap={1}
+          onStapWijzigen={() => {}}
+          gebruiker={null}
+        />
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-gray-400">Laden...</p>
+          <p className="text-sm text-gray-400">Laden…</p>
         </div>
       </div>
     );
@@ -105,212 +125,450 @@ export default function ProjectDetailPagina() {
   if (!project) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-red-500">Project niet gevonden.</p>
+        <Sidebar gebruiker={null} />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <p className="text-sm text-gray-500">Project niet gevonden.</p>
+          <button
+            onClick={() => router.push("/projecten")}
+            className="text-xs text-orange-600 hover:underline"
+          >
+            ← Terug naar projecten
+          </button>
         </div>
       </div>
     );
   }
 
-  const tabs = [
-    { id: "details", label: "Projectinformatie", icon: "📋" },
-    { id: "trace", label: "Boorlijn", icon: "📍" },
-    { id: "kruisingen", label: "Kruisingen", icon: "⚡", count: project.kruisingen?.length ?? 0 },
-    { id: "chat", label: "AI Assistent", icon: "🛠" },
-  ];
-
-  const velden = [
-    { label: "Projectnaam", key: "naam" },
-    { label: "Opdrachtgever", key: "opdrachtgever" },
-    { label: "Locatie", key: "locatie" },
-    { label: "Boorlengte", key: "boorlengte_m", format: (v) => v ? `${v} m` : "—" },
-    { label: "Diameter", key: "diameter_mm", format: (v) => v ? `Ø${v} mm` : "—" },
-    { label: "Materiaal", key: "materiaal" },
-    { label: "Bodemtype", key: "bodemtype" },
-    { label: "Status", key: "status" },
-    { label: "Bijzonderheden", key: "bijzonderheden" },
-  ];
-
-  return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar actiefProjectId={id} />
-
-      {/* Project tabs sidebar */}
-      <aside className="w-44 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4">
-        <div className="px-4 mb-2">
-          <div className="text-xs text-gray-400 font-medium mb-1 truncate">{project.naam}</div>
-        </div>
-        <nav className="flex flex-col gap-0.5 px-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActieveTab(tab.id)}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 w-full text-left ${
-                actieveTab === tab.id
-                  ? "bg-blue-50 text-blue-700 font-medium"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              }`}
-            >
-              <span>{tab.icon}</span>
-              <span className="flex-1 truncate">{tab.label}</span>
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Hoofdinhoud */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-sm font-semibold text-gray-900">
-            {tabs.find(t => t.id === actieveTab)?.icon} {tabs.find(t => t.id === actieveTab)?.label}
-          </h1>
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            {project.locatie && <span>📍 {project.locatie}</span>}
-            {project.boorlengte_m && <span>{project.boorlengte_m} m</span>}
-            {project.diameter_mm && <span>Ø{project.diameter_mm} mm</span>}
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-auto">
-
-          {/* Projectinformatie */}
-          {actieveTab === "details" && (
-            <div className="p-6 max-w-lg">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-gray-900">Projectinformatie</h2>
+  // ────────────────────────────────────────────────────────────────
+  //  Stap-content mapping
+  // ────────────────────────────────────────────────────────────────
+  function renderStap() {
+    switch (actieveStap) {
+      // ── Stap 1: Projectinformatie ────────────────────────
+      case 1:
+        return (
+          <div className="max-w-2xl">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="text-sm font-semibold text-gray-800">Projectgegevens</h2>
                 <button
                   onClick={() => setBewerkModaal(true)}
-                  className="flex items-center gap-1.5 text-xs text-blue-600 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
                 >
-                  ✏️ Bewerken
+                  Bewerken
                 </button>
               </div>
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                {velden.map(({ label, key, format }, i) => (
-                  <div key={key} className={`flex items-start justify-between gap-4 px-4 py-3 ${i !== 0 ? "border-t border-gray-100" : ""}`}>
-                    <span className="text-xs text-gray-400 font-medium flex-shrink-0">{label}</span>
-                    <span className="text-xs text-gray-900 text-right font-medium">
-                      {format ? format(project[key]) : project[key] || <span className="text-gray-300">—</span>}
-                    </span>
+              <div className="divide-y divide-gray-100">
+                {[
+                  { label: "Projectnaam",   waarde: project.naam },
+                  { label: "Opdrachtgever", waarde: project.opdrachtgever },
+                  { label: "Locatie",       waarde: project.locatie },
+                  { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`      : null },
+                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`     : null },
+                  { label: "Materiaal",     waarde: project.materiaal },
+                  { label: "Bodemtype",     waarde: project.bodemtype },
+                  { label: "Status",        waarde: project.status },
+                ].map(({ label, waarde }, i) =>
+                  waarde ? (
+                    <div key={i} className="flex items-start justify-between gap-6 px-5 py-3">
+                      <span className="text-xs text-gray-500 font-medium flex-shrink-0">{label}</span>
+                      <span className="text-xs text-gray-900 text-right">{waarde}</span>
+                    </div>
+                  ) : null
+                )}
+                {project.bijzonderheden && (
+                  <div className="px-5 py-3">
+                    <span className="text-xs text-gray-500 font-medium block mb-1">Bijzonderheden</span>
+                    <span className="text-xs text-gray-800">{project.bijzonderheden}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bewerkmodaal */}
+            {bewerkModaal && (
+              <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-800">Project bewerken</h3>
+                    <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+                  </div>
+                  <form onSubmit={handleOpslaan} className="p-5 space-y-3">
+                    {[
+                      { label: "Projectnaam",   key: "naam",          type: "text"   },
+                      { label: "Opdrachtgever", key: "opdrachtgever", type: "text"   },
+                      { label: "Locatie",       key: "locatie",       type: "text"   },
+                      { label: "Boorlengte (m)",key: "boorlengte_m",  type: "number" },
+                      { label: "Diameter (mm)", key: "diameter_mm",   type: "number" },
+                      { label: "Bodemtype",     key: "bodemtype",     type: "text"   },
+                    ].map(({ label, key, type }) => (
+                      <div key={key}>
+                        <label className="text-xs text-gray-500 font-medium block mb-1">{label}</label>
+                        <input
+                          type={type}
+                          value={bewerkData[key] ?? ""}
+                          onChange={e => setBewerkData(d => ({ ...d, [key]: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium block mb-1">Materiaal</label>
+                      <select
+                        value={bewerkData.materiaal ?? "PE100"}
+                        onChange={e => setBewerkData(d => ({ ...d, materiaal: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                      >
+                        {["PE100", "PE80", "PVC", "Staal", "GVK", "Anders"].map(m => (
+                          <option key={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium block mb-1">Status</label>
+                      <select
+                        value={bewerkData.status ?? "actief"}
+                        onChange={e => setBewerkData(d => ({ ...d, status: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                      >
+                        {["actief", "in uitvoering", "afgerond", "on hold"].map(s => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium block mb-1">Bijzonderheden</label>
+                      <textarea
+                        value={bewerkData.bijzonderheden ?? ""}
+                        onChange={e => setBewerkData(d => ({ ...d, bijzonderheden: e.target.value }))}
+                        rows={3}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Annuleren</button>
+                      <button type="submit" disabled={opslaan} className="flex-1 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                        {opslaan ? "Opslaan…" : "Opslaan"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Stap 2: Ontwerp inladen ──────────────────────────
+      case 2:
+        return (
+          <div className="max-w-2xl space-y-4">
+            <p className="text-sm text-gray-500">
+              Laad een bestaand leidingenontwerp in als referentielaag. Ondersteunde typen: LS, MS, Gas, Water en Databekabeling.
+            </p>
+            <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+              {[
+                { type: "LS",    label: "Laagspanning (LS)",        accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "MS",    label: "Middenspanning (MS)",       accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "Gas",   label: "Gas",                       accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "Water", label: "Water",                     accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "Data",  label: "Data / Telecom",            accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", accept: ".zip,.gml" },
+              ].map(({ type, label, accept }) => (
+                <div key={type} className="flex items-center justify-between gap-4 px-5 py-3">
+                  <div>
+                    <div className="text-xs font-medium text-gray-800">{label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{accept}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {uploadStatus[type] && (
+                      <span className="text-xs text-green-600 font-medium">{uploadStatus[type]}</span>
+                    )}
+                    <label className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer text-gray-600 transition-colors">
+                      Bestand kiezen
+                      <input
+                        type="file"
+                        accept={accept}
+                        className="hidden"
+                        onChange={e => {
+                          if (e.target.files?.[0]) {
+                            setUploadStatus(s => ({ ...s, [type]: `✓ ${e.target.files[0].name}` }));
+                            // TODO: upload naar Supabase storage / verwerk geometrie
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400">
+              De bestanden worden als referentielaag weergegeven op de kaart in stap 3.
+              Uploaden naar Supabase storage wordt in een volgende versie volledig uitgewerkt.
+            </p>
+          </div>
+        );
+
+      // ── Stap 3: Boorlijn tekenen ─────────────────────────
+      case 3:
+        return (
+          <div className="h-full">
+            <MapTrace
+              projectId={id}
+              project={project}
+              onOpgeslagen={laadProject}
+            />
+          </div>
+        );
+
+      // ── Stap 4: Oppervlakteanalyse ───────────────────────
+      case 4:
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 max-w-2xl">
+              De oppervlakteanalyse bepaalt welke verhardingstypes de boorlijn kruist via de BGT (Basisregistratie Grootschalige Topografie).
+              Dit is relevant voor herstelkosten, vergunningen en risico's.
+            </p>
+
+            {/* BGT legenda */}
+            <div className="bg-white border border-gray-200 rounded-xl max-w-2xl divide-y divide-gray-100">
+              <div className="px-5 py-3 border-b border-gray-100">
+                <h3 className="text-xs font-semibold text-gray-700">BGT oppervlaktypen langs de boorlijn</h3>
+              </div>
+              {[
+                { type: "Gesloten verharding",  kleur: "bg-gray-400",   risico: "Hoog",    toelichting: "Asfalt / beton — vergunning gemeente, hogere herstelkosten" },
+                { type: "Open verharding",      kleur: "bg-yellow-400", risico: "Middel",  toelichting: "Klinkers / tegels — documenteer exact voor herstel" },
+                { type: "Onverhard",            kleur: "bg-amber-200",  risico: "Middel",  toelichting: "Grind / zand — kans op verzakking groter" },
+                { type: "Groenvoorziening",     kleur: "bg-green-400",  risico: "Laag",    toelichting: "Grasland / berm — eenvoudigst te herstellen" },
+                { type: "Water",                kleur: "bg-blue-400",   risico: "Hoog",    toelichting: "Sloot / vijver — waterkering en vergunning vereist" },
+              ].map(({ type, kleur, risico, toelichting }) => (
+                <div key={type} className="flex items-start gap-3 px-5 py-3">
+                  <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 ${kleur}`} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-800">{type}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                        risico === "Hoog"   ? "bg-red-100 text-red-600"
+                        : risico === "Middel" ? "bg-orange-100 text-orange-600"
+                        : "bg-green-100 text-green-600"
+                      }`}>{risico}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">{toelichting}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Kaart met BGT */}
+            <div className="bg-white border border-gray-200 rounded-xl p-4 max-w-4xl">
+              <p className="text-xs text-gray-500 mb-3">
+                De oppervlaktelaag wordt weergegeven op de boorlijnkaart (stap 3). Activeer de BGT-laag via de laagbeheer-knop op de kaart.
+              </p>
+              <MapTrace
+                projectId={id}
+                project={project}
+                beginTab="analyse"
+                onOpgeslagen={laadProject}
+              />
+            </div>
+          </div>
+        );
+
+      // ── Stap 5: Diepteligging & dwarsprofiel ─────────────
+      case 5:
+        return (
+          <div>
+            <p className="text-sm text-gray-500 max-w-2xl mb-4">
+              Stel de diepteligging in langs de boorlijn en vul het dwarsprofiel. Verwerk ook de bodemgesteldheid per segment.
+            </p>
+            <MapTrace
+              projectId={id}
+              project={project}
+              beginTab="diepte"
+              onOpgeslagen={laadProject}
+            />
+          </div>
+        );
+
+      // ── Stap 6: Machine & bentonietlocatie ───────────────
+      case 6:
+        return (
+          <div className="space-y-4 max-w-2xl">
+            <p className="text-sm text-gray-500">
+              Bepaal de locatie van de HDD-boormachine (insteekpunt) en de bentoniet-menginstallatie / opvangput.
+            </p>
+
+            <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+              {[
+                {
+                  titel: "HDD Boormachine",
+                  icon: "🏗️",
+                  sleutel: "machine_locatie",
+                  beschrijving: "Insteekpunt – ruimte voor boormachine, hydraulische unit en materiaalopslag.",
+                  velden: [
+                    { label: "Adres / omschrijving", key: "machine_adres",       type: "text"   },
+                    { label: "Oppervlak benodigd (m²)", key: "machine_opp",       type: "number" },
+                    { label: "Bijzonderheden",          key: "machine_bijz",      type: "text"   },
+                  ],
+                },
+                {
+                  titel: "Bentoniet tank & opvangput",
+                  icon: "🛢️",
+                  sleutel: "bentoniet_locatie",
+                  beschrijving: "Locatie menginstallatie en opvangput voor bentonietspecie.",
+                  velden: [
+                    { label: "Adres / omschrijving",    key: "bentoniet_adres",   type: "text"   },
+                    { label: "Oppervlak benodigd (m²)", key: "bentoniet_opp",     type: "number" },
+                    { label: "Bijzonderheden",          key: "bentoniet_bijz",    type: "text"   },
+                  ],
+                },
+              ].map(({ titel, icon, beschrijving, velden }) => (
+                <div key={titel} className="px-5 py-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>{icon}</span>
+                    <span className="text-sm font-semibold text-gray-800">{titel}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-3">{beschrijving}</p>
+                  <div className="space-y-3">
+                    {velden.map(({ label, key, type }) => (
+                      <div key={key}>
+                        <label className="text-xs text-gray-500 font-medium block mb-1">{label}</label>
+                        <input
+                          type={type}
+                          defaultValue={project[key] ?? ""}
+                          onBlur={async e => {
+                            try {
+                              await updateProject(id, { [key]: e.target.value });
+                            } catch {}
+                          }}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                          placeholder="—"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-gray-400">
+              Kaart-integratie voor het aanwijzen van locaties via de kaart volgt in een volgende versie.
+            </p>
+          </div>
+        );
+
+      // ── Stap 7: Eindontwerp (read-only) ──────────────────
+      case 7:
+        return (
+          <div className="space-y-5">
+            <p className="text-sm text-gray-500 max-w-2xl">
+              Hieronder staat een read-only overzicht van het volledige ontwerp: projectinformatie, boorlijn en dwarsprofiel.
+            </p>
+
+            {/* Projectinformatie samenvatting */}
+            <div className="bg-white border border-gray-200 rounded-xl max-w-2xl">
+              <div className="px-5 py-3 border-b border-gray-100">
+                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Projectinformatie</h3>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {[
+                  { label: "Project",       waarde: project.naam },
+                  { label: "Opdrachtgever", waarde: project.opdrachtgever },
+                  { label: "Locatie",       waarde: project.locatie },
+                  { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`   : "—" },
+                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`  : "—" },
+                  { label: "Materiaal",     waarde: project.materiaal     ?? "—" },
+                  { label: "Bodemtype",     waarde: project.bodemtype     ?? "—" },
+                  { label: "Status",        waarde: project.status        ?? "—" },
+                ].map(({ label, waarde }, i) => (
+                  <div key={i} className="flex items-start justify-between gap-6 px-5 py-2.5">
+                    <span className="text-xs text-gray-500 font-medium flex-shrink-0">{label}</span>
+                    <span className="text-xs text-gray-900 text-right">{waarde}</span>
                   </div>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Tracé — GIS kaart */}
-          {actieveTab === "trace" && (
-            <div className="p-4 h-full flex flex-col" style={{ minHeight: "calc(100vh - 100px)" }}>
-              <MapTrace project={project} onTraceOpgeslagen={handleTraceOpgeslagen} />
-            </div>
-          )}
-
-          {/* Kruisingen */}
-          {actieveTab === "kruisingen" && (
-            <div className="p-6 max-w-4xl mx-auto">
-              <h2 className="text-base font-semibold text-gray-900 mb-4">Gedetecteerde kruisingen</h2>
-              {project.kruisingen?.length === 0 ? (
-                <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-                  <div className="text-3xl mb-3">⚡</div>
-                  <p className="text-gray-500 text-sm">Nog geen kruisingen geregistreerd.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {project.kruisingen.map((k) => (
-                    <div key={k.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{k.leidingtype}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">{k.netbeheerder}</div>
-                          {k.aanbeveling && <div className="text-xs text-gray-500 mt-2 max-w-lg">{k.aanbeveling}</div>}
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                          {risicoBadge(k.risico)}
-                          <span className="text-xs text-gray-400">{k.afstand_cm} cm</span>
-                          {k.diepte_m && <span className="text-xs text-gray-400">{k.diepte_m} m diep</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* AI Assistent */}
-          {actieveTab === "chat" && (
-            <div className="h-full p-4">
-              <div className="h-full max-w-4xl mx-auto">
-                <PrescanChat projectId={id} projectNaam={project.naam} />
+            {/* Kaart – read-only modus */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden max-w-4xl">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boorlijn & dwarsprofiel</h3>
+                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">read-only</span>
+              </div>
+              <div className="p-4 pointer-events-none opacity-90">
+                <MapTrace
+                  projectId={id}
+                  project={project}
+                  readOnly={true}
+                  onOpgeslagen={() => {}}
+                />
               </div>
             </div>
-          )}
-        </div>
-      </main>
+          </div>
+        );
 
-      {/* Bewerk modaal */}
-      {bewerkModaal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl" style={{ animation: "fadeUp 0.2s ease" }}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900 text-sm">Project bewerken</h2>
-              <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">✕</button>
-            </div>
-            <form onSubmit={handleOpslaan} className="p-5 flex flex-col gap-4">
-              {[
-                { label: "Projectnaam *", key: "naam", required: true },
-                { label: "Opdrachtgever", key: "opdrachtgever" },
-                { label: "Locatie", key: "locatie" },
-                { label: "Boorlengte (m)", key: "boorlengte_m", type: "number" },
-                { label: "Diameter (mm)", key: "diameter_mm", type: "number" },
-                { label: "Bodemtype", key: "bodemtype" },
-              ].map(({ label, key, required, type }) => (
-                <div key={key}>
-                  <label className="block text-xs text-gray-500 mb-1.5 font-medium">{label}</label>
-                  <input
-                    type={type || "text"}
-                    value={bewerkData[key]}
-                    onChange={(e) => setBewerkData(prev => ({ ...prev, [key]: e.target.value }))}
-                    required={required}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
-                  />
-                </div>
-              ))}
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Buismateriaal</label>
-                <select value={bewerkData.materiaal} onChange={(e) => setBewerkData(prev => ({ ...prev, materiaal: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors">
-                  {["PE100", "PE80", "Staal", "GVK", "PVC", "Anders"].map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Status</label>
-                <select value={bewerkData.status} onChange={(e) => setBewerkData(prev => ({ ...prev, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors">
-                  {["actief", "afgerond", "on-hold"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Bijzonderheden</label>
-                <textarea value={bewerkData.bijzonderheden} onChange={(e) => setBewerkData(prev => ({ ...prev, bijzonderheden: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors resize-none" />
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
-                <button type="submit" disabled={opslaan} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">{opslaan ? "Opslaan..." : "Opslaan"}</button>
-              </div>
-            </form>
+      // ── Stap 8-11: Nog niet uitgewerkt ───────────────────
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center h-64 text-center">
+            <div className="text-4xl mb-4">🚧</div>
+            <h2 className="text-base font-semibold text-gray-700 mb-1">
+              {STAP_LABELS[actieveStap]}
+            </h2>
+            <p className="text-sm text-gray-400">
+              Deze stap wordt uitgewerkt zodra stap 1 t/m 7 stabiel zijn.
+            </p>
+          </div>
+        );
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  //  Render
+  // ────────────────────────────────────────────────────────────────
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar
+        actiefProjectId={id}
+        actieveStap={actieveStap}
+        onStapWijzigen={setActieveStap}
+        project={project}
+        gebruiker={gebruiker}
+      />
+
+      <main className="flex-1 min-w-0 flex flex-col">
+        {/* ── Stap-header ──────────────────────────────── */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-20 flex-shrink-0">
+          <div>
+            <div className="text-xs text-gray-400">Stap {actieveStap} van 11</div>
+            <h1 className="text-base font-semibold text-gray-900 mt-0.5">
+              {STAP_LABELS[actieveStap]}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            {actieveStap > 1 && (
+              <button
+                onClick={() => setActieveStap(s => s - 1)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+              >
+                ← Vorige
+              </button>
+            )}
+            {actieveStap < STAP_MAX_UITGEWERKT && (
+              <button
+                onClick={() => setActieveStap(s => s + 1)}
+                className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+              >
+                Volgende →
+              </button>
+            )}
           </div>
         </div>
-      )}
 
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+        {/* ── Stap-inhoud ──────────────────────────────── */}
+        <div className="flex-1 p-6 overflow-auto">
+          {renderStap()}
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,45 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { getProjecten, getProjectMetContext, updateProject } from "@/lib/supabase-queries";
-import PrescanChat from "@/components/PrescanChat";
+import { useRouter } from "next/navigation";
+import { getProjecten, maakProject } from "@/lib/supabase-queries";
 import Sidebar from "@/components/Sidebar";
 
-export default function ProjectDetailPagina() {
-  const { id } = useParams();
+export default function ProjectenPagina() {
   const router = useRouter();
-  const [project, setProject] = useState(null);
-  const [projecten, setProjecten] = useState([]);
-  const [laden, setLaden] = useState(true);
-  const [actieveTab, setActieveTab] = useState("details");
-  const [bewerkModaal, setBewerkModaal] = useState(false);
-  const [bewerkData, setBewerkData] = useState({});
-  const [opslaan, setOpslaan] = useState(false);
 
-  useEffect(() => {
-    laadData();
-  }, [id]);
+  const [projecten,   setProjecten]   = useState([]);
+  const [laden,       setLaden]       = useState(true);
+  const [gebruiker,   setGebruiker]   = useState(null);
+  const [modaalOpen,  setModaalOpen]  = useState(false);
+  const [opslaan,     setOpslaan]     = useState(false);
+  const [nieuw, setNieuw] = useState({
+    naam: "", opdrachtgever: "", locatie: "",
+    boorlengte_m: "", diameter_mm: "",
+    materiaal: "PE100", bodemtype: "", bijzonderheden: "",
+  });
 
-  async function laadData() {
+  useEffect(() => { laadProjecten(); laadGebruiker(); }, []);
+
+  async function laadProjecten() {
     try {
-      const [proj, lijst] = await Promise.all([
-        getProjectMetContext(id),
-        getProjecten(),
-      ]);
-      setProject(proj);
-      setProjecten(lijst);
-      setBewerkData({
-        naam: proj.naam ?? "",
-        opdrachtgever: proj.opdrachtgever ?? "",
-        locatie: proj.locatie ?? "",
-        boorlengte_m: proj.boorlengte_m ?? "",
-        diameter_mm: proj.diameter_mm ?? "",
-        materiaal: proj.materiaal ?? "PE100",
-        bodemtype: proj.bodemtype ?? "",
-        bijzonderheden: proj.bijzonderheden ?? "",
-        status: proj.status ?? "actief",
-      });
+      const data = await getProjecten();
+      setProjecten(data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -47,17 +32,29 @@ export default function ProjectDetailPagina() {
     }
   }
 
-  async function handleOpslaan(e) {
+  async function laadGebruiker() {
+    try {
+      const mod = await import("@/lib/supabase");
+      const sb  = mod.createClient ? mod.createClient() : mod.default;
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        setGebruiker({ email: user.email, naam: user.user_metadata?.full_name ?? null });
+      }
+    } catch { /* optioneel */ }
+  }
+
+  async function handleMaakProject(e) {
     e.preventDefault();
     setOpslaan(true);
     try {
-      await updateProject(id, {
-        ...bewerkData,
-        boorlengte_m: bewerkData.boorlengte_m ? Number(bewerkData.boorlengte_m) : null,
-        diameter_mm: bewerkData.diameter_mm ? Number(bewerkData.diameter_mm) : null,
+      const proj = await maakProject({
+        ...nieuw,
+        boorlengte_m: nieuw.boorlengte_m ? Number(nieuw.boorlengte_m) : null,
+        diameter_mm:  nieuw.diameter_mm  ? Number(nieuw.diameter_mm)  : null,
       });
-      await laadData();
-      setBewerkModaal(false);
+      setModaalOpen(false);
+      setNieuw({ naam: "", opdrachtgever: "", locatie: "", boorlengte_m: "", diameter_mm: "", materiaal: "PE100", bodemtype: "", bijzonderheden: "" });
+      router.push(`/project/${proj.id}`);
     } catch (err) {
       console.error(err);
     } finally {
@@ -65,270 +62,169 @@ export default function ProjectDetailPagina() {
     }
   }
 
-  const risicoBadge = (risico) => {
-    const stijlen = {
-      rood: "bg-red-50 text-red-600 border-red-200",
-      oranje: "bg-orange-50 text-orange-600 border-orange-200",
-      groen: "bg-green-50 text-green-600 border-green-200",
-    };
-    return (
-      <span className={`text-xs border px-2 py-0.5 rounded-full font-medium ${stijlen[risico] || ""}`}>
-        ● {risico}
-      </span>
-    );
+  // Status kleur
+  const statusKleur = (status) => {
+    if (!status) return "bg-gray-100 text-gray-500";
+    const s = status.toLowerCase();
+    if (s.includes("actief"))       return "bg-green-100 text-green-700";
+    if (s.includes("uitvoering"))   return "bg-blue-100 text-blue-700";
+    if (s.includes("afgerond"))     return "bg-gray-100 text-gray-600";
+    if (s.includes("hold"))         return "bg-yellow-100 text-yellow-700";
+    return "bg-gray-100 text-gray-500";
   };
-
-  if (laden) {
-    return (
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar projecten={[]} actiefProjectId={id} />
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-gray-400">Laden...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar projecten={[]} />
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-red-500">Project niet gevonden.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const tabs = [
-    { id: "details", label: "Projectinformatie", icon: "📋" },
-    { id: "trace", label: "Tracé", icon: "📍" },
-    { id: "kruisingen", label: "Kruisingen", icon: "⚡", count: project.kruisingen?.length ?? 0 },
-    { id: "chat", label: "AI Assistent", icon: "🛠" },
-  ];
-
-  const velden = [
-    { label: "Projectnaam", key: "naam" },
-    { label: "Opdrachtgever", key: "opdrachtgever" },
-    { label: "Locatie", key: "locatie" },
-    { label: "Boorlengte", key: "boorlengte_m", format: (v) => v ? `${v} m` : "—" },
-    { label: "Diameter", key: "diameter_mm", format: (v) => v ? `Ø${v} mm` : "—" },
-    { label: "Materiaal", key: "materiaal" },
-    { label: "Bodemtype", key: "bodemtype" },
-    { label: "Status", key: "status" },
-    { label: "Bijzonderheden", key: "bijzonderheden" },
-  ];
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar projecten={projecten} actiefProjectId={id} />
+      <Sidebar gebruiker={gebruiker} />
 
-      {/* Project tabs sidebar */}
-      <aside className="w-44 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4">
-        <div className="px-3 mb-2">
-          <div className="text-xs text-gray-400 font-medium px-3 mb-1">{project.naam}</div>
-        </div>
-        <nav className="flex flex-col gap-0.5 px-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActieveTab(tab.id)}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 w-full text-left ${
-                actieveTab === tab.id
-                  ? "bg-blue-50 text-blue-700 font-medium"
-                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              }`}
-            >
-              <span className="text-sm">{tab.icon}</span>
-              <span className="flex-1 truncate">{tab.label}</span>
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Hoofdinhoud */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-          <h1 className="text-sm font-semibold text-gray-900">
-            {tabs.find(t => t.id === actieveTab)?.icon} {tabs.find(t => t.id === actieveTab)?.label}
-          </h1>
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            {project.locatie && <span>📍 {project.locatie}</span>}
-            {project.boorlengte_m && <span>{project.boorlengte_m} m</span>}
-            {project.diameter_mm && <span>Ø{project.diameter_mm} mm</span>}
+      <main className="flex-1 min-w-0 p-6 overflow-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Projecten</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {laden ? "Laden…" : `${projecten.length} project${projecten.length !== 1 ? "en" : ""}`}
+            </p>
           </div>
-        </header>
-
-        <div className="flex-1 overflow-auto">
-
-          {/* Projectinformatie */}
-          {actieveTab === "details" && (
-            <div className="p-6 max-w-lg">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-gray-900">Projectinformatie</h2>
-                <button
-                  onClick={() => setBewerkModaal(true)}
-                  className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  ✏️ Bewerken
-                </button>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                {velden.map(({ label, key, format }, i) => (
-                  <div key={key} className={`flex items-start justify-between gap-4 px-4 py-3 ${i !== 0 ? "border-t border-gray-100" : ""}`}>
-                    <span className="text-xs text-gray-400 font-medium flex-shrink-0">{label}</span>
-                    <span className="text-xs text-gray-900 text-right font-medium">
-                      {format ? format(project[key]) : project[key] || <span className="text-gray-300">—</span>}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Tracé */}
-          {actieveTab === "trace" && (
-            <div className="p-6 max-w-4xl mx-auto">
-              {project.boortrace_geojson ? (
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <pre className="text-xs text-gray-600 overflow-auto">
-                    {JSON.stringify(project.boortrace_geojson, null, 2)}
-                  </pre>
-                </div>
-              ) : (
-                <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-                  <div className="text-3xl mb-3">📍</div>
-                  <p className="text-gray-600 text-sm font-medium">Nog geen tracé toegevoegd</p>
-                  <p className="text-gray-400 text-xs mt-1 max-w-xs mx-auto">Upload een GeoJSON of voer coördinaten in.</p>
-                  <div className="mt-4 flex gap-2 justify-center">
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors">GeoJSON uploaden</button>
-                    <button className="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold px-4 py-2 rounded-lg transition-colors">Coördinaten invoeren</button>
-                  </div>
-                </div>
-              )}
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                {[
-                  { label: "Boorlengte", waarde: project.boorlengte_m ? `${project.boorlengte_m} m` : "—" },
-                  { label: "Diameter", waarde: project.diameter_mm ? `Ø${project.diameter_mm} mm` : "—" },
-                  { label: "Materiaal", waarde: project.materiaal ?? "—" },
-                  { label: "Bodemtype", waarde: project.bodemtype ?? "—" },
-                  { label: "Locatie", waarde: project.locatie ?? "—" },
-                  { label: "Kruisingen", waarde: project.kruisingen?.length ?? 0 },
-                ].map(({ label, waarde }, i) => (
-                  <div key={i} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-                    <div className="text-xs text-gray-400 mb-1">{label}</div>
-                    <div className="text-sm font-semibold text-gray-900">{waarde}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Kruisingen */}
-          {actieveTab === "kruisingen" && (
-            <div className="p-6 max-w-4xl mx-auto">
-              <h2 className="text-base font-semibold text-gray-900 mb-4">Gedetecteerde kruisingen</h2>
-              {project.kruisingen?.length === 0 ? (
-                <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-                  <div className="text-3xl mb-3">⚡</div>
-                  <p className="text-gray-500 text-sm">Nog geen kruisingen geregistreerd.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {project.kruisingen.map((k) => (
-                    <div key={k.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{k.leidingtype}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">{k.netbeheerder}</div>
-                          {k.aanbeveling && <div className="text-xs text-gray-500 mt-2 max-w-lg">{k.aanbeveling}</div>}
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                          {risicoBadge(k.risico)}
-                          <span className="text-xs text-gray-400">{k.afstand_cm} cm</span>
-                          {k.diepte_m && <span className="text-xs text-gray-400">{k.diepte_m} m diep</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* AI Assistent */}
-          {actieveTab === "chat" && (
-            <div className="h-full p-4">
-              <div className="h-full max-w-4xl mx-auto">
-                <PrescanChat projectId={id} projectNaam={project.naam} />
-              </div>
-            </div>
-          )}
+          <button
+            onClick={() => setModaalOpen(true)}
+            className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+          >
+            + Nieuw project
+          </button>
         </div>
-      </main>
 
-      {/* Bewerk modaal */}
-      {bewerkModaal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl" style={{ animation: "fadeUp 0.2s ease" }}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900 text-sm">Project bewerken</h2>
-              <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">✕</button>
+        {/* Projectenlijst */}
+        {laden ? (
+          <div className="flex items-center justify-center h-48">
+            <p className="text-sm text-gray-400">Laden…</p>
+          </div>
+        ) : projecten.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 bg-white border border-gray-200 rounded-xl text-center gap-3">
+            <div className="text-3xl">📁</div>
+            <div>
+              <p className="text-sm font-medium text-gray-700">Nog geen projecten</p>
+              <p className="text-xs text-gray-400 mt-1">Maak je eerste project aan om te beginnen.</p>
             </div>
-            <form onSubmit={handleOpslaan} className="p-5 flex flex-col gap-4">
-              {[
-                { label: "Projectnaam *", key: "naam", required: true },
-                { label: "Opdrachtgever", key: "opdrachtgever" },
-                { label: "Locatie", key: "locatie" },
-                { label: "Boorlengte (m)", key: "boorlengte_m", type: "number" },
-                { label: "Diameter (mm)", key: "diameter_mm", type: "number" },
-                { label: "Bodemtype", key: "bodemtype" },
-              ].map(({ label, key, required, type }) => (
-                <div key={key}>
-                  <label className="block text-xs text-gray-500 mb-1.5 font-medium">{label}</label>
-                  <input
-                    type={type || "text"}
-                    value={bewerkData[key]}
-                    onChange={(e) => setBewerkData(prev => ({ ...prev, [key]: e.target.value }))}
-                    required={required}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
+            <button
+              onClick={() => setModaalOpen(true)}
+              className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+            >
+              + Nieuw project
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            {/* Tabelheader */}
+            <div className="grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Project</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Opdrachtgever</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Locatie</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+              <span />
+            </div>
+
+            {/* Rijen */}
+            {projecten.map((proj, i) => (
+              <button
+                key={proj.id}
+                onClick={() => router.push(`/project/${proj.id}`)}
+                className={`grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 items-center w-full px-5 py-3.5 text-left hover:bg-orange-50 transition-colors ${
+                  i !== 0 ? "border-t border-gray-100" : ""
+                }`}
+              >
+                <div>
+                  <div className="text-sm font-medium text-gray-900 truncate">{proj.naam}</div>
+                  {proj.boorlengte_m && (
+                    <div className="text-xs text-gray-400 mt-0.5">{proj.boorlengte_m} m · {proj.diameter_mm ? `Ø${proj.diameter_mm} mm` : ""}</div>
+                  )}
+                </div>
+                <div className="text-sm text-gray-600 truncate">{proj.opdrachtgever || "—"}</div>
+                <div className="text-sm text-gray-600 truncate">{proj.locatie || "—"}</div>
+                <div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusKleur(proj.status)}`}>
+                    {proj.status || "—"}
+                  </span>
+                </div>
+                <div className="text-gray-400 text-sm">→</div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Nieuw project modaal ────────────────────────── */}
+        {modaalOpen && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="text-sm font-semibold text-gray-800">Nieuw project aanmaken</h2>
+                <button onClick={() => setModaalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              </div>
+              <form onSubmit={handleMaakProject} className="p-5 space-y-3">
+                {[
+                  { label: "Projectnaam *",     key: "naam",          type: "text",   required: true  },
+                  { label: "Opdrachtgever",      key: "opdrachtgever", type: "text",   required: false },
+                  { label: "Locatie / adres",    key: "locatie",       type: "text",   required: false },
+                  { label: "Boorlengte (m)",     key: "boorlengte_m",  type: "number", required: false },
+                  { label: "Diameter (mm)",      key: "diameter_mm",   type: "number", required: false },
+                  { label: "Bodemtype",          key: "bodemtype",     type: "text",   required: false },
+                ].map(({ label, key, type, required }) => (
+                  <div key={key}>
+                    <label className="text-xs text-gray-500 font-medium block mb-1">{label}</label>
+                    <input
+                      type={type}
+                      required={required}
+                      value={nieuw[key] ?? ""}
+                      onChange={e => setNieuw(n => ({ ...n, [key]: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                    />
+                  </div>
+                ))}
+
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Materiaal</label>
+                  <select
+                    value={nieuw.materiaal}
+                    onChange={e => setNieuw(n => ({ ...n, materiaal: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                  >
+                    {["PE100", "PE80", "PVC", "Staal", "GVK", "Anders"].map(m => (
+                      <option key={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Bijzonderheden</label>
+                  <textarea
+                    value={nieuw.bijzonderheden}
+                    onChange={e => setNieuw(n => ({ ...n, bijzonderheden: e.target.value }))}
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none resize-none"
                   />
                 </div>
-              ))}
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Buismateriaal</label>
-                <select value={bewerkData.materiaal} onChange={(e) => setBewerkData(prev => ({ ...prev, materiaal: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors">
-                  {["PE100", "PE80", "Staal", "GVK", "PVC", "Anders"].map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Status</label>
-                <select value={bewerkData.status} onChange={(e) => setBewerkData(prev => ({ ...prev, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors">
-                  {["actief", "afgerond", "on-hold"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">Bijzonderheden</label>
-                <textarea value={bewerkData.bijzonderheden} onChange={(e) => setBewerkData(prev => ({ ...prev, bijzonderheden: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 transition-colors resize-none" />
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
-                <button type="submit" disabled={opslaan} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">{opslaan ? "Opslaan..." : "Opslaan"}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setModaalOpen(false)}
+                    className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Annuleren
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={opslaan || !nieuw.naam}
+                    className="flex-1 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                  >
+                    {opslaan ? "Aanmaken…" : "Project aanmaken"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
