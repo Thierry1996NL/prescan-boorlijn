@@ -52,57 +52,112 @@ function rdNaarWgs84(x, y) {
   return [5.38720621 + sumE / 3600, 52.15517440 + sumN / 3600];
 }
 
-// ─── DXF → GeoJSON ──────────────────────────────────────────────
-async function dxfNaarGeoJson(tekst) {
+// ─── DXF → GeoJSON (ingebouwde parser – geen npm pakket nodig) ──
+// Ondersteunt: LINE, LWPOLYLINE, POLYLINE, POINT, ARC, CIRCLE
+function dxfNaarGeoJson(tekst) {
   try {
-    const DxfParser = (await import("dxf-parser")).default;
-    const dxf = new DxfParser().parseSync(tekst);
     const features = [];
+    // DXF is sectie-gebaseerd; we parsen de ENTITIES sectie
+    const entitiesMatch = tekst.match(/\s0\s+SECTION[\s\S]*?\s0\s+ENDSEC/g) ?? [];
+    let entitiesTekst = tekst;
+    for (const sectie of entitiesMatch) {
+      if (sectie.includes("ENTITIES")) { entitiesTekst = sectie; break; }
+    }
 
-    for (const ent of dxf.entities ?? []) {
-      try {
-        if (ent.type === "LINE") {
-          const s = ent.start ?? ent.vertices?.[0] ?? {};
-          const e = ent.end   ?? ent.vertices?.[1] ?? {};
-          features.push({
-            type: "Feature",
-            geometry: { type: "LineString", coordinates: [rdNaarWgs84(s.x, s.y), rdNaarWgs84(e.x, e.y)] },
-            properties: { layer: ent.layer ?? "0" },
-          });
-        } else if (ent.type === "LWPOLYLINE" || ent.type === "POLYLINE") {
-          const coords = (ent.vertices ?? []).map(v => rdNaarWgs84(v.x, v.y));
-          if (coords.length >= 2) {
+    // Splits op entity-grenzen (groepcode 0)
+    const regels = entitiesTekst.split(/\r?\n/);
+    let i = 0;
+
+    function volgendeWaarde(groep) {
+      // Zoek de volgende regel met deze groepcode na huidige positie
+      for (let j = i; j < regels.length - 1; j++) {
+        if (regels[j].trim() === String(groep)) return regels[j + 1].trim();
+      }
+      return null;
+    }
+
+    while (i < regels.length) {
+      const regel = regels[i].trim();
+      if (regel === "0" && i + 1 < regels.length) {
+        const type = regels[i + 1].trim();
+        const start = i;
+
+        // Zoek einde van deze entity (volgende groepcode 0)
+        let einde = i + 2;
+        while (einde < regels.length) {
+          if (regels[einde].trim() === "0") break;
+          einde++;
+        }
+
+        // Parseer entity tussen start en einde
+        const blok = regels.slice(start, einde);
+        const getW = (code) => {
+          for (let k = 0; k < blok.length - 1; k++) {
+            if (blok[k].trim() === String(code)) return parseFloat(blok[k + 1].trim());
+          }
+          return 0;
+        };
+        const getLaag = () => {
+          for (let k = 0; k < blok.length - 1; k++) {
+            if (blok[k].trim() === "8") return blok[k + 1].trim();
+          }
+          return "0";
+        };
+
+        try {
+          if (type === "LINE") {
+            const x1 = getW(10), y1 = getW(20);
+            const x2 = getW(11), y2 = getW(21);
+            features.push({
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: [rdNaarWgs84(x1, y1), rdNaarWgs84(x2, y2)] },
+              properties: { layer: getLaag() },
+            });
+          } else if (type === "LWPOLYLINE" || type === "POLYLINE") {
+            const coords = [];
+            for (let k = 0; k < blok.length - 1; k++) {
+              if (blok[k].trim() === "10" && blok[k + 2]?.trim() === "20") {
+                const x = parseFloat(blok[k + 1].trim());
+                const y = parseFloat(blok[k + 3].trim());
+                if (!isNaN(x) && !isNaN(y)) coords.push(rdNaarWgs84(x, y));
+              }
+            }
+            if (coords.length >= 2) {
+              features.push({
+                type: "Feature",
+                geometry: { type: "LineString", coordinates: coords },
+                properties: { layer: getLaag() },
+              });
+            }
+          } else if (type === "POINT") {
+            const x = getW(10), y = getW(20);
+            features.push({
+              type: "Feature",
+              geometry: { type: "Point", coordinates: rdNaarWgs84(x, y) },
+              properties: { layer: getLaag() },
+            });
+          } else if (type === "ARC" || type === "CIRCLE") {
+            const cx = getW(10), cy = getW(20), r = getW(40);
+            const startA = (type === "ARC" ? getW(50) : 0) * Math.PI / 180;
+            const endA   = (type === "ARC" ? getW(51) : 360) * Math.PI / 180;
+            const n = 24;
+            const step = (endA - startA) / n;
+            const coords = Array.from({ length: n + 1 }, (_, idx) => {
+              const a = startA + idx * step;
+              return rdNaarWgs84(cx + r * Math.cos(a), cy + r * Math.sin(a));
+            });
             features.push({
               type: "Feature",
               geometry: { type: "LineString", coordinates: coords },
-              properties: { layer: ent.layer ?? "0" },
+              properties: { layer: getLaag() },
             });
           }
-        } else if (ent.type === "POINT") {
-          const p = ent.position ?? {};
-          features.push({
-            type: "Feature",
-            geometry: { type: "Point", coordinates: rdNaarWgs84(p.x ?? 0, p.y ?? 0) },
-            properties: { layer: ent.layer ?? "0" },
-          });
-        } else if (ent.type === "ARC" || ent.type === "CIRCLE") {
-          // Benader boog als polyline (16 punten)
-          const cx = ent.center?.x ?? 0, cy = ent.center?.y ?? 0, r = ent.radius ?? 1;
-          const startA = (ent.startAngle ?? 0) * Math.PI / 180;
-          const endA   = (ent.endAngle   ?? Math.PI * 2) * Math.PI / 180;
-          const stappen = 16;
-          const hoekStap = (endA - startA) / stappen;
-          const coords = Array.from({ length: stappen + 1 }, (_, i) => {
-            const a = startA + i * hoekStap;
-            return rdNaarWgs84(cx + r * Math.cos(a), cy + r * Math.sin(a));
-          });
-          features.push({
-            type: "Feature",
-            geometry: { type: "LineString", coordinates: coords },
-            properties: { layer: ent.layer ?? "0" },
-          });
-        }
-      } catch { /* skip kapotte entity */ }
+        } catch { /* skip kapotte entity */ }
+
+        i = einde;
+      } else {
+        i++;
+      }
     }
 
     return { type: "FeatureCollection", features };
@@ -231,7 +286,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
       if (ext === "dxf") {
         const tekst = await res.text();
-        geoJson = await dxfNaarGeoJson(tekst);
+        geoJson = dxfNaarGeoJson(tekst);
       } else if (ext === "gml" || ext === "xml") {
         const tekst = await res.text();
         geoJson = gmlNaarGeoJson(tekst);
