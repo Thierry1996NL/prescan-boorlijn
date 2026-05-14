@@ -175,7 +175,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      const kaart = L.map(mapElRef.current, { zoomControl: true, preferCanvas: true }).setView([52.3, 5.3], 13);
+      // Herstel opgeslagen kaartpositie, of gebruik standaard Nederland
+      const opgeslagenPos = initInst.__kaartPositie;
+      const startCenter = opgeslagenPos ? [opgeslagenPos.lat, opgeslagenPos.lng] : [52.3, 5.3];
+      const startZoom   = opgeslagenPos?.zoom ?? 13;
+
+      const kaart = L.map(mapElRef.current, { zoomControl: true, preferCanvas: true }).setView(startCenter, startZoom);
       kaartRef.current = kaart;
 
       L.tileLayer(
@@ -262,7 +267,13 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   async function handleOpslaan() {
     setOpslaanActief(true);
     try {
-      await updateProject(projectId, { laag_instellingen: JSON.stringify(instellingen) });
+      // Voeg huidige kaartpositie toe aan instellingen
+      const teOpslaan = { ...instellingen };
+      if (kaartRef.current) {
+        const c = kaartRef.current.getCenter();
+        teOpslaan.__kaartPositie = { lat: c.lat, lng: c.lng, zoom: kaartRef.current.getZoom() };
+      }
+      await updateProject(projectId, { laag_instellingen: JSON.stringify(teOpslaan) });
       onOpgeslagen?.();
       setIngeslagen(true);
       setTimeout(() => setIngeslagen(false), 2500);
