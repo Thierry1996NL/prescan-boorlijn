@@ -2,35 +2,31 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getProjectMetContext, updateProject } from "@/lib/supabase-queries";
+import { getProjectMetContext, updateProject, supabase } from "@/lib/supabase-queries";
 import Sidebar from "@/components/Sidebar";
 import dynamic from "next/dynamic";
 
-const MapTrace   = dynamic(() => import("@/components/MapTrace"),   { ssr: false });
-const PrescanChat = dynamic(() => import("@/components/PrescanChat"), { ssr: false });
+const MapTrace      = dynamic(() => import("@/components/MapTrace"),      { ssr: false });
+const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr: false });
 
-// ──────────────────────────────────────────────────────────────────
-//  Labels voor de stap-header
-// ──────────────────────────────────────────────────────────────────
 const STAP_LABELS = {
   1:  "Projectinformatie",
   2:  "Ontwerp inladen",
-  3:  "Boorlijn tekenen",
-  4:  "Oppervlakteanalyse",
-  5:  "Diepteligging & dwarsprofiel",
-  6:  "Machine- & bentonietlocatie",
-  7:  "Eindontwerp",
-  8:  "AI optimalisatie & kruisingen",
-  9:  "Pre-scan en tekeningen",
-  10: "Contactpersonen (KLIC)",
-  11: "Exporteren",
+  3:  "Ontwerp bekijken",
+  4:  "Boorlijn tekenen",
+  5:  "Oppervlakteanalyse",
+  6:  "Diepteligging & dwarsprofiel",
+  7:  "Machine- & bentonietlocatie",
+  8:  "Eindontwerp",
+  9:  "AI optimalisatie & kruisingen",
+  10: "Pre-scan en tekeningen",
+  11: "Contactpersonen (KLIC)",
+  12: "Exporteren",
 };
 
-const STAP_MAX_UITGEWERKT = 7; // stappen 8-11 zijn nog leeg
+const STAP_MAX_UITGEWERKT = 8;
 
-// ──────────────────────────────────────────────────────────────────
-//  Hoofd component
-// ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 export default function ProjectDetailPagina() {
   const { id }   = useParams();
   const router   = useRouter();
@@ -40,13 +36,14 @@ export default function ProjectDetailPagina() {
   const [actieveStap, setActieveStap] = useState(1);
   const [gebruiker,   setGebruiker]   = useState(null);
 
-  // Bewerkformulier (stap 1)
+  // stap 1 – bewerken
   const [bewerkModaal, setBewerkModaal] = useState(false);
   const [bewerkData,   setBewerkData]   = useState({});
   const [opslaan,      setOpslaan]      = useState(false);
 
-  // Bestand-upload status (stap 2)
-  const [uploadStatus, setUploadStatus] = useState({});
+  // stap 2 – uploads
+  const [uploadStatus,  setUploadStatus]  = useState({});
+  const [uploadLaden,   setUploadLaden]   = useState({});
 
   useEffect(() => { laadProject(); }, [id]);
 
@@ -65,18 +62,10 @@ export default function ProjectDetailPagina() {
         bijzonderheden: data.bijzonderheden ?? "",
         status:         data.status         ?? "actief",
       });
-
-      // Gebruiker ophalen
       try {
-        const { supabase } = await import("@/lib/supabase-queries");
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setGebruiker({
-            email: user.email,
-            naam:  user.user_metadata?.full_name ?? null,
-          });
-        }
-      } catch { /* auth optioneel */ }
+        if (user) setGebruiker({ email: user.email, naam: user.user_metadata?.full_name ?? null });
+      } catch {}
     } catch (err) {
       console.error(err);
     } finally {
@@ -95,25 +84,59 @@ export default function ProjectDetailPagina() {
       });
       await laadProject();
       setBewerkModaal(false);
+    } catch (err) { console.error(err); }
+    finally { setOpslaan(false); }
+  }
+
+  // ── Upload bestand naar Supabase Storage ───────────────────────
+  async function uploadBestand(type, bestand) {
+    setUploadLaden(s => ({ ...s, [type]: true }));
+    setUploadStatus(s => ({ ...s, [type]: "Uploaden…" }));
+    try {
+      const pad = `${id}/${type}_${Date.now()}_${bestand.name}`;
+      const { data: uploadData, error } = await supabase.storage
+        .from("project-bestanden")
+        .upload(pad, bestand, { upsert: true });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from("project-bestanden")
+        .getPublicUrl(uploadData.path);
+
+      // Huidige bestandslijst ophalen en uitbreiden
+      const huidigeMeta = (() => {
+        try { return JSON.parse(project.bestanden_meta || "[]"); }
+        catch { return []; }
+      })();
+
+      const nieuweEntry = {
+        id:       `${type}_${Date.now()}`,
+        type,
+        naam:     bestand.name,
+        url:      urlData.publicUrl,
+        pad:      uploadData.path,
+        grootte:  bestand.size,
+      };
+
+      const nieuweMeta = [...huidigeMeta.filter(b => b.type !== type), nieuweEntry];
+      await updateProject(id, { bestanden_meta: JSON.stringify(nieuweMeta) });
+      await laadProject();
+
+      setUploadStatus(s => ({ ...s, [type]: `✓ ${bestand.name}` }));
     } catch (err) {
       console.error(err);
+      setUploadStatus(s => ({ ...s, [type]: `✗ ${err.message}` }));
     } finally {
-      setOpslaan(false);
+      setUploadLaden(s => ({ ...s, [type]: false }));
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  //  Laadscherm / niet gevonden
-  // ────────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────
   if (laden) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar
-          actiefProjectId={id}
-          actieveStap={1}
-          onStapWijzigen={() => {}}
-          gebruiker={null}
-        />
+        <Sidebar actiefProjectId={id} actieveStap={1} onStapWijzigen={() => {}} />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-gray-400">Laden…</p>
         </div>
@@ -124,36 +147,35 @@ export default function ProjectDetailPagina() {
   if (!project) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar gebruiker={null} />
+        <Sidebar />
         <div className="flex-1 flex flex-col items-center justify-center gap-3">
           <p className="text-sm text-gray-500">Project niet gevonden.</p>
-          <button
-            onClick={() => router.push("/projecten")}
-            className="text-xs text-orange-600 hover:underline"
-          >
-            ← Terug naar projecten
-          </button>
+          <button onClick={() => router.push("/projecten")} className="text-xs text-orange-600 hover:underline">← Terug</button>
         </div>
       </div>
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  //  Stap-content mapping
-  // ────────────────────────────────────────────────────────────────
+  // Bestaande uploads voor stap 2
+  const bestaandeBestanden = (() => {
+    try { return JSON.parse(project.bestanden_meta || "[]"); }
+    catch { return []; }
+  })();
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Stap content
+  // ═══════════════════════════════════════════════════════════════
   function renderStap() {
     switch (actieveStap) {
-      // ── Stap 1: Projectinformatie ────────────────────────
+
+      // ── Stap 1: Projectinformatie ──────────────────────────────
       case 1:
         return (
           <div className="max-w-2xl">
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-semibold text-gray-800">Projectgegevens</h2>
-                <button
-                  onClick={() => setBewerkModaal(true)}
-                  className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
-                >
+                <button onClick={() => setBewerkModaal(true)} className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
                   Bewerken
                 </button>
               </div>
@@ -162,8 +184,8 @@ export default function ProjectDetailPagina() {
                   { label: "Projectnaam",   waarde: project.naam },
                   { label: "Opdrachtgever", waarde: project.opdrachtgever },
                   { label: "Locatie",       waarde: project.locatie },
-                  { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`      : null },
-                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`     : null },
+                  { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`     : null },
+                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`    : null },
                   { label: "Materiaal",     waarde: project.materiaal },
                   { label: "Bodemtype",     waarde: project.bodemtype },
                   { label: "Status",        waarde: project.status },
@@ -184,22 +206,21 @@ export default function ProjectDetailPagina() {
               </div>
             </div>
 
-            {/* Bewerkmodaal */}
             {bewerkModaal && (
               <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                     <h3 className="text-sm font-semibold text-gray-800">Project bewerken</h3>
-                    <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+                    <button onClick={() => setBewerkModaal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
                   </div>
                   <form onSubmit={handleOpslaan} className="p-5 space-y-3">
                     {[
-                      { label: "Projectnaam",   key: "naam",          type: "text"   },
-                      { label: "Opdrachtgever", key: "opdrachtgever", type: "text"   },
-                      { label: "Locatie",       key: "locatie",       type: "text"   },
-                      { label: "Boorlengte (m)",key: "boorlengte_m",  type: "number" },
-                      { label: "Diameter (mm)", key: "diameter_mm",   type: "number" },
-                      { label: "Bodemtype",     key: "bodemtype",     type: "text"   },
+                      { label: "Projectnaam",      key: "naam",          type: "text"   },
+                      { label: "Opdrachtgever",     key: "opdrachtgever", type: "text"   },
+                      { label: "Locatie",           key: "locatie",       type: "text"   },
+                      { label: "Boorlengte (m)",    key: "boorlengte_m",  type: "number" },
+                      { label: "Diameter (mm)",     key: "diameter_mm",   type: "number" },
+                      { label: "Bodemtype",         key: "bodemtype",     type: "text"   },
                     ].map(({ label, key, type }) => (
                       <div key={key}>
                         <label className="text-xs text-gray-500 font-medium block mb-1">{label}</label>
@@ -213,36 +234,19 @@ export default function ProjectDetailPagina() {
                     ))}
                     <div>
                       <label className="text-xs text-gray-500 font-medium block mb-1">Materiaal</label>
-                      <select
-                        value={bewerkData.materiaal ?? "PE100"}
-                        onChange={e => setBewerkData(d => ({ ...d, materiaal: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
-                      >
-                        {["PE100", "PE80", "PVC", "Staal", "GVK", "Anders"].map(m => (
-                          <option key={m}>{m}</option>
-                        ))}
+                      <select value={bewerkData.materiaal ?? "PE100"} onChange={e => setBewerkData(d => ({ ...d, materiaal: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+                        {["PE100","PE80","PVC","Staal","GVK","Anders"].map(m => <option key={m}>{m}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 font-medium block mb-1">Status</label>
-                      <select
-                        value={bewerkData.status ?? "actief"}
-                        onChange={e => setBewerkData(d => ({ ...d, status: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
-                      >
-                        {["actief", "in uitvoering", "afgerond", "on hold"].map(s => (
-                          <option key={s}>{s}</option>
-                        ))}
+                      <select value={bewerkData.status ?? "actief"} onChange={e => setBewerkData(d => ({ ...d, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+                        {["actief","in uitvoering","afgerond","on hold"].map(s => <option key={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 font-medium block mb-1">Bijzonderheden</label>
-                      <textarea
-                        value={bewerkData.bijzonderheden ?? ""}
-                        onChange={e => setBewerkData(d => ({ ...d, bijzonderheden: e.target.value }))}
-                        rows={3}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none resize-none"
-                      />
+                      <textarea rows={3} value={bewerkData.bijzonderheden ?? ""} onChange={e => setBewerkData(d => ({ ...d, bijzonderheden: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none" />
                     </div>
                     <div className="flex gap-3 pt-2">
                       <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Annuleren</button>
@@ -257,98 +261,105 @@ export default function ProjectDetailPagina() {
           </div>
         );
 
-      // ── Stap 2: Ontwerp inladen ──────────────────────────
+      // ── Stap 2: Ontwerp inladen ────────────────────────────────
       case 2:
         return (
           <div className="max-w-2xl space-y-4">
             <p className="text-sm text-gray-500">
-              Laad een bestaand leidingenontwerp in als referentielaag. Ondersteunde typen: LS, MS, Gas, Water en Databekabeling.
+              Upload leidingenontwerpen per type. De bestanden worden opgeslagen en als lagen weergegeven in stap 3.
             </p>
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
               {[
-                { type: "LS",    label: "Laagspanning (LS)",        accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
-                { type: "MS",    label: "Middenspanning (MS)",       accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
-                { type: "Gas",   label: "Gas",                       accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
-                { type: "Water", label: "Water",                     accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
-                { type: "Data",  label: "Data / Telecom",            accept: ".gml,.kml,.dxf,.shp,.zip,.geojson" },
+                { type: "LS",    label: "Laagspanning (LS)",        accept: ".dxf,.gml,.kml,.geojson,.zip" },
+                { type: "MS",    label: "Middenspanning (MS)",       accept: ".dxf,.gml,.kml,.geojson,.zip" },
+                { type: "Gas",   label: "Gas",                       accept: ".dxf,.gml,.kml,.geojson,.zip" },
+                { type: "Water", label: "Water",                     accept: ".dxf,.gml,.kml,.geojson,.zip" },
+                { type: "Data",  label: "Data / Telecom",            accept: ".dxf,.gml,.kml,.geojson,.zip" },
                 { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", accept: ".zip,.gml" },
-              ].map(({ type, label, accept }) => (
-                <div key={type} className="flex items-center justify-between gap-4 px-5 py-3">
-                  <div>
-                    <div className="text-xs font-medium text-gray-800">{label}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{accept}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {uploadStatus[type] && (
-                      <span className="text-xs text-green-600 font-medium">{uploadStatus[type]}</span>
-                    )}
-                    <label className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer text-gray-600 transition-colors">
-                      Bestand kiezen
+              ].map(({ type, label, accept }) => {
+                const bestaand = bestaandeBestanden.find(b => b.type === type);
+                const isLaden  = uploadLaden[type];
+                const status   = uploadStatus[type] ?? (bestaand ? `✓ ${bestaand.naam}` : null);
+                return (
+                  <div key={type} className="flex items-center justify-between gap-4 px-5 py-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-gray-800">{label}</div>
+                      {status ? (
+                        <div className={`text-xs mt-0.5 ${status.startsWith("✓") ? "text-green-600" : status.startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
+                          {status}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400 mt-0.5">{accept}</div>
+                      )}
+                    </div>
+                    <label className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg cursor-pointer text-gray-600 transition-colors flex-shrink-0 ${isLaden ? "opacity-50 cursor-wait" : "hover:bg-gray-50"}`}>
+                      {isLaden ? "Uploaden…" : bestaand ? "Vervangen" : "Bestand kiezen"}
                       <input
                         type="file"
                         accept={accept}
                         className="hidden"
+                        disabled={isLaden}
                         onChange={e => {
-                          if (e.target.files?.[0]) {
-                            setUploadStatus(s => ({ ...s, [type]: `✓ ${e.target.files[0].name}` }));
-                            // TODO: upload naar Supabase storage / verwerk geometrie
-                          }
+                          if (e.target.files?.[0]) uploadBestand(type, e.target.files[0]);
                         }}
                       />
                     </label>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <p className="text-xs text-gray-400">
-              De bestanden worden als referentielaag weergegeven op de kaart in stap 3.
-              Uploaden naar Supabase storage wordt in een volgende versie volledig uitgewerkt.
+              Bestanden worden opgeslagen in Supabase Storage onder bucket <code className="bg-gray-100 px-1 rounded">project-bestanden</code>.
+              Zorg dat deze bucket bestaat in je Supabase project (Storage → New bucket → "project-bestanden" → Public).
             </p>
           </div>
         );
 
-      // ── Stap 3: Boorlijn tekenen ─────────────────────────
+      // ── Stap 3: Ontwerp bekijken ───────────────────────────────
       case 3:
         return (
-          <div className="h-full">
-            <MapTrace
-              projectId={id}
-              project={project}
-              onOpgeslagen={laadProject}
-            />
-          </div>
+          <OntwerpKaart
+            project={project}
+            projectId={id}
+            onOpgeslagen={laadProject}
+          />
         );
 
-      // ── Stap 4: Oppervlakteanalyse ───────────────────────
+      // ── Stap 4: Boorlijn tekenen ───────────────────────────────
       case 4:
+        return (
+          <MapTrace
+            projectId={id}
+            project={project}
+            onOpgeslagen={laadProject}
+          />
+        );
+
+      // ── Stap 5: Oppervlakteanalyse ─────────────────────────────
+      case 5:
         return (
           <div className="space-y-4">
             <p className="text-sm text-gray-500 max-w-2xl">
-              De oppervlakteanalyse bepaalt welke verhardingstypes de boorlijn kruist via de BGT (Basisregistratie Grootschalige Topografie).
-              Dit is relevant voor herstelkosten, vergunningen en risico's.
+              Oppervlakteanalyse via BGT: welke verhardingstypen kruist de boorlijn?
             </p>
-
-            {/* BGT legenda */}
             <div className="bg-white border border-gray-200 rounded-xl max-w-2xl divide-y divide-gray-100">
               <div className="px-5 py-3 border-b border-gray-100">
-                <h3 className="text-xs font-semibold text-gray-700">BGT oppervlaktypen langs de boorlijn</h3>
+                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">BGT oppervlaktypen</h3>
               </div>
               {[
-                { type: "Gesloten verharding",  kleur: "bg-gray-400",   risico: "Hoog",    toelichting: "Asfalt / beton — vergunning gemeente, hogere herstelkosten" },
-                { type: "Open verharding",      kleur: "bg-yellow-400", risico: "Middel",  toelichting: "Klinkers / tegels — documenteer exact voor herstel" },
-                { type: "Onverhard",            kleur: "bg-amber-200",  risico: "Middel",  toelichting: "Grind / zand — kans op verzakking groter" },
-                { type: "Groenvoorziening",     kleur: "bg-green-400",  risico: "Laag",    toelichting: "Grasland / berm — eenvoudigst te herstellen" },
-                { type: "Water",                kleur: "bg-blue-400",   risico: "Hoog",    toelichting: "Sloot / vijver — waterkering en vergunning vereist" },
+                { type: "Gesloten verharding",  kleur: "bg-gray-400",   risico: "Hoog",   toelichting: "Asfalt / beton — vergunning gemeente, hogere herstelkosten" },
+                { type: "Open verharding",      kleur: "bg-yellow-400", risico: "Middel", toelichting: "Klinkers / tegels — documenteer exact voor herstel" },
+                { type: "Onverhard",            kleur: "bg-amber-200",  risico: "Middel", toelichting: "Grind / zand — kans op verzakking groter" },
+                { type: "Groenvoorziening",     kleur: "bg-green-400",  risico: "Laag",   toelichting: "Grasland / berm — eenvoudigst te herstellen" },
+                { type: "Water",                kleur: "bg-blue-400",   risico: "Hoog",   toelichting: "Sloot / vijver — waterkering en vergunning vereist" },
               ].map(({ type, kleur, risico, toelichting }) => (
                 <div key={type} className="flex items-start gap-3 px-5 py-3">
                   <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 ${kleur}`} />
-                  <div className="flex-1">
+                  <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-gray-800">{type}</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        risico === "Hoog"   ? "bg-red-100 text-red-600"
-                        : risico === "Middel" ? "bg-orange-100 text-orange-600"
-                        : "bg-green-100 text-green-600"
+                        risico === "Hoog" ? "bg-red-100 text-red-600" : risico === "Middel" ? "bg-orange-100 text-orange-600" : "bg-green-100 text-green-600"
                       }`}>{risico}</span>
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">{toelichting}</div>
@@ -356,77 +367,53 @@ export default function ProjectDetailPagina() {
                 </div>
               ))}
             </div>
-
-            {/* Kaart met BGT */}
             <div className="bg-white border border-gray-200 rounded-xl p-4 max-w-4xl">
-              <p className="text-xs text-gray-500 mb-3">
-                De oppervlaktelaag wordt weergegeven op de boorlijnkaart (stap 3). Activeer de BGT-laag via de laagbeheer-knop op de kaart.
-              </p>
-              <MapTrace
-                projectId={id}
-                project={project}
-                beginTab="analyse"
-                onOpgeslagen={laadProject}
-              />
+              <p className="text-xs text-gray-500 mb-3">BGT-laag activeren via kaart (analysepunten tab):</p>
+              <MapTrace projectId={id} project={project} beginTab="analyse" onOpgeslagen={laadProject} />
             </div>
           </div>
         );
 
-      // ── Stap 5: Diepteligging & dwarsprofiel ─────────────
-      case 5:
+      // ── Stap 6: Diepteligging ──────────────────────────────────
+      case 6:
         return (
           <div>
             <p className="text-sm text-gray-500 max-w-2xl mb-4">
-              Stel de diepteligging in langs de boorlijn en vul het dwarsprofiel. Verwerk ook de bodemgesteldheid per segment.
+              Stel de diepteligging in langs de boorlijn en vul het dwarsprofiel. Verwerk ook de bodemgesteldheid.
             </p>
-            <MapTrace
-              projectId={id}
-              project={project}
-              beginTab="diepte"
-              onOpgeslagen={laadProject}
-            />
+            <MapTrace projectId={id} project={project} beginTab="diepte" onOpgeslagen={laadProject} />
           </div>
         );
 
-      // ── Stap 6: Machine & bentonietlocatie ───────────────
-      case 6:
+      // ── Stap 7: Machine & bentonietlocatie ─────────────────────
+      case 7:
         return (
           <div className="space-y-4 max-w-2xl">
-            <p className="text-sm text-gray-500">
-              Bepaal de locatie van de HDD-boormachine (insteekpunt) en de bentoniet-menginstallatie / opvangput.
-            </p>
-
+            <p className="text-sm text-gray-500">Bepaal de locaties van de HDD-boormachine en bentoniet-installatie.</p>
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
               {[
                 {
-                  titel: "HDD Boormachine",
-                  icon: "🏗️",
-                  sleutel: "machine_locatie",
-                  beschrijving: "Insteekpunt – ruimte voor boormachine, hydraulische unit en materiaalopslag.",
+                  titel: "HDD Boormachine", icon: "🏗️",
                   velden: [
-                    { label: "Adres / omschrijving", key: "machine_adres",       type: "text"   },
-                    { label: "Oppervlak benodigd (m²)", key: "machine_opp",       type: "number" },
-                    { label: "Bijzonderheden",          key: "machine_bijz",      type: "text"   },
+                    { label: "Adres / omschrijving",    key: "machine_adres", type: "text"   },
+                    { label: "Oppervlak benodigd (m²)", key: "machine_opp",   type: "number" },
+                    { label: "Bijzonderheden",          key: "machine_bijz",  type: "text"   },
                   ],
                 },
                 {
-                  titel: "Bentoniet tank & opvangput",
-                  icon: "🛢️",
-                  sleutel: "bentoniet_locatie",
-                  beschrijving: "Locatie menginstallatie en opvangput voor bentonietspecie.",
+                  titel: "Bentoniet tank & opvangput", icon: "🛢️",
                   velden: [
-                    { label: "Adres / omschrijving",    key: "bentoniet_adres",   type: "text"   },
-                    { label: "Oppervlak benodigd (m²)", key: "bentoniet_opp",     type: "number" },
-                    { label: "Bijzonderheden",          key: "bentoniet_bijz",    type: "text"   },
+                    { label: "Adres / omschrijving",    key: "bentoniet_adres", type: "text"   },
+                    { label: "Oppervlak benodigd (m²)", key: "bentoniet_opp",   type: "number" },
+                    { label: "Bijzonderheden",          key: "bentoniet_bijz",  type: "text"   },
                   ],
                 },
-              ].map(({ titel, icon, beschrijving, velden }) => (
+              ].map(({ titel, icon, velden }) => (
                 <div key={titel} className="px-5 py-4">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-3">
                     <span>{icon}</span>
                     <span className="text-sm font-semibold text-gray-800">{titel}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mb-3">{beschrijving}</p>
                   <div className="space-y-3">
                     {velden.map(({ label, key, type }) => (
                       <div key={key}>
@@ -434,11 +421,7 @@ export default function ProjectDetailPagina() {
                         <input
                           type={type}
                           defaultValue={project[key] ?? ""}
-                          onBlur={async e => {
-                            try {
-                              await updateProject(id, { [key]: e.target.value });
-                            } catch {}
-                          }}
+                          onBlur={async e => { try { await updateProject(id, { [key]: e.target.value }); } catch {} }}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
                           placeholder="—"
                         />
@@ -448,22 +431,14 @@ export default function ProjectDetailPagina() {
                 </div>
               ))}
             </div>
-
-            <p className="text-xs text-gray-400">
-              Kaart-integratie voor het aanwijzen van locaties via de kaart volgt in een volgende versie.
-            </p>
           </div>
         );
 
-      // ── Stap 7: Eindontwerp (read-only) ──────────────────
-      case 7:
+      // ── Stap 8: Eindontwerp ────────────────────────────────────
+      case 8:
         return (
           <div className="space-y-5">
-            <p className="text-sm text-gray-500 max-w-2xl">
-              Hieronder staat een read-only overzicht van het volledige ontwerp: projectinformatie, boorlijn en dwarsprofiel.
-            </p>
-
-            {/* Projectinformatie samenvatting */}
+            <p className="text-sm text-gray-500 max-w-2xl">Read-only overzicht van het volledige ontwerp.</p>
             <div className="bg-white border border-gray-200 rounded-xl max-w-2xl">
               <div className="px-5 py-3 border-b border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Projectinformatie</h3>
@@ -473,11 +448,10 @@ export default function ProjectDetailPagina() {
                   { label: "Project",       waarde: project.naam },
                   { label: "Opdrachtgever", waarde: project.opdrachtgever },
                   { label: "Locatie",       waarde: project.locatie },
-                  { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`   : "—" },
-                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`  : "—" },
-                  { label: "Materiaal",     waarde: project.materiaal     ?? "—" },
-                  { label: "Bodemtype",     waarde: project.bodemtype     ?? "—" },
-                  { label: "Status",        waarde: project.status        ?? "—" },
+                  { label: "Boorlengte",    waarde: project.boorlengte_m ? `${project.boorlengte_m} m`  : "—" },
+                  { label: "Diameter",      waarde: project.diameter_mm  ? `Ø${project.diameter_mm} mm` : "—" },
+                  { label: "Materiaal",     waarde: project.materiaal    ?? "—" },
+                  { label: "Status",        waarde: project.status       ?? "—" },
                 ].map(({ label, waarde }, i) => (
                   <div key={i} className="flex items-start justify-between gap-6 px-5 py-2.5">
                     <span className="text-xs text-gray-500 font-medium flex-shrink-0">{label}</span>
@@ -486,44 +460,31 @@ export default function ProjectDetailPagina() {
                 ))}
               </div>
             </div>
-
-            {/* Kaart – read-only modus */}
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden max-w-4xl">
               <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
                 <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boorlijn & dwarsprofiel</h3>
                 <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">read-only</span>
               </div>
               <div className="p-4 pointer-events-none opacity-90">
-                <MapTrace
-                  projectId={id}
-                  project={project}
-                  readOnly={true}
-                  onOpgeslagen={() => {}}
-                />
+                <MapTrace projectId={id} project={project} readOnly={true} onOpgeslagen={() => {}} />
               </div>
             </div>
           </div>
         );
 
-      // ── Stap 8-11: Nog niet uitgewerkt ───────────────────
+      // ── Stap 9–12: Nog niet uitgewerkt ────────────────────────
       default:
         return (
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <div className="text-4xl mb-4">🚧</div>
-            <h2 className="text-base font-semibold text-gray-700 mb-1">
-              {STAP_LABELS[actieveStap]}
-            </h2>
-            <p className="text-sm text-gray-400">
-              Deze stap wordt uitgewerkt zodra stap 1 t/m 7 stabiel zijn.
-            </p>
+            <h2 className="text-base font-semibold text-gray-700 mb-1">{STAP_LABELS[actieveStap]}</h2>
+            <p className="text-sm text-gray-400">Wordt uitgewerkt zodra stap 1 t/m 8 stabiel zijn.</p>
           </div>
         );
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  //  Render
-  // ────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar
@@ -535,35 +496,27 @@ export default function ProjectDetailPagina() {
       />
 
       <main className="flex-1 min-w-0 flex flex-col">
-        {/* ── Stap-header ──────────────────────────────── */}
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-20 flex-shrink-0">
           <div>
-            <div className="text-xs text-gray-400">Stap {actieveStap} van 11</div>
-            <h1 className="text-base font-semibold text-gray-900 mt-0.5">
-              {STAP_LABELS[actieveStap]}
-            </h1>
+            <div className="text-xs text-gray-400">Stap {actieveStap} van 12</div>
+            <h1 className="text-base font-semibold text-gray-900 mt-0.5">{STAP_LABELS[actieveStap]}</h1>
           </div>
           <div className="flex items-center gap-2">
             {actieveStap > 1 && (
-              <button
-                onClick={() => setActieveStap(s => s - 1)}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
-              >
+              <button onClick={() => setActieveStap(s => s - 1)} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
                 ← Vorige
               </button>
             )}
             {actieveStap < STAP_MAX_UITGEWERKT && (
-              <button
-                onClick={() => setActieveStap(s => s + 1)}
-                className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
-              >
+              <button onClick={() => setActieveStap(s => s + 1)} className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
                 Volgende →
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Stap-inhoud ──────────────────────────────── */}
+        {/* Content */}
         <div className="flex-1 p-6 overflow-auto">
           {renderStap()}
         </div>
