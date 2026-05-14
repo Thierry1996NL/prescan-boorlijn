@@ -1,5 +1,5 @@
 // app/api/bgt/route.js
-// Oppervlaktype via OpenStreetMap Overpass API
+// Oppervlaktype via OpenStreetMap - meerdere Overpass mirrors
 
 const OSM_NAAR_NL = {
   asphalt: { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣", herstel: "Hoog" },
@@ -26,6 +26,19 @@ const LANDUSE_NAAR_NL = {
   farmland: { label: "Landbouw", kleur: "#d97706", icoon: "🌾", herstel: "Laag" },
 };
 
+async function vraagOverpass(endpoint, query) {
+  const url = `${endpoint}?data=${encodeURIComponent(query)}`;
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "*/*",
+      "User-Agent": "PrescanBoorlijnAI/1.0 (https://prescan-boorlijn.vercel.app)",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const lat = parseFloat(searchParams.get("lat"));
@@ -35,45 +48,44 @@ export async function GET(request) {
     return Response.json({ error: "lat en lng zijn verplicht" }, { status: 400 });
   }
 
-  const query = `[out:json][timeout:8];(way(around:20,${lat},${lng})[highway][surface];way(around:20,${lat},${lng})[surface];way(around:20,${lat},${lng})[landuse];);out tags 5;`;
+  const query = `[out:json][timeout:8];(way(around:20,${lat},${lng})[surface];way(around:20,${lat},${lng})[highway][surface];);out tags 5;`;
 
-  try {
-    // Gebruik GET request met query parameter
-    const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  const MIRRORS = [
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+  ];
 
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(9000),
-    });
+  let lastFout = null;
 
-    if (!res.ok) {
-      return Response.json({ laag: null, type: null, fout: `HTTP ${res.status}` });
+  for (const mirror of MIRRORS) {
+    try {
+      const json = await vraagOverpass(mirror, query);
+      const elements = json.elements ?? [];
+
+      for (const el of elements) {
+        const tags = el.tags ?? {};
+        const surface = tags.surface ?? null;
+        const landuse = tags.landuse ?? null;
+
+        if (surface) {
+          const vertaald = OSM_NAAR_NL[surface] ?? { label: surface, kleur: "#6b7280", icoon: "📍", herstel: "?" };
+          return Response.json({ laag: "osm", type: surface, vertaald, bron: mirror });
+        }
+
+        if (landuse && LANDUSE_NAAR_NL[landuse]) {
+          return Response.json({ laag: "osm_landuse", type: landuse, vertaald: LANDUSE_NAAR_NL[landuse], bron: mirror });
+        }
+      }
+
+      // Mirror werkte maar geen data gevonden
+      return Response.json({ laag: null, type: null, elementen: elements.length, bron: mirror });
+
+    } catch (e) {
+      lastFout = `${mirror}: ${e.message}`;
+      continue;
     }
-
-    const json = await res.json();
-    const elements = json.elements ?? [];
-
-    for (const el of elements) {
-      const tags = el.tags ?? {};
-      const surface = tags.surface ?? null;
-      const landuse = tags.landuse ?? null;
-
-      if (surface && OSM_NAAR_NL[surface]) {
-        return Response.json({ laag: "osm", type: surface, vertaald: OSM_NAAR_NL[surface], bron: "openstreetmap" });
-      }
-
-      if (surface) {
-        return Response.json({ laag: "osm", type: surface, vertaald: { label: surface, kleur: "#6b7280", icoon: "📍", herstel: "?" }, bron: "openstreetmap" });
-      }
-
-      if (landuse && LANDUSE_NAAR_NL[landuse]) {
-        return Response.json({ laag: "osm_landuse", type: landuse, vertaald: LANDUSE_NAAR_NL[landuse], bron: "openstreetmap" });
-      }
-    }
-
-    return Response.json({ laag: null, type: null, elementen: elements.length });
-  } catch (e) {
-    return Response.json({ laag: null, type: null, fout: e.message });
   }
+
+  return Response.json({ laag: null, type: null, fout: lastFout });
 }
