@@ -15,39 +15,59 @@ const BGT_NAAR_NL = {
   "rietland en moeras": { label: "Riet / Moeras", kleur: "#0369a1", icoon: "🌾", herstel: "Speciaal" },
 };
 
+// Point-in-polygon test (ray casting)
+function puntInPolygon(lat, lng, polygon) {
+  let inside = false;
+  const coords = polygon[0] ?? [];
+  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    const [xi, yi] = coords[i];
+    const [xj, yj] = coords[j];
+    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function puntInGeometry(lat, lng, geometry) {
+  if (!geometry) return false;
+  if (geometry.type === "Polygon") return puntInPolygon(lat, lng, geometry.coordinates);
+  if (geometry.type === "MultiPolygon") return geometry.coordinates.some(p => puntInPolygon(lat, lng, p));
+  return false;
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const lat = parseFloat(searchParams.get("lat"));
   const lng = parseFloat(searchParams.get("lng"));
   if (!lat || !lng) return Response.json({ error: "lat/lng verplicht" }, { status: 400 });
 
-  // CQL filter: punt moet BINNEN het polygon liggen
-  const filter = `INTERSECTS(geometry,POINT(${lng} ${lat}))`;
+  const delta = 0.0004;
+  const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
 
+  // Volgorde: gras/berm eerst, dan verharding
   const COLLECTIES = [
-    { naam: "wegdeel",               prop: "fysiek_voorkomen" },
-    { naam: "ondersteunendwegdeel",  prop: "fysiek_voorkomen" },
     { naam: "begroeidterreindeel",   prop: "fysiek_voorkomen" },
     { naam: "onbegroeidterreindeel", prop: "fysiek_voorkomen" },
+    { naam: "ondersteunendwegdeel",  prop: "fysiek_voorkomen" },
     { naam: "waterdeel",             prop: "type_water" },
+    { naam: "wegdeel",               prop: "fysiek_voorkomen" },
   ];
 
   for (const { naam, prop } of COLLECTIES) {
     try {
-      const params = new URLSearchParams({
-        filter,
-        "filter-lang": "cql-text",
-        limit: "1",
-        f: "json",
-      });
-      const url = `https://api.pdok.nl/lv/bgt/ogc/v1/collections/${naam}/items?${params}`;
+      const url = `https://api.pdok.nl/lv/bgt/ogc/v1/collections/${naam}/items?bbox=${bbox}&limit=20&f=json`;
       const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
       if (!res.ok) continue;
 
       const json = await res.json();
       const actief = (json.features ?? []).filter(f => f.properties?.status === "bestaand");
 
+      // Zoek het object dat het klikpunt BEVAT
       for (const feature of actief) {
+        const bevat = puntInGeometry(lat, lng, feature.geometry);
+        if (!bevat) continue;
+
         const props = feature.properties ?? {};
         const type = props[prop] ?? null;
         if (!type || type === "transitie") continue;
