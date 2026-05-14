@@ -54,13 +54,10 @@ function afstandM(p1, p2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVerplaatst }) {
+function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVerplaatst, dieptePunten, setDieptePunten, diepteModus, setDiepteModus }) {
   const svgRef = useRef(null);
-  const [dragIdx, setDragIdx] = useState(null);         // analyse punt drag
-  const [diepteSlepen, setDiepteSlepen] = useState(null); // {idx} dieptepunt drag
-  const [dieptePunten, setDieptePunten] = useState([
-    { positieM: 0, diepte: -1.5 },
-  ]); // wordt geïnitialiseerd als totaalM bekend is
+  const [dragIdx, setDragIdx] = useState(null);
+  const [diepteSlepen, setDiepteSlepen] = useState(null);
 
   const gesorteerdeAnalyse = [...analysePunten].sort((a, b) => a.positieM - b.positieM);
 
@@ -94,11 +91,11 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
 
   // Zorg dat dieptepunten altijd start en eind hebben
   const alleDieptePunten = (() => {
-    const sorted = [...dieptePunten].sort((a, b) => a.positieM - b.positieM);
-    if (!sorted.find(p => p.positieM === 0)) sorted.unshift({ positieM: 0, diepte: -1.5 });
-    const eindIdx = sorted.findIndex(p => p.positieM >= totaalM);
-    if (eindIdx === -1) sorted.push({ positieM: totaalM, diepte: sorted[sorted.length-1]?.diepte ?? -1.5 });
-    return sorted;
+    const punten = dieptePunten.map(p => ({
+      ...p,
+      positieM: p.id === "eind" ? totaalM : p.positieM,
+    }));
+    return punten.sort((a, b) => a.positieM - b.positieM);
   })();
 
   // Interpoleer boring diepte op positie m
@@ -155,25 +152,28 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
 
   function handleMouseMove(e) {
     const { x, y } = getSvgCoords(e);
-    if (dragIdx !== null) {
-      onAnalysePuntVerplaatst?.(dragIdx, svgXNaarM(x));
-    }
+    if (dragIdx !== null) onAnalysePuntVerplaatst?.(dragIdx, svgXNaarM(x));
     if (diepteSlepen !== null) {
-      const nieuweDiepte = Math.round(svgYNaarD(y) * 10) / 10;
+      const nieuweDiepte = Math.round(Math.max(-6, Math.min(0, svgYNaarD(y))) * 10) / 10;
       setDieptePunten(prev => prev.map((p, i) => i === diepteSlepen ? { ...p, diepte: nieuweDiepte } : p));
     }
   }
 
   function handleMouseUp() { setDragIdx(null); setDiepteSlepen(null); }
 
-  // Dubbelklik op boring om dieptepunt toe te voegen
+  // Klik op profiel om dieptepunt toe te voegen (alleen in diepteModus)
   function handleProfielKlik(e) {
+    if (!diepteModus) return;
     if (dragIdx !== null || diepteSlepen !== null) return;
     const { x, y } = getSvgCoords(e);
     const m = Math.round(svgXNaarM(x));
-    const d = Math.round(svgYNaarD(y) * 10) / 10;
-    if (m > 0 && m < totaalM) {
-      setDieptePunten(prev => [...prev.filter(p => Math.abs(p.positieM - m) > 2), { positieM: m, diepte: d }].sort((a,b) => a.positieM - b.positieM));
+    const d = Math.round(Math.max(-6, Math.min(0, svgYNaarD(y))) * 10) / 10;
+    if (m > 1 && m < totaalM - 1) {
+      const nieuweId = `dp-${Date.now()}`;
+      setDieptePunten(prev => [
+        ...prev.filter(p => Math.abs((p.id === "eind" ? totaalM : p.positieM) - m) > 2),
+        { id: nieuweId, positieM: m, diepte: d, vast: false },
+      ]);
     }
   }
 
@@ -182,12 +182,31 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-wrap gap-2">
         <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
-        <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
-          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring {project?.materiaal ?? ""} Ø{project?.diameter_mm ?? "—"}mm</span>
-          <span className="flex items-center gap-1.5 text-blue-600 font-medium">↘ Intrede {inD}m / {inHoek}°</span>
-          <span className="flex items-center gap-1.5 text-blue-600 font-medium">↗ Uittrede {uitD}m / {uitHoek}°</span>
-          <span className="text-gray-300">Totaal: {Math.round(totaalM)}m</span>
-          {gesorteerdeAnalyse.length > 0 && <span className="text-gray-300">Sleep bolletjes · dubbelklik profiel = dieptepunt</span>}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-4 border-t-2 border-blue-600 inline-block" /> Boring {project?.materiaal ?? ""} Ø{project?.diameter_mm ?? "—"}mm</span>
+            <span className="text-blue-600 font-medium">↘ Intrede {alleDieptePunten[0]?.diepte}m / {inHoek}°</span>
+            <span className="text-blue-600 font-medium">↗ Uittrede {alleDieptePunten[alleDieptePunten.length-1]?.diepte}m / {uitHoek}°</span>
+            <span className="text-gray-300">Totaal: {Math.round(totaalM)}m</span>
+          </div>
+          <button
+            onClick={() => setDiepteModus(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+              diepteModus
+                ? "bg-blue-600 text-white border-blue-600"
+                : "text-blue-600 border-blue-200 hover:bg-blue-50"
+            }`}
+          >
+            {diepteModus ? "✓ Klik op profiel om punt toe te voegen" : "+ Dieptepunt toevoegen"}
+          </button>
+          {dieptePunten.filter(p => !p.vast).length > 0 && (
+            <button
+              onClick={() => setDieptePunten(prev => prev.filter(p => p.vast))}
+              className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+            >
+              Wis dieptepunten
+            </button>
+          )}
         </div>
       </div>
 
@@ -279,16 +298,18 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
           <circle cx={xPos(totaalM)} cy={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
           <text x={xPos(totaalM)-10} y={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="700">{alleDieptePunten[alleDieptePunten.length-1]?.diepte}m ↗</text>
 
-          {/* Tussenpunten — sleepbaar omhoog/omlaag */}
-          {alleDieptePunten.filter(p => p.positieM > 0 && p.positieM < totaalM).map((p, i) => {
-            const realIdx = dieptePunten.findIndex(x => x.positieM === p.positieM);
+          {/* Tussenpunten — sleepbaar omhoog/omlaag, rechtsklik = verwijderen */}
+          {alleDieptePunten.filter(p => !p.vast).map((p, i) => {
+            const idx = dieptePunten.findIndex(x => x.id === p.id);
             return (
-              <g key={i} style={{ cursor: "ns-resize" }}
-                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen(realIdx); }}
-                onDoubleClick={(ev) => { ev.stopPropagation(); setDieptePunten(prev => prev.filter(x => x.positieM !== p.positieM)); }}>
+              <g key={p.id} style={{ cursor: "ns-resize" }}
+                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen(idx); }}
+                onDoubleClick={(ev) => { ev.stopPropagation(); setDieptePunten(prev => prev.filter(x => x.id !== p.id)); }}>
                 <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
-                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="6" fill="#2563eb" stroke="white" strokeWidth="2" />
-                <text x={xPos(p.positieM)} y={yPos(p.diepte)-10} textAnchor="middle" fontSize="8" fill="#2563eb" fontWeight="600">{p.diepte}m</text>
+                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="8" fill="#2563eb" stroke="white" strokeWidth="2.5" />
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="8" fill="white" fontWeight="700" dominantBaseline="middle">↕</text>
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)-14} textAnchor="middle" fontSize="8" fill="#2563eb" fontWeight="600">{p.diepte}m</text>
+                <text x={xPos(p.positieM)} y={PAD.top+plotH+27} textAnchor="middle" fontSize="7.5" fill="#6b7280">{p.positieM}m</text>
               </g>
             );
           })}
@@ -341,40 +362,24 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
         </svg>
 
         {/* Diepte invoer voor start/eind */}
-        <div className="flex items-center gap-6 mt-3 pt-3 border-t border-gray-100">
+        <div className="flex items-center gap-6 mt-3 pt-3 border-t border-gray-100 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-xs text-blue-600 font-semibold">↘ Intredediepte</span>
-            <input
-              type="number" step="0.1" min={minD} max={0}
+            <input type="number" step="0.1" min="-6" max="0"
               value={alleDieptePunten[0]?.diepte ?? -1.5}
-              onChange={e => {
-                const d = parseFloat(e.target.value);
-                setDieptePunten(prev => {
-                  const nieuw = prev.filter(p => p.positieM !== 0);
-                  return [{ positieM: 0, diepte: d }, ...nieuw];
-                });
-              }}
-              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none"
-            />
+              onChange={e => setDieptePunten(prev => prev.map(p => p.id === "start" ? { ...p, diepte: parseFloat(e.target.value) } : p))}
+              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none" />
             <span className="text-xs text-gray-400">m</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-blue-600 font-semibold">↗ Uittredediepte</span>
-            <input
-              type="number" step="0.1" min={minD} max={0}
+            <input type="number" step="0.1" min="-6" max="0"
               value={alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5}
-              onChange={e => {
-                const d = parseFloat(e.target.value);
-                setDieptePunten(prev => {
-                  const nieuw = prev.filter(p => p.positieM < totaalM);
-                  return [...nieuw, { positieM: totaalM, diepte: d }];
-                });
-              }}
-              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none"
-            />
+              onChange={e => setDieptePunten(prev => prev.map(p => p.id === "eind" ? { ...p, diepte: parseFloat(e.target.value) } : p))}
+              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none" />
             <span className="text-xs text-gray-400">m</span>
           </div>
-          <span className="text-xs text-gray-400 ml-auto">Dubbelklik op profiel = dieptepunt toevoegen · Dubbelklik op punt = verwijderen</span>
+          {diepteModus && <span className="text-xs text-blue-600">Klik in het profiel om een dieptepunt toe te voegen</span>}
         </div>
       </div>
     </div>
@@ -387,20 +392,26 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const mapRef = useRef(null);
   const leafletMapRef = useRef(null);
   const laagRefs = useRef({});
-  const polylineRef = useRef(null);      // de tracélijn
-  const controlepuntMarkersRef = useRef([]); // sleepbare vierkante markers
-  const traceLaagRef = useRef(null);     // opgeslagen GeoJSON laag
-  const modeRef = useRef("niets");       // "niets" | "tekenen" | "bewerken" | "analyse"
+  const polylineRef = useRef(null);
+  const controlepuntMarkersRef = useRef([]);
+  const traceLaagRef = useRef(null);
+  const modeRef = useRef("niets");
+  const dieptepuntMarkersRef = useRef([]); // kaartmarkers voor dieptepunten
 
   const [actieveLagen, setActieveLagen] = useState(Object.fromEntries(LAGEN.map(l => [l.id, l.standaardAan])));
-  const [modus, setModus] = useState("niets"); // "niets" | "tekenen" | "bewerken" | "analyse"
-  const [controlePunten, setControlePunten] = useState([]); // [[lat,lng], ...]
-  const [analysePunten, setAnalysePunten] = useState([]);   // [{lat,lng,vertaald,positieM}, ...]
+  const [modus, setModus] = useState("niets");
+  const [controlePunten, setControlePunten] = useState([]);
+  const [analysePunten, setAnalysePunten] = useState([]);
   const [opgeslagen, setOpgeslagen] = useState(false);
   const [legendaOpen, setLegendaOpen] = useState(true);
   const [analyseBezig, setAnalyseBezig] = useState(false);
   const [toonVerwijderPopup, setToonVerwijderPopup] = useState(false);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
+  const [dieptePunten, setDieptePunten] = useState([
+    { id: "start", positieM: 0, diepte: -1.5, vast: true },
+    { id: "eind", positieM: null, diepte: -1.5, vast: true },
+  ]);
+  const [diepteModus, setDiepteModus] = useState(false);
 
   // Sync modus ref
   useEffect(() => { modeRef.current = modus; }, [modus]);
@@ -417,6 +428,67 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
   const actievePunten = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
 
+  // Converteer positieM naar lat/lng op de boorlijn
+  function positieMNaarLatLng(positieM, pts) {
+    if (pts.length < 2) return null;
+    let afstand = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const segLen = afstandM(pts[i], pts[i + 1]);
+      if (afstand + segLen >= positieM) {
+        const t = (positieM - afstand) / segLen;
+        return [pts[i][0] + t * (pts[i+1][0] - pts[i][0]), pts[i][1] + t * (pts[i+1][1] - pts[i][1])];
+      }
+      afstand += segLen;
+    }
+    return pts[pts.length - 1];
+  }
+
+  // Totale lijnlengte
+  function totaaleLijnLengte(pts) {
+    let t = 0;
+    for (let i = 1; i < pts.length; i++) t += afstandM(pts[i-1], pts[i]);
+    return t;
+  }
+
+  // Update dieptepunt markers op de kaart
+  useEffect(() => {
+    const kaart = leafletMapRef.current;
+    if (!kaart || typeof window === "undefined" || !window.L) return;
+    const L = window.L;
+    const pts = actievePunten;
+
+    // Verwijder oude markers
+    dieptepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
+    dieptepuntMarkersRef.current = [];
+
+    const totaalM = totaaleLijnLengte(pts);
+    if (pts.length < 2 || totaalM === 0) return;
+
+    dieptePunten.forEach((dp) => {
+      const posM = dp.id === "eind" ? totaalM : (dp.positieM ?? 0);
+      const latLng = positieMNaarLatLng(posM, pts);
+      if (!latLng) return;
+
+      const kleur = dp.vast ? "#2563eb" : "#1d4ed8";
+      const marker = L.marker(latLng, {
+        icon: L.divIcon({
+          className: "",
+          html: `<div style="
+            width:20px;height:20px;background:${kleur};
+            border:2.5px solid white;border-radius:3px;
+            transform:rotate(45deg);
+            box-shadow:0 2px 6px rgba(0,0,0,0.4);
+            display:flex;align-items:center;justify-content:center;
+          "><span style="transform:rotate(-45deg);color:white;font-size:8px;font-weight:700;">${dp.diepte}m</span></div>`,
+          iconSize: [20, 20], iconAnchor: [10, 10],
+        }),
+        interactive: false,
+        zIndexOffset: 500,
+      }).addTo(kaart);
+
+      dieptepuntMarkersRef.current.push(marker);
+    });
+  }, [dieptePunten, actievePunten.length]);
   // Init kaart
   useEffect(() => {
     if (typeof window === "undefined" || leafletMapRef.current) return;
@@ -803,7 +875,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     wisAnalysePunten();
     setControlePunten([]);
     setModus("niets");
+    setDieptePunten([
+      { id: "start", positieM: 0, diepte: -1.5, vast: true },
+      { id: "eind", positieM: null, diepte: -1.5, vast: true },
+    ]);
     const kaart = leafletMapRef.current;
+    dieptepuntMarkersRef.current.forEach(m => kaart?.removeLayer(m));
+    dieptepuntMarkersRef.current = [];
     if (hoverMarkerRef.current && kaart?.hasLayer(hoverMarkerRef.current)) kaart.removeLayer(hoverMarkerRef.current);
     if (traceLaagRef.current && kaart) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
   }
@@ -968,6 +1046,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           analysePunten={analysePunten}
           project={project}
           onAnalysePuntVerplaatst={handleAnalysePuntVerplaatst}
+          dieptePunten={dieptePunten}
+          setDieptePunten={setDieptePunten}
+          diepteModus={diepteModus}
+          setDiepteModus={setDiepteModus}
         />
       </div>
 
