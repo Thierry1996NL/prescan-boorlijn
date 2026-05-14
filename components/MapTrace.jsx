@@ -56,7 +56,330 @@ function afstandM(p1, p2) {
 
 function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVerplaatst }) {
   const svgRef = useRef(null);
-  const [dragIdx, setDragIdx] = useState(null);
+  const [dragIdx, setDragIdx] = useState(null);         // analyse punt drag
+  const [diepteSlepen, setDiepteSlepen] = useState(null); // {idx} dieptepunt drag
+  const [dieptePunten, setDieptePunten] = useState([
+    { positieM: 0, diepte: -1.5 },
+  ]); // wordt geïnitialiseerd als totaalM bekend is
+
+  const gesorteerdeAnalyse = [...analysePunten].sort((a, b) => a.positieM - b.positieM);
+
+  if (controlePunten.length < 2) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
+        </div>
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="text-3xl mb-3">📐</div>
+          <p className="text-sm text-gray-400 font-medium">Nog geen boorlijn getekend</p>
+          <p className="text-xs text-gray-300 mt-1">Teken een boorlijn om het dwarsprofiel te zien.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const W = 900, H = 240;
+  const PAD = { top: 20, right: 20, bottom: 45, left: 55 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  let totaalM = 0;
+  for (let i = 1; i < controlePunten.length; i++) totaalM += afstandM(controlePunten[i-1], controlePunten[i]);
+
+  const minD = -6, maxD = 1, bereik = maxD - minD;
+  const xPos = m => PAD.left + (Math.min(m, totaalM) / totaalM) * plotW;
+  const yPos = d => PAD.top + ((maxD - d) / bereik) * plotH;
+  const BAR_H = 28, BAR_Y = 8;
+
+  // Zorg dat dieptepunten altijd start en eind hebben
+  const alleDieptePunten = (() => {
+    const sorted = [...dieptePunten].sort((a, b) => a.positieM - b.positieM);
+    if (!sorted.find(p => p.positieM === 0)) sorted.unshift({ positieM: 0, diepte: -1.5 });
+    const eindIdx = sorted.findIndex(p => p.positieM >= totaalM);
+    if (eindIdx === -1) sorted.push({ positieM: totaalM, diepte: sorted[sorted.length-1]?.diepte ?? -1.5 });
+    return sorted;
+  })();
+
+  // Interpoleer boring diepte op positie m
+  function diepteOpM(m) {
+    const pts = alleDieptePunten;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (m >= pts[i].positieM && m <= pts[i+1].positieM) {
+        const t = (m - pts[i].positieM) / (pts[i+1].positieM - pts[i].positieM);
+        return pts[i].diepte + t * (pts[i+1].diepte - pts[i].diepte);
+      }
+    }
+    return pts[pts.length-1]?.diepte ?? -1.5;
+  }
+
+  // Boring lijn path
+  const boringPath = (() => {
+    const stappen = 50;
+    const punten = Array.from({ length: stappen + 1 }, (_, i) => {
+      const m = (i / stappen) * totaalM;
+      return `${xPos(m)},${yPos(diepteOpM(m))}`;
+    });
+    return `M ${punten.join(' L ')}`;
+  })();
+
+  // Intrede/uittrede hoek
+  const inD = alleDieptePunten[0]?.diepte ?? -1.5;
+  const uitD = alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5;
+  const inHoek = Math.abs(Math.atan2(Math.abs(inD), Math.min(totaalM * 0.2, 10)) * 180 / Math.PI).toFixed(1);
+  const uitHoek = Math.abs(Math.atan2(Math.abs(uitD), Math.min(totaalM * 0.2, 10)) * 180 / Math.PI).toFixed(1);
+
+  // Groepen voor straatwerk balk
+  const groepen = [];
+  if (gesorteerdeAnalyse.length > 0) {
+    if (gesorteerdeAnalyse[0].positieM > 0) groepen.push({ label: "?", kleur: "#e5e7eb", icoon: "", startM: 0, eindeM: gesorteerdeAnalyse[0].positieM });
+    gesorteerdeAnalyse.forEach((p, i) => {
+      const volgende = gesorteerdeAnalyse[i + 1];
+      groepen.push({ label: p.vertaald?.label ?? "?", kleur: p.vertaald?.kleur ?? "#9ca3af", icoon: p.vertaald?.icoon ?? "📍", startM: p.positieM, eindeM: volgende ? volgende.positieM : totaalM });
+    });
+  }
+  const overgangen = groepen.slice(1).map((g, i) => ({ m: groepen[i].eindeM }));
+
+  // SVG drag helpers
+  function getSvgCoords(e) {
+    if (!svgRef.current) return { x: 0, y: 0 };
+    const rect = svgRef.current.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (W / rect.width),
+      y: (e.clientY - rect.top) * (H / rect.height),
+    };
+  }
+
+  function svgXNaarM(svgX) { return Math.max(0, Math.min(totaalM, ((svgX - PAD.left) / plotW) * totaalM)); }
+  function svgYNaarD(svgY) { return Math.max(minD, Math.min(maxD, maxD - ((svgY - PAD.top) / plotH) * bereik)); }
+
+  function handleMouseMove(e) {
+    const { x, y } = getSvgCoords(e);
+    if (dragIdx !== null) {
+      onAnalysePuntVerplaatst?.(dragIdx, svgXNaarM(x));
+    }
+    if (diepteSlepen !== null) {
+      const nieuweDiepte = Math.round(svgYNaarD(y) * 10) / 10;
+      setDieptePunten(prev => prev.map((p, i) => i === diepteSlepen ? { ...p, diepte: nieuweDiepte } : p));
+    }
+  }
+
+  function handleMouseUp() { setDragIdx(null); setDiepteSlepen(null); }
+
+  // Dubbelklik op boring om dieptepunt toe te voegen
+  function handleProfielKlik(e) {
+    if (dragIdx !== null || diepteSlepen !== null) return;
+    const { x, y } = getSvgCoords(e);
+    const m = Math.round(svgXNaarM(x));
+    const d = Math.round(svgYNaarD(y) * 10) / 10;
+    if (m > 0 && m < totaalM) {
+      setDieptePunten(prev => [...prev.filter(p => Math.abs(p.positieM - m) > 2), { positieM: m, diepte: d }].sort((a,b) => a.positieM - b.positieM));
+    }
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-wrap gap-2">
+        <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
+        <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
+          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring {project?.materiaal ?? ""} Ø{project?.diameter_mm ?? "—"}mm</span>
+          <span className="flex items-center gap-1.5 text-blue-600 font-medium">↘ Intrede {inD}m / {inHoek}°</span>
+          <span className="flex items-center gap-1.5 text-blue-600 font-medium">↗ Uittrede {uitD}m / {uitHoek}°</span>
+          <span className="text-gray-300">Totaal: {Math.round(totaalM)}m</span>
+          {gesorteerdeAnalyse.length > 0 && <span className="text-gray-300">Sleep bolletjes · dubbelklik profiel = dieptepunt</span>}
+        </div>
+      </div>
+
+      {/* Straatwerk analyse balk */}
+      {groepen.length > 0 && (
+        <div className="px-5 pt-4 pb-2 border-b border-gray-100">
+          <div className="text-xs font-medium text-gray-500 mb-2">Straatwerk analyse</div>
+          <svg viewBox={`0 0 ${W} ${BAR_Y + BAR_H + 22}`} className="w-full" style={{ height: BAR_Y + BAR_H + 26 }}>
+            {groepen.map((g, i) => {
+              const x1 = xPos(g.startM), x2 = xPos(g.eindeM), breedte = Math.max(x2-x1, 2);
+              return (
+                <g key={i}>
+                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" />
+                  {breedte > 40 && <text x={x1+breedte/2} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{g.icoon} {g.label}</text>}
+                  {breedte > 25 && <text x={x1+breedte/2} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">{Math.round(g.eindeM-g.startM)}m</text>}
+                </g>
+              );
+            })}
+            <circle cx={xPos(0)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(0)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
+            <circle cx={xPos(totaalM)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(totaalM)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
+            {overgangen.map((o, i) => (
+              <g key={i}>
+                <line x1={xPos(o.m)} y1={BAR_Y-2} x2={xPos(o.m)} y2={BAR_Y+BAR_H+2} stroke="white" strokeWidth="2" />
+                <polygon points={`${xPos(o.m)},${BAR_Y-6} ${xPos(o.m)-4},${BAR_Y-2} ${xPos(o.m)+4},${BAR_Y-2}`} fill="#374151" />
+                <text x={xPos(o.m)} y={BAR_Y-8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
+              </g>
+            ))}
+            {/* Analyse bolletjes in balk — gesorteerd */}
+            {gesorteerdeAnalyse.map((p, i) => {
+              const x = xPos(p.positieM ?? 0);
+              const kleur = p.vertaald?.kleur ?? "#9ca3af";
+              return (
+                <g key={i} style={{ cursor: "ew-resize" }} onMouseDown={(ev) => { ev.preventDefault(); setDragIdx(i); }}>
+                  <circle cx={x} cy={BAR_Y+BAR_H/2} r="11" fill={kleur} stroke="white" strokeWidth="2.5" />
+                  <text x={x} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{i+1}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
+
+      {/* Profiel SVG */}
+      <div className="px-5 pt-3 pb-4"
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{ cursor: dragIdx !== null ? "ew-resize" : diepteSlepen !== null ? "ns-resize" : "default" }}
+      >
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 260 }}
+          onDoubleClick={handleProfielKlik}
+        >
+          {/* Achtergrond grond */}
+          <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
+          <rect x={PAD.left} y={yPos(0)} width={plotW} height={yPos(minD)-yPos(0)} fill="#d6c5a0" opacity="0.3" />
+
+          {/* Oppervlak stroken */}
+          {groepen.map((g, i) => <rect key={i} x={xPos(g.startM)} y={yPos(0)-6} width={Math.max(xPos(g.eindeM)-xPos(g.startM),2)} height={6} fill={g.kleur} opacity="0.6" />)}
+
+          {/* Maaiveld lijn */}
+          <line x1={PAD.left} y1={yPos(0)} x2={PAD.left+plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
+          <text x={PAD.left-4} y={yPos(0)+4} textAnchor="end" fontSize="8" fill="#9ca3af">0m</text>
+
+          {/* Grid */}
+          {[-1,-2,-3,-4,-5].map(d => (
+            <g key={d}>
+              <line x1={PAD.left-4} y1={yPos(d)} x2={PAD.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
+              <text x={PAD.left-6} y={yPos(d)+3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
+              <line x1={PAD.left} y1={yPos(d)} x2={PAD.left+plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
+            </g>
+          ))}
+          {[0,0.25,0.5,0.75,1].map(f => {
+            const m = f*totaalM, x = xPos(m);
+            return <g key={f}><line x1={x} y1={PAD.top+plotH} x2={x} y2={PAD.top+plotH+4} stroke="#d1d5db" strokeWidth="1" /><text x={x} y={PAD.top+plotH+13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text></g>;
+          })}
+
+          {/* Boring buis (gevuld gebied) */}
+          <path d={`${boringPath} L ${xPos(totaalM)},${yPos(minD)} L ${PAD.left},${yPos(minD)} Z`} fill="#2563eb" opacity="0.06" />
+          {/* Boring lijn */}
+          <path d={boringPath} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* Intredepunt */}
+          <circle cx={xPos(0)} cy={yPos(alleDieptePunten[0]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
+          <text x={xPos(0)+10} y={yPos(alleDieptePunten[0]?.diepte ?? -1.5)-5} fontSize="8" fill="#2563eb" fontWeight="700">↘ {alleDieptePunten[0]?.diepte}m</text>
+
+          {/* Uittredepunt */}
+          <circle cx={xPos(totaalM)} cy={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
+          <text x={xPos(totaalM)-10} y={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="700">{alleDieptePunten[alleDieptePunten.length-1]?.diepte}m ↗</text>
+
+          {/* Tussenpunten — sleepbaar omhoog/omlaag */}
+          {alleDieptePunten.filter(p => p.positieM > 0 && p.positieM < totaalM).map((p, i) => {
+            const realIdx = dieptePunten.findIndex(x => x.positieM === p.positieM);
+            return (
+              <g key={i} style={{ cursor: "ns-resize" }}
+                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen(realIdx); }}
+                onDoubleClick={(ev) => { ev.stopPropagation(); setDieptePunten(prev => prev.filter(x => x.positieM !== p.positieM)); }}>
+                <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
+                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="6" fill="#2563eb" stroke="white" strokeWidth="2" />
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)-10} textAnchor="middle" fontSize="8" fill="#2563eb" fontWeight="600">{p.diepte}m</text>
+              </g>
+            );
+          })}
+
+          {/* Start/eind dieptepunten sleepbaar */}
+          {[0, alleDieptePunten.length-1].map(idx => {
+            const p = alleDieptePunten[idx];
+            if (!p) return null;
+            const isStart = idx === 0;
+            const realIdx = dieptePunten.findIndex(x => x.positieM === p.positieM);
+            return (
+              <g key={`se-${idx}`} style={{ cursor: "ns-resize" }}
+                onMouseDown={(ev) => {
+                  ev.preventDefault(); ev.stopPropagation();
+                  if (realIdx >= 0) { setDiepteSlepen(realIdx); }
+                  else {
+                    const nieuw = { positieM: p.positieM, diepte: p.diepte };
+                    setDieptePunten(prev => [...prev, nieuw]);
+                    setTimeout(() => setDiepteSlepen(dieptePunten.length), 10);
+                  }
+                }}>
+                <rect x={xPos(p.positieM)-(isStart?0:20)} y={yPos(p.diepte)-8} width={20} height={16} fill="transparent" />
+              </g>
+            );
+          })}
+
+          {/* Analyse bolletjes in profiel — gesorteerd */}
+          {gesorteerdeAnalyse.map((p, i) => {
+            const x = xPos(p.positieM ?? 0);
+            const kleur = p.vertaald?.kleur ?? "#9ca3af";
+            const d = diepteOpM(p.positieM ?? 0);
+            return (
+              <g key={i} style={{ cursor: "ew-resize" }} onMouseDown={(ev) => { ev.preventDefault(); setDragIdx(i); }}>
+                <line x1={x} y1={PAD.top} x2={x} y2={PAD.top+plotH} stroke={kleur} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+                {/* Bolletje op maaiveld */}
+                <circle cx={x} cy={yPos(0)+16} r="11" fill={kleur} stroke="white" strokeWidth="2.5" />
+                <text x={x} y={yPos(0)+17} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{i+1}</text>
+                {/* Bolletje op boring diepte */}
+                <circle cx={x} cy={yPos(d)} r="4" fill={kleur} stroke="white" strokeWidth="1.5" opacity="0.8" />
+                <text x={x} y={PAD.top+plotH+27} textAnchor="middle" fontSize="8" fill={kleur} fontWeight="600">{p.positieM}m</text>
+              </g>
+            );
+          })}
+
+          {/* Assen */}
+          <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <line x1={PAD.left} y1={PAD.top+plotH} x2={PAD.left+plotW} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <text x={PAD.left-40} y={PAD.top+plotH/2} textAnchor="middle" fontSize="9" fill="#6b7280" transform={`rotate(-90,${PAD.left-40},${PAD.top+plotH/2})`}>Diepte (m NAP)</text>
+          <text x={PAD.left+plotW/2} y={H-2} textAnchor="middle" fontSize="9" fill="#6b7280">Positie langs boorlijn (m)</text>
+        </svg>
+
+        {/* Diepte invoer voor start/eind */}
+        <div className="flex items-center gap-6 mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-600 font-semibold">↘ Intredediepte</span>
+            <input
+              type="number" step="0.1" min={minD} max={0}
+              value={alleDieptePunten[0]?.diepte ?? -1.5}
+              onChange={e => {
+                const d = parseFloat(e.target.value);
+                setDieptePunten(prev => {
+                  const nieuw = prev.filter(p => p.positieM !== 0);
+                  return [{ positieM: 0, diepte: d }, ...nieuw];
+                });
+              }}
+              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none"
+            />
+            <span className="text-xs text-gray-400">m</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-600 font-semibold">↗ Uittredediepte</span>
+            <input
+              type="number" step="0.1" min={minD} max={0}
+              value={alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5}
+              onChange={e => {
+                const d = parseFloat(e.target.value);
+                setDieptePunten(prev => {
+                  const nieuw = prev.filter(p => p.positieM < totaalM);
+                  return [...nieuw, { positieM: totaalM, diepte: d }];
+                });
+              }}
+              className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-center focus:border-blue-500 outline-none"
+            />
+            <span className="text-xs text-gray-400">m</span>
+          </div>
+          <span className="text-xs text-gray-400 ml-auto">Dubbelklik op profiel = dieptepunt toevoegen · Dubbelklik op punt = verwijderen</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
   if (controlePunten.length < 2) {
     return (
