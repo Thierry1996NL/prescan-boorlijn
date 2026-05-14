@@ -34,9 +34,8 @@ export default function ProjectenPagina() {
 
   async function laadGebruiker() {
     try {
-      const mod = await import("@/lib/supabase");
-      const sb  = mod.createClient ? mod.createClient() : mod.default;
-      const { data: { user } } = await sb.auth.getUser();
+      const { supabase } = await import("@/lib/supabase-queries");
+      const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setGebruiker({ email: user.email, naam: user.user_metadata?.full_name ?? null });
       }
