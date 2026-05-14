@@ -599,7 +599,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") {
+      if (false && mode === "analyse") {  // Analyse via polyline click, niet map click
         setAnalyseBezig(true);
         const huidigePunten = modeRef._controlePunten ?? [];
         // Snap naar de boorlijn
@@ -781,27 +781,90 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       if (kaart.hasLayer(preview)) kaart.removeLayer(preview);
     });
 
-    // Klik op lijn om controlepunt in te voegen (bewerken + tekenen modus)
-    lijn.on("click", (e) => {
+    // Klik op lijn — controlepunt invoegen (bewerken/tekenen) of analysepunt plaatsen (analyse)
+    lijn.on("click", async (e) => {
       L.DomEvent.stopPropagation(e);
       const mode = modeRef.current;
-      if (mode !== "bewerken" && mode !== "tekenen") return;
       const { lat, lng } = e.latlng;
 
-      setControlePunten(prev => {
-        // Vind het dichtstbijzijnde segment
-        let besteIdx = prev.length - 1;
-        let minDist = Infinity;
-        for (let i = 0; i < prev.length - 1; i++) {
-          const mid = [(prev[i][0] + prev[i+1][0]) / 2, (prev[i][1] + prev[i+1][1]) / 2];
-          const d = afstandM([lat, lng], mid);
-          if (d < minDist) { minDist = d; besteIdx = i; }
-        }
-        const nieuw = [...prev.slice(0, besteIdx + 1), [lat, lng], ...prev.slice(besteIdx + 1)];
-        tekenPolyline(kaart, nieuw);
-        hertekenAlleMarkers(kaart, nieuw);
-        return nieuw;
-      });
+      if (mode === "bewerken" || mode === "tekenen") {
+        setControlePunten(prev => {
+          let besteIdx = prev.length - 1, minDist = Infinity;
+          for (let i = 0; i < prev.length - 1; i++) {
+            const mid = [(prev[i][0] + prev[i+1][0]) / 2, (prev[i][1] + prev[i+1][1]) / 2];
+            const d = afstandM([lat, lng], mid);
+            if (d < minDist) { minDist = d; besteIdx = i; }
+          }
+          const nieuw = [...prev.slice(0, besteIdx + 1), [lat, lng], ...prev.slice(besteIdx + 1)];
+          tekenPolyline(kaart, nieuw);
+          hertekenAlleMarkers(kaart, nieuw);
+          return nieuw;
+        });
+      }
+
+      if (mode === "analyse") {
+        // Snap naar de lijn
+        const pts = modeRef._controlePunten ?? [];
+        const snap = snapNaarLijn(lat, lng, pts);
+        setAnalyseBezig(true);
+        const result = await haalOppervlakOp(snap.lat, snap.lng);
+        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+
+        setAnalysePunten(prev => {
+          const gesorteerd = [...prev, { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null }]
+            .sort((a, b) => a.positieM - b.positieM);
+
+          // Verwijder oude markers en hermaak genummerd
+          gesorteerd.forEach(p => { if (p._marker) { kaart.removeLayer(p._marker); p._marker = null; } });
+
+          gesorteerd.forEach((p, i) => {
+            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
+            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
+              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
+              .addTo(kaart);
+
+            marker.on("drag", (ev) => {
+              const snapD = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
+              marker.setLatLng([snapD.lat, snapD.lng]);
+              p.lat = snapD.lat; p.lng = snapD.lng; p.positieM = snapD.positieM;
+            });
+
+            marker.on("dragend", () => {
+              setAnalysePunten(huidig => {
+                const nieuw = huidig.map(x => x._marker === marker ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM } : x)
+                  .sort((a, b) => a.positieM - b.positieM);
+                nieuw.forEach((x, idx) => {
+                  if (x._marker) {
+                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
+                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
+                  }
+                });
+                return nieuw;
+              });
+            });
+
+            marker.on("click", (ev) => {
+              L.DomEvent.stopPropagation(ev);
+              kaart.removeLayer(marker);
+              setAnalysePunten(huidig => {
+                const nieuw = huidig.filter(x => x._marker !== marker).sort((a, b) => a.positieM - b.positieM);
+                nieuw.forEach((x, idx) => {
+                  if (x._marker) {
+                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
+                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
+                  }
+                });
+                return nieuw;
+              });
+            });
+
+            p._marker = marker;
+          });
+
+          return gesorteerd;
+        });
+        setAnalyseBezig(false);
+      }
     });
   }
 
@@ -988,7 +1051,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   }, [modus]);
 
   // Sync analyse punten controlePunten ref voor positie berekening
-  useEffect(() => { modeRef._controlePunten = controlePunten; }, [controlePunten]);
+  useEffect(() => {
+    modeRef._controlePunten = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
+  }, [controlePunten, bestaandTrace.length]);
 
   const heeftBestaandTrace = bestaandTrace.length >= 2 || controlePunten.length >= 2;
 
