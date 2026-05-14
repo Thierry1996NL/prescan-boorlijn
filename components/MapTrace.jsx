@@ -88,18 +88,25 @@ function Dwarsprofiel({ controlePunten, analysePunten, project }) {
   const boringD = -1.5;
   const BAR_H = 28, BAR_Y = 8;
 
-  // Groepeer analyse punten per type voor de straatwerk balk
+  // Bouw segmenten: van punt naar punt, kleur van het startpunt
+  const gesorteerdeAnalyse = [...analysePunten].sort((a, b) => a.positieM - b.positieM);
   const groepen = [];
-  analysePunten.forEach((p, i) => {
-    const vorige = groepen[groepen.length - 1];
-    const label = p.vertaald?.label ?? "Geen data";
-    if (vorige && vorige.label === label) {
-      vorige.eindeM = p.positieM ?? totaalM;
-    } else {
-      groepen.push({ label, kleur: p.vertaald?.kleur ?? "#9ca3af", icoon: p.vertaald?.icoon ?? "❓", startM: p.positieM ?? 0, eindeM: p.positieM ?? totaalM });
+  if (gesorteerdeAnalyse.length > 0) {
+    // Voor startpunt (0m) tot eerste analysepunt: geen kleur bekend
+    if (gesorteerdeAnalyse[0].positieM > 0) {
+      groepen.push({ label: "?", kleur: "#e5e7eb", icoon: "", startM: 0, eindeM: gesorteerdeAnalyse[0].positieM });
     }
-  });
-  if (groepen.length > 0) groepen[groepen.length-1].eindeM = totaalM;
+    gesorteerdeAnalyse.forEach((p, i) => {
+      const volgende = gesorteerdeAnalyse[i + 1];
+      groepen.push({
+        label: p.vertaald?.label ?? "?",
+        kleur: p.vertaald?.kleur ?? "#9ca3af",
+        icoon: p.vertaald?.icoon ?? "📍",
+        startM: p.positieM,
+        eindeM: volgende ? volgende.positieM : totaalM,
+      });
+    });
+  }
 
   const overgangen = groepen.slice(1).map((g, i) => ({ m: groepen[i].eindeM, van: groepen[i], naar: g }));
 
@@ -271,56 +278,93 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
       if (mode === "analyse") {
         setAnalyseBezig(true);
-        const result = await haalOppervlakOp(lat, lng);
-        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
         const huidigePunten = modeRef._controlePunten ?? [];
-        const positieM = berekenPositieOpLijn(lat, lng, huidigePunten);
+        // Snap naar de boorlijn
+        const snap = snapNaarLijn(lat, lng, huidigePunten);
+        const result = await haalOppervlakOp(snap.lat, snap.lng);
+        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
 
         setAnalysePunten(prev => {
-          const nummer = prev.length + 1;
-          const icon = maakAnalyseIcon(L, nummer, vertaald.kleur);
-          const marker = L.marker([lat, lng], { icon, zIndexOffset: 2000 })
-            .bindTooltip(`<b>${nummer}</b> — ${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
-            .addTo(kaart);
+          // Voeg toe en sorteer op positieM
+          const nieuwPunt = { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null };
+          const gesorteerd = [...prev, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
 
-          marker.on("click", (ev) => {
-            L.DomEvent.stopPropagation(ev);
-            kaart.removeLayer(marker);
-            setAnalysePunten(p => {
-              const nieuw = p.filter(x => x._marker !== marker);
-              // Hernummer overige markers
-              nieuw.forEach((x, i) => {
-                if (x._marker) {
-                  x._marker.setIcon(maakAnalyseIcon(L, i + 1, x.vertaald?.kleur ?? "#9ca3af"));
-                  x._marker.setTooltipContent(`<b>${i+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
-                }
-              });
-              return nieuw;
-            });
+          // Bouw alle markers opnieuw op in juiste volgorde
+          gesorteerd.forEach((p, i) => {
+            if (p._marker) {
+              kaart.removeLayer(p._marker);
+              p._marker = null;
+            }
           });
 
-          return [...prev, { lat, lng, vertaald, positieM, _marker: marker }];
+          gesorteerd.forEach((p, i) => {
+            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
+            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000 })
+              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
+              .addTo(kaart);
+
+            marker.on("click", (ev) => {
+              L.DomEvent.stopPropagation(ev);
+              kaart.removeLayer(marker);
+              setAnalysePunten(huidig => {
+                const nieuw = huidig.filter(x => x._marker !== marker);
+                // Hernummer overige in positievolgorde
+                nieuw.forEach((x, idx) => {
+                  if (x._marker) {
+                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
+                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
+                  }
+                });
+                return nieuw;
+              });
+            });
+
+            p._marker = marker;
+          });
+
+          return gesorteerd;
         });
         setAnalyseBezig(false);
       }
     });
   }
 
+  // Snap een punt naar de dichtstbijzijnde positie OP de lijn
+  // Geeft { lat, lng, positieM } terug
+  function snapNaarLijn(kLat, kLng, pts) {
+    if (pts.length < 2) return { lat: kLat, lng: kLng, positieM: 0 };
+
+    let besteSnap = null;
+    let besteDist = Infinity;
+    let positieTot = 0;
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [lat1, lng1] = pts[i];
+      const [lat2, lng2] = pts[i + 1];
+      const segLen = afstandM(pts[i], pts[i + 1]);
+
+      // Project klikpunt op segment (lineaire interpolatie)
+      const dx = lat2 - lat1, dy = lng2 - lng1;
+      const lenSq = dx * dx + dy * dy;
+      let t = lenSq === 0 ? 0 : ((kLat - lat1) * dx + (kLng - lng1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+
+      const snapLat = lat1 + t * dx;
+      const snapLng = lng1 + t * dy;
+      const dist = afstandM([kLat, kLng], [snapLat, snapLng]);
+
+      if (dist < besteDist) {
+        besteDist = dist;
+        besteSnap = { lat: snapLat, lng: snapLng, positieM: Math.round(positieTot + t * segLen) };
+      }
+      positieTot += segLen;
+    }
+
+    return besteSnap ?? { lat: kLat, lng: kLng, positieM: 0 };
+  }
+
   function berekenPositieOpLijn(lat, lng, pts) {
-    if (pts.length < 2) return 0;
-    let totaal = 0;
-    for (let i = 1; i < pts.length; i++) {
-      totaal += afstandM(pts[i-1], pts[i]);
-    }
-    // Simpel: bereken afstand van begin tot dichtstbijzijnde punt
-    let dichtstBij = 0, minDist = Infinity, distTot = 0;
-    for (let i = 0; i < pts.length; i++) {
-      const d = afstandM([lat, lng], pts[i]);
-      if (d < minDist) { minDist = d; dichtstBij = i; }
-    }
-    let pos = 0;
-    for (let i = 1; i <= dichtstBij; i++) pos += afstandM(pts[i-1], pts[i]);
-    return Math.round(pos);
+    return snapNaarLijn(lat, lng, pts).positieM;
   }
 
   function tekenPolyline(kaart, pts) {
