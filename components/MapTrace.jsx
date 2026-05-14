@@ -472,7 +472,15 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     }, 1500);
   }, [analysePunten]);
 
-
+  // DOM event listener voor analyse klikken — altijd nieuwste versie van plaatsAnalysePunt
+  useEffect(() => {
+    const handler = (e) => {
+      const { lat, lng, positieM } = e.detail;
+      plaatsAnalysePunt(lat, lng, positieM);
+    };
+    window.addEventListener("prescan-analyse-klik", handler);
+    return () => window.removeEventListener("prescan-analyse-klik", handler);
+  }); // Geen dependency array = altijd re-register met nieuwste plaatsAnalysePunt
   // Bestaand tracé laden
   const bestaandTrace = (() => {
     try {
@@ -608,14 +616,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      // Analyse: klik op kaart, snap naar lijn als dicht genoeg
+      // Analyse: dispatch DOM event (geen closure issue)
       if (mode === "analyse") {
         const pts2 = modeRef._controlePunten ?? [];
         if (pts2.length < 2) return;
         const snap = snapNaarLijn(lat, lng, pts2);
-        // Max 50m afstand tot de lijn
         if (afstandM([lat, lng], [snap.lat, snap.lng]) > 50) return;
-        plaatsAnalysePunt(snap.lat, snap.lng, snap.positieM);
+        window.dispatchEvent(new CustomEvent("prescan-analyse-klik", { detail: { lat: snap.lat, lng: snap.lng, positieM: snap.positieM } }));
         return;
       }
 
@@ -804,7 +811,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); plaatsAnalysePunt(_s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); window.dispatchEvent(new CustomEvent("prescan-analyse-klik", { detail: { lat: _s.lat, lng: _s.lng, positieM: _s.positieM } })); }
     });
   }
 
@@ -868,7 +875,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); plaatsAnalysePunt(_s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); window.dispatchEvent(new CustomEvent("prescan-analyse-klik", { detail: { lat: _s.lat, lng: _s.lng, positieM: _s.positieM } })); }
     });
   }
 
