@@ -433,14 +433,65 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [analyseBezig, setAnalyseBezig] = useState(false);
   const [toonVerwijderPopup, setToonVerwijderPopup] = useState(false);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
-  const [dieptePunten, setDieptePunten] = useState([
-    { id: "start", positieM: 0, diepte: -1.5, vast: true },
-    { id: "eind", positieM: null, diepte: -1.5, vast: true },
-  ]);
+  const [kaartTab, setKaartTab] = useState("boorlijn"); // "boorlijn" | "analyse" | "diepte"
   const [diepteModus, setDiepteModus] = useState(false);
 
-  // Sync modus ref
-  useEffect(() => { modeRef.current = modus; }, [modus]);
+  // Laad opgeslagen dieptepunten uit project
+  const [dieptePunten, setDieptePunten] = useState(() => {
+    try {
+      const saved = project?.diepte_punten;
+      if (saved) return typeof saved === "string" ? JSON.parse(saved) : saved;
+    } catch {}
+    return [
+      { id: "start", positieM: 0, diepte: -1.5, vast: true },
+      { id: "eind", positieM: null, diepte: -1.5, vast: true },
+    ];
+  });
+
+  // Auto-save dieptePunten wanneer ze veranderen
+  const dieptePuntenSaveTimer = useRef(null);
+  useEffect(() => {
+    clearTimeout(dieptePuntenSaveTimer.current);
+    dieptePuntenSaveTimer.current = setTimeout(() => {
+      onTraceOpgeslagen?.({ _alleenDiepte: true, diepte_punten: dieptePunten });
+    }, 1500);
+  }, [dieptePunten]);
+
+  // Auto-save analysePunten (zonder _marker refs)
+  const analysePuntenSaveTimer = useRef(null);
+  useEffect(() => {
+    clearTimeout(analysePuntenSaveTimer.current);
+    analysePuntenSaveTimer.current = setTimeout(() => {
+      const opSlaanData = analysePunten.map(({ _marker, ...rest }) => rest);
+      if (opSlaanData.length > 0) {
+        onTraceOpgeslagen?.({ _alleenAnalyse: true, analyse_punten: opSlaanData });
+      }
+    }, 1500);
+  }, [analysePunten]);
+
+  // Toon/verberg markers op basis van actieve tab
+  useEffect(() => {
+    const kaart = leafletMapRef.current;
+    if (!kaart) return;
+    // Dieptepunt markers
+    dieptepuntMarkersRef.current.forEach(m => {
+      if (kaartTab === "diepte") { if (!kaart.hasLayer(m)) m.addTo(kaart); }
+      else { if (kaart.hasLayer(m)) kaart.removeLayer(m); }
+    });
+    // Analyse markers
+    analysePunten.forEach(p => {
+      if (!p._marker) return;
+      if (kaartTab === "analyse") { if (!kaart.hasLayer(p._marker)) p._marker.addTo(kaart); }
+      else { if (kaart.hasLayer(p._marker)) kaart.removeLayer(p._marker); }
+    });
+    // Controlepunt markers — altijd zichtbaar in boorlijn tab of bewerken modus
+    controlepuntMarkersRef.current.forEach(m => {
+      if (kaartTab === "boorlijn") { if (!kaart.hasLayer(m)) m.addTo(kaart); }
+      else { if (kaart.hasLayer(m)) kaart.removeLayer(m); }
+    });
+  }, [kaartTab, analysePunten.length, dieptepuntMarkersRef.current.length]);
+
+
 
   // Bestaand tracé laden
   const bestaandTrace = (() => {
@@ -979,6 +1030,22 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             </button>
           </div>
 
+          {/* Kaart tabbladen */}
+          <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden">
+            {[
+              { id: "boorlijn", label: "🔵 Boorlijn", title: "Controlepunten en lijn" },
+              { id: "analyse", label: "🟢 Analyse", title: "Oppervlakteanalyse punten" },
+              { id: "diepte", label: "🔷 Diepte", title: "Dieptepunten profiel" },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setKaartTab(tab.id)} title={tab.title}
+                className={`text-xs px-3 py-1.5 font-medium transition-colors border-r border-gray-200 last:border-r-0 ${
+                  kaartTab === tab.id ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-50"
+                }`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           {/* Tracé knoppen */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
             <span className="text-xs text-gray-400 font-medium mr-2">Boorlijn:</span>
@@ -1121,19 +1188,27 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
                         <tr key={p.id} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors">
                           <td className="px-4 py-2 font-bold text-blue-600">{i+1}</td>
                           <td className="px-4 py-2 text-gray-500">{p.id === "start" ? "↘ Intrede" : p.id === "eind" ? "↗ Uittrede" : "Dieptepunt"}</td>
-                          <td className="px-4 py-2">
+                      <td className="px-4 py-2">
                             {p.vast ? <span className="text-gray-400">{Math.round(p.positieM)}m</span> :
-                              <input type="number" step="1" min="1" max={Math.round(totaalM)-1}
-                                value={Math.round(p.positieM)}
-                                onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, positieM: parseInt(e.target.value) } : x))}
-                                className="w-16 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, positieM: Math.max(0.1, Math.round((x.positieM ?? 0) * 10 - 1) / 10) } : x))} className="w-5 h-5 text-xs bg-gray-100 hover:bg-gray-200 rounded flex items-center justify-center font-bold">←</button>
+                                <input type="number" step="0.1" min="0.1" max={totaalM - 0.1}
+                                  value={p.positieM}
+                                  onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, positieM: parseFloat(e.target.value) } : x))}
+                                  className="w-14 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                                <button onClick={() => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, positieM: Math.min(Math.round((totaalM - 0.1)*10)/10, Math.round(((x.positieM ?? 0) * 10 + 1)) / 10) } : x))} className="w-5 h-5 text-xs bg-gray-100 hover:bg-gray-200 rounded flex items-center justify-center font-bold">→</button>
+                              </div>
                             }
                           </td>
                           <td className="px-4 py-2">
-                            <input type="number" step="0.1" min="-6" max="0"
-                              value={p.diepte}
-                              onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, diepte: parseFloat(e.target.value) } : x))}
-                              className="w-16 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, diepte: Math.min(0, Math.round((x.diepte + 0.1)*10)/10) } : x))} className="w-5 h-5 text-xs bg-gray-100 hover:bg-gray-200 rounded flex items-center justify-center font-bold">↑</button>
+                              <input type="number" step="0.1" min="-6" max="0"
+                                value={p.diepte}
+                                onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, diepte: parseFloat(e.target.value) } : x))}
+                                className="w-14 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                              <button onClick={() => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, diepte: Math.max(-6, Math.round((x.diepte - 0.1)*10)/10) } : x))} className="w-5 h-5 text-xs bg-gray-100 hover:bg-gray-200 rounded flex items-center justify-center font-bold">↓</button>
+                            </div>
                           </td>
                           <td className="px-4 py-2 text-gray-500">{hoekIn}°</td>
                           <td className="px-4 py-2 text-gray-500">{hoekUit}°</td>

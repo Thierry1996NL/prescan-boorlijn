@@ -61,9 +61,20 @@ export default function ProjectDetailPagina() {
     }
   }
 
-  async function handleTraceOpgeslagen(geojson) {
-    // geojson === null betekent verwijderen
-    await updateProject(id, { boortrace_geojson: geojson });
+  async function handleTraceOpgeslagen(data) {
+    if (!data) {
+      // Verwijderen
+      await updateProject(id, { boortrace_geojson: null, diepte_punten: null, analyse_punten: null });
+    } else if (data._alleenDiepte) {
+      // Alleen dieptepunten opslaan
+      await updateProject(id, { diepte_punten: data.diepte_punten });
+    } else if (data._alleenAnalyse) {
+      // Alleen analysepunten opslaan
+      await updateProject(id, { analyse_punten: data.analyse_punten });
+    } else {
+      // Volledige boorlijn opslaan
+      await updateProject(id, { boortrace_geojson: data });
+    }
     await laadProject();
   }
 
