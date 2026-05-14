@@ -154,8 +154,14 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
     const { x, y } = getSvgCoords(e);
     if (dragIdx !== null) onAnalysePuntVerplaatst?.(dragIdx, svgXNaarM(x));
     if (diepteSlepen !== null) {
+      const { idx, mode } = diepteSlepen;
       const nieuweDiepte = Math.round(Math.max(-6, Math.min(0, svgYNaarD(y))) * 10) / 10;
-      setDieptePunten(prev => prev.map((p, i) => i === diepteSlepen ? { ...p, diepte: nieuweDiepte } : p));
+      const nieuweM = Math.round(Math.max(1, Math.min(totaalM - 1, svgXNaarM(x))));
+      setDieptePunten(prev => prev.map((p, i) => {
+        if (i !== idx) return p;
+        if (mode === "y") return { ...p, diepte: nieuweDiepte };
+        return { ...p, diepte: nieuweDiepte, positieM: nieuweM };
+      }));
     }
   }
 
@@ -256,7 +262,7 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ cursor: dragIdx !== null ? "ew-resize" : diepteSlepen !== null ? "ns-resize" : "default" }}
+        style={{ cursor: dragIdx !== null ? "ew-resize" : diepteSlepen?.mode === "y" ? "ns-resize" : diepteSlepen ? "move" : "default" }}
       >
         <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 260 }}
           onDoubleClick={handleProfielKlik}
@@ -298,40 +304,30 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
           <circle cx={xPos(totaalM)} cy={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
           <text x={xPos(totaalM)-10} y={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="700">{alleDieptePunten[alleDieptePunten.length-1]?.diepte}m ↗</text>
 
-          {/* Tussenpunten — sleepbaar omhoog/omlaag, rechtsklik = verwijderen */}
-          {alleDieptePunten.filter(p => !p.vast).map((p, i) => {
+          {/* Tussenpunten — sleepbaar in X én Y richting */}
+          {alleDieptePunten.filter(p => !p.vast).map((p) => {
             const idx = dieptePunten.findIndex(x => x.id === p.id);
             return (
-              <g key={p.id} style={{ cursor: "ns-resize" }}
-                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen(idx); }}
+              <g key={p.id} style={{ cursor: "move" }}
+                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen({ idx, mode: "xy" }); }}
                 onDoubleClick={(ev) => { ev.stopPropagation(); setDieptePunten(prev => prev.filter(x => x.id !== p.id)); }}>
-                <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
-                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="8" fill="#2563eb" stroke="white" strokeWidth="2.5" />
-                <text x={xPos(p.positieM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="8" fill="white" fontWeight="700" dominantBaseline="middle">↕</text>
-                <text x={xPos(p.positieM)} y={yPos(p.diepte)-14} textAnchor="middle" fontSize="8" fill="#2563eb" fontWeight="600">{p.diepte}m</text>
-                <text x={xPos(p.positieM)} y={PAD.top+plotH+27} textAnchor="middle" fontSize="7.5" fill="#6b7280">{p.positieM}m</text>
+                <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="10" fill="#2563eb" stroke="white" strokeWidth="2.5" />
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="11" fill="white" fontWeight="700" dominantBaseline="middle">✥</text>
+                <rect x={xPos(p.positieM)-18} y={yPos(p.diepte)-22} width={36} height={14} rx="3" fill="#2563eb" opacity="0.9" />
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)-13} textAnchor="middle" fontSize="8" fill="white" fontWeight="700">{p.diepte}m · {p.positieM}m</text>
               </g>
             );
           })}
 
-          {/* Start/eind dieptepunten sleepbaar */}
-          {[0, alleDieptePunten.length-1].map(idx => {
-            const p = alleDieptePunten[idx];
-            if (!p) return null;
-            const isStart = idx === 0;
-            const realIdx = dieptePunten.findIndex(x => x.positieM === p.positieM);
+          {/* Start/eind punten — alleen verticaal sleepbaar */}
+          {alleDieptePunten.filter(p => p.vast).map((p) => {
+            const idx = dieptePunten.findIndex(x => x.id === p.id);
             return (
-              <g key={`se-${idx}`} style={{ cursor: "ns-resize" }}
-                onMouseDown={(ev) => {
-                  ev.preventDefault(); ev.stopPropagation();
-                  if (realIdx >= 0) { setDiepteSlepen(realIdx); }
-                  else {
-                    const nieuw = { positieM: p.positieM, diepte: p.diepte };
-                    setDieptePunten(prev => [...prev, nieuw]);
-                    setTimeout(() => setDiepteSlepen(dieptePunten.length), 10);
-                  }
-                }}>
-                <rect x={xPos(p.positieM)-(isStart?0:20)} y={yPos(p.diepte)-8} width={20} height={16} fill="transparent" />
+              <g key={p.id} style={{ cursor: "ns-resize" }}
+                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen({ idx, mode: "y" }); }}>
+                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="8" fill="#2563eb" stroke="white" strokeWidth="2.5" />
+                <text x={xPos(p.positieM)+12} y={yPos(p.diepte)-6} fontSize="8" fill="#2563eb" fontWeight="700">{p.id === "start" ? "↘" : "↗"} {p.diepte}m</text>
               </g>
             );
           })}
@@ -457,35 +453,40 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const L = window.L;
     const pts = actievePunten;
 
-    // Verwijder oude markers
     dieptepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
     dieptepuntMarkersRef.current = [];
 
     const totaalM = totaaleLijnLengte(pts);
     if (pts.length < 2 || totaalM === 0) return;
 
-    dieptePunten.forEach((dp) => {
+    dieptePunten.forEach((dp, dpIdx) => {
       const posM = dp.id === "eind" ? totaalM : (dp.positieM ?? 0);
       const latLng = positieMNaarLatLng(posM, pts);
       if (!latLng) return;
 
-      const kleur = dp.vast ? "#2563eb" : "#1d4ed8";
+      const maakIcon = (d, isVast) => L.divIcon({
+        className: "",
+        html: `<div style="width:22px;height:22px;background:#2563eb;border:2.5px solid white;border-radius:${isVast ? "50%" : "3px"};transform:${isVast ? "none" : "rotate(45deg)"};box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;cursor:${isVast ? "ns-resize" : "move"};">
+          <span style="transform:${isVast ? "none" : "rotate(-45deg)"};color:white;font-size:7px;font-weight:700;white-space:nowrap;">${d}m</span>
+        </div>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
+      });
+
       const marker = L.marker(latLng, {
-        icon: L.divIcon({
-          className: "",
-          html: `<div style="
-            width:20px;height:20px;background:${kleur};
-            border:2.5px solid white;border-radius:3px;
-            transform:rotate(45deg);
-            box-shadow:0 2px 6px rgba(0,0,0,0.4);
-            display:flex;align-items:center;justify-content:center;
-          "><span style="transform:rotate(-45deg);color:white;font-size:8px;font-weight:700;">${dp.diepte}m</span></div>`,
-          iconSize: [20, 20], iconAnchor: [10, 10],
-        }),
-        interactive: false,
+        icon: maakIcon(dp.diepte, dp.vast),
+        draggable: !dp.vast,
         zIndexOffset: 500,
       }).addTo(kaart);
 
+      if (!dp.vast) {
+        marker.on("drag", (e) => {
+          const snap = snapNaarLijn(e.latlng.lat, e.latlng.lng, pts);
+          marker.setLatLng([snap.lat, snap.lng]);
+          setDieptePunten(prev => prev.map((p, i) => i === dpIdx ? { ...p, positieM: Math.round(snap.positieM) } : p));
+        });
+      }
+
+      marker.bindTooltip(`${dp.vast ? (dp.id === "start" ? "↘ Intrede" : "↗ Uittrede") : "Dieptepunt"}: ${dp.diepte}m`, { direction: "top" });
       dieptepuntMarkersRef.current.push(marker);
     });
   }, [dieptePunten, actievePunten.length]);
