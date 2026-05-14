@@ -262,58 +262,118 @@ export default function ProjectDetailPagina() {
         );
 
       // ── Stap 2: Ontwerp inladen ────────────────────────────────
-      case 2:
+      case 2: {
+        const TYPEN = [
+          { type: "LS",    label: "Laagspanning (LS)",        kleur: "bg-yellow-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "MS",    label: "Middenspanning (MS)",       kleur: "bg-orange-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Gas",   label: "Gas",                       kleur: "bg-yellow-300", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Water", label: "Water",                     kleur: "bg-blue-400",   accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Data",  label: "Data / Telecom",            kleur: "bg-purple-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", kleur: "bg-red-400",    accept: ".zip,.gml" },
+        ];
+        const aantalGeladen = TYPEN.filter(t => bestaandeBestanden.find(b => b.type === t.type)).length;
+
+        async function verwijderBestand(type) {
+          const meta = bestaandeBestanden.find(b => b.type === type);
+          if (!meta) return;
+          try {
+            // Verwijder uit Storage
+            await supabase.storage.from("project-bestanden").remove([meta.pad]);
+          } catch {}
+          // Verwijder uit metadata
+          const nieuw = bestaandeBestanden.filter(b => b.type !== type);
+          await updateProject(id, { bestanden_meta: JSON.stringify(nieuw) });
+          await laadProject();
+        }
+
         return (
           <div className="max-w-2xl space-y-4">
-            <p className="text-sm text-gray-500">
-              Upload leidingenontwerpen per type. De bestanden worden opgeslagen en als lagen weergegeven in stap 3.
-            </p>
+            {/* Teller */}
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-500 flex-1">
+                Upload leidingenontwerpen per type. Bestanden worden opgeslagen en blijven bewaard.
+              </p>
+              {aantalGeladen > 0 && (
+                <span className="text-xs bg-green-100 text-green-700 font-medium px-2 py-1 rounded-full flex-shrink-0">
+                  {aantalGeladen} / {TYPEN.length} opgeslagen
+                </span>
+              )}
+            </div>
+
+            {/* Bestandenlijst */}
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {[
-                { type: "LS",    label: "Laagspanning (LS)",        accept: ".dxf,.gml,.kml,.geojson,.zip" },
-                { type: "MS",    label: "Middenspanning (MS)",       accept: ".dxf,.gml,.kml,.geojson,.zip" },
-                { type: "Gas",   label: "Gas",                       accept: ".dxf,.gml,.kml,.geojson,.zip" },
-                { type: "Water", label: "Water",                     accept: ".dxf,.gml,.kml,.geojson,.zip" },
-                { type: "Data",  label: "Data / Telecom",            accept: ".dxf,.gml,.kml,.geojson,.zip" },
-                { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", accept: ".zip,.gml" },
-              ].map(({ type, label, accept }) => {
+              {TYPEN.map(({ type, label, kleur, accept }) => {
                 const bestaand = bestaandeBestanden.find(b => b.type === type);
                 const isLaden  = uploadLaden[type];
-                const status   = uploadStatus[type] ?? (bestaand ? `✓ ${bestaand.naam}` : null);
+                const uploadFout = uploadStatus[type]?.startsWith("✗") ? uploadStatus[type] : null;
+                const uploading  = uploadStatus[type] === "Uploaden…";
+
                 return (
-                  <div key={type} className="flex items-center justify-between gap-4 px-5 py-3">
-                    <div className="min-w-0">
+                  <div key={type} className="flex items-center gap-4 px-5 py-3.5">
+                    {/* Kleurbol */}
+                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${kleur}`} />
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-gray-800">{label}</div>
-                      {status ? (
-                        <div className={`text-xs mt-0.5 ${status.startsWith("✓") ? "text-green-600" : status.startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
-                          {status}
+                      {bestaand && !uploadFout ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs text-green-600 font-medium">✓ Opgeslagen</span>
+                          <span className="text-xs text-gray-400 truncate">{bestaand.naam}</span>
+                          {bestaand.grootte && (
+                            <span className="text-xs text-gray-300">· {(bestaand.grootte / 1024).toFixed(0)} KB</span>
+                          )}
                         </div>
+                      ) : uploadFout ? (
+                        <div className="text-xs text-red-500 mt-0.5">{uploadFout}</div>
                       ) : (
                         <div className="text-xs text-gray-400 mt-0.5">{accept}</div>
                       )}
                     </div>
-                    <label className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg cursor-pointer text-gray-600 transition-colors flex-shrink-0 ${isLaden ? "opacity-50 cursor-wait" : "hover:bg-gray-50"}`}>
-                      {isLaden ? "Uploaden…" : bestaand ? "Vervangen" : "Bestand kiezen"}
-                      <input
-                        type="file"
-                        accept={accept}
-                        className="hidden"
-                        disabled={isLaden}
-                        onChange={e => {
-                          if (e.target.files?.[0]) uploadBestand(type, e.target.files[0]);
-                        }}
-                      />
-                    </label>
+
+                    {/* Acties */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {bestaand && (
+                        <button
+                          onClick={() => verwijderBestand(type)}
+                          className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors text-sm"
+                          title="Verwijderen"
+                        >
+                          ×
+                        </button>
+                      )}
+                      <label className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg cursor-pointer text-gray-600 transition-colors ${isLaden ? "opacity-50 cursor-wait" : "hover:bg-gray-50"}`}>
+                        {isLaden ? "Uploaden…" : bestaand ? "Vervangen" : "Kiezen"}
+                        <input
+                          type="file"
+                          accept={accept}
+                          className="hidden"
+                          disabled={isLaden}
+                          onChange={e => { if (e.target.files?.[0]) uploadBestand(type, e.target.files[0]); }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 );
               })}
             </div>
-            <p className="text-xs text-gray-400">
-              Bestanden worden opgeslagen in Supabase Storage onder bucket <code className="bg-gray-100 px-1 rounded">project-bestanden</code>.
-              Zorg dat deze bucket bestaat in je Supabase project (Storage → New bucket → "project-bestanden" → Public).
-            </p>
+
+            {/* Opslaan-knop + naar stap 3 */}
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-gray-400">
+                Bucket: <code className="bg-gray-100 px-1 rounded">project-bestanden</code> (Supabase Storage → Public)
+              </p>
+              <button
+                onClick={() => setActieveStap(3)}
+                disabled={aantalGeladen === 0}
+                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                Opgeslagen — naar stap 3 →
+              </button>
+            </div>
           </div>
         );
+      }
 
       // ── Stap 3: Ontwerp bekijken ───────────────────────────────
       case 3:
