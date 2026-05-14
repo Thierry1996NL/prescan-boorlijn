@@ -1039,6 +1039,30 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     if (polylineRef.current) { kaart.removeLayer(polylineRef.current); polylineRef.current = null; }
   }
 
+  async function handleAnalysePuntVerplaatst(idx, nieuwM) {
+    const pts = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
+    if (pts.length < 2) return;
+    let afstand = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const segLen = afstandM(pts[i], pts[i + 1]);
+      if (afstand + segLen >= nieuwM) {
+        const t = (nieuwM - afstand) / segLen;
+        const nLat = pts[i][0] + t * (pts[i+1][0] - pts[i][0]);
+        const nLng = pts[i][1] + t * (pts[i+1][1] - pts[i][1]);
+        setAnalysePunten(prev => {
+          const gesorteerd = [...prev].sort((a, b) => a.positieM - b.positieM);
+          const punt = gesorteerd[idx];
+          if (!punt) return prev;
+          if (punt._marker) punt._marker.setLatLng([nLat, nLng]);
+          punt.lat = nLat; punt.lng = nLng; punt.positieM = Math.round(nieuwM);
+          return [...prev];
+        });
+        return;
+      }
+      afstand += segLen;
+    }
+  }
+
   function wisAnalysePunten() {
     const kaart = leafletMapRef.current;
     analysePunten.forEach(p => { if (p._marker && kaart) kaart.removeLayer(p._marker); });
