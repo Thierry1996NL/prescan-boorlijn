@@ -54,7 +54,10 @@ function afstandM(p1, p2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function Dwarsprofiel({ controlePunten, analysePunten, project }) {
+function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVerplaatst }) {
+  const svgRef = useRef(null);
+  const [dragIdx, setDragIdx] = useState(null);
+
   if (controlePunten.length < 2) {
     return (
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -69,6 +72,171 @@ function Dwarsprofiel({ controlePunten, analysePunten, project }) {
       </div>
     );
   }
+
+  const W = 900, H = 200;
+  const PAD = { top: 20, right: 20, bottom: 40, left: 50 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  let totaalM = 0;
+  const cumul = [0];
+  for (let i = 1; i < controlePunten.length; i++) {
+    totaalM += afstandM(controlePunten[i-1], controlePunten[i]);
+    cumul.push(totaalM);
+  }
+
+  const minD = -5, maxD = 1, bereik = maxD - minD;
+  const xPos = m => PAD.left + (m / totaalM) * plotW;
+  const yPos = d => PAD.top + ((maxD - d) / bereik) * plotH;
+  const boringD = -1.5;
+  const BAR_H = 28, BAR_Y = 8;
+
+  const gesorteerdeAnalyse = [...analysePunten].sort((a, b) => a.positieM - b.positieM);
+  const groepen = [];
+  if (gesorteerdeAnalyse.length > 0) {
+    if (gesorteerdeAnalyse[0].positieM > 0) {
+      groepen.push({ label: "?", kleur: "#e5e7eb", icoon: "", startM: 0, eindeM: gesorteerdeAnalyse[0].positieM });
+    }
+    gesorteerdeAnalyse.forEach((p, i) => {
+      const volgende = gesorteerdeAnalyse[i + 1];
+      groepen.push({
+        label: p.vertaald?.label ?? "?",
+        kleur: p.vertaald?.kleur ?? "#9ca3af",
+        icoon: p.vertaald?.icoon ?? "📍",
+        startM: p.positieM,
+        eindeM: volgende ? volgende.positieM : totaalM,
+      });
+    });
+  }
+  const overgangen = groepen.slice(1).map((g, i) => ({ m: groepen[i].eindeM, van: groepen[i], naar: g }));
+
+  // SVG drag helpers
+  function svgXNaarM(svgX) {
+    return Math.max(0, Math.min(totaalM, ((svgX - PAD.left) / plotW) * totaalM));
+  }
+
+  function getSvgX(e) {
+    if (!svgRef.current) return 0;
+    const rect = svgRef.current.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    return (e.clientX - rect.left) * scaleX;
+  }
+
+  function handleMouseDown(idx, e) {
+    e.preventDefault();
+    setDragIdx(idx);
+  }
+
+  function handleMouseMove(e) {
+    if (dragIdx === null) return;
+    const newM = svgXNaarM(getSvgX(e));
+    onAnalysePuntVerplaatst?.(dragIdx, newM);
+  }
+
+  function handleMouseUp() {
+    setDragIdx(null);
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
+        <div className="flex items-center gap-4 text-xs text-gray-400">
+          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring ({project?.diameter_mm ?? "—"} mm)</span>
+          {analysePunten.length > 0 && <span className="text-gray-300">Sleep bolletjes om te verplaatsen</span>}
+          <span className="text-gray-300">Totaal: {Math.round(totaalM)} m</span>
+        </div>
+      </div>
+
+      {groepen.length > 0 && (
+        <div className="px-5 pt-4 pb-2 border-b border-gray-100">
+          <div className="text-xs font-medium text-gray-500 mb-2">Straatwerk analyse</div>
+          <svg viewBox={`0 0 ${W} ${BAR_Y + BAR_H + 22}`} className="w-full" style={{ height: BAR_Y + BAR_H + 26 }}>
+            {groepen.map((g, i) => {
+              const x1 = xPos(g.startM), x2 = xPos(g.eindeM);
+              const breedte = Math.max(x2 - x1, 2);
+              return (
+                <g key={i}>
+                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" />
+                  {breedte > 40 && <text x={x1+breedte/2} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{g.icoon} {g.label}</text>}
+                  {breedte > 25 && <text x={x1+breedte/2} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">{Math.round(g.eindeM-g.startM)}m</text>}
+                </g>
+              );
+            })}
+            <circle cx={xPos(0)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(0)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
+            <circle cx={xPos(totaalM)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(totaalM)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
+            {overgangen.map((o, i) => (
+              <g key={i}>
+                <line x1={xPos(o.m)} y1={BAR_Y-2} x2={xPos(o.m)} y2={BAR_Y+BAR_H+2} stroke="white" strokeWidth="2" />
+                <polygon points={`${xPos(o.m)},${BAR_Y-6} ${xPos(o.m)-4},${BAR_Y-2} ${xPos(o.m)+4},${BAR_Y-2}`} fill="#374151" />
+                <text x={xPos(o.m)} y={BAR_Y-8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
+              </g>
+            ))}
+            {/* Genummerde analyse bolletjes in straatwerk balk */}
+            {gesorteerdeAnalyse.map((p, i) => {
+              const x = xPos(p.positieM);
+              const kleur = p.vertaald?.kleur ?? "#9ca3af";
+              return (
+                <g key={i} style={{ cursor: "ew-resize" }} onMouseDown={(e) => handleMouseDown(i, e)}>
+                  <circle cx={x} cy={BAR_Y+BAR_H/2} r="10" fill={kleur} stroke="white" strokeWidth="2" />
+                  <text x={x} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{i+1}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
+
+      {/* Profiel SVG met drag support */}
+      <div className="px-5 pt-3 pb-4"
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{ cursor: dragIdx !== null ? "ew-resize" : "default" }}
+      >
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
+          <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
+          <rect x={PAD.left} y={yPos(0)} width={plotW} height={yPos(minD)-yPos(0)} fill="#e5e7eb" opacity="0.4" />
+          {groepen.map((g, i) => <rect key={i} x={xPos(g.startM)} y={yPos(0)-6} width={Math.max(xPos(g.eindeM)-xPos(g.startM),2)} height={6} fill={g.kleur} opacity="0.5" />)}
+          <line x1={PAD.left} y1={yPos(0)} x2={PAD.left+plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
+          {[0,-1,-2,-3,-4,-5].map(d => (
+            <g key={d}>
+              <line x1={PAD.left-4} y1={yPos(d)} x2={PAD.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
+              <text x={PAD.left-6} y={yPos(d)+3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
+              <line x1={PAD.left} y1={yPos(d)} x2={PAD.left+plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
+            </g>
+          ))}
+          {[0,0.25,0.5,0.75,1].map(f => {
+            const m = f*totaalM, x = xPos(m);
+            return (<g key={f}><line x1={x} y1={PAD.top+plotH} x2={x} y2={PAD.top+plotH+4} stroke="#d1d5db" strokeWidth="1" /><text x={x} y={PAD.top+plotH+13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text></g>);
+          })}
+          <line x1={PAD.left} y1={yPos(boringD)} x2={PAD.left+plotW} y2={yPos(boringD)} stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
+          <rect x={PAD.left} y={yPos(boringD)-2} width={plotW} height={4} fill="#2563eb" opacity="0.15" rx="2" />
+          <text x={PAD.left+plotW-4} y={yPos(boringD)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="600">{project?.materiaal ?? "PE"} Ø{project?.diameter_mm ?? "—"}mm</text>
+          {/* Genummerde analyse punten in profiel */}
+          {gesorteerdeAnalyse.map((p, i) => {
+            const x = xPos(p.positieM ?? 0);
+            const kleur = p.vertaald?.kleur ?? "#9ca3af";
+            return (
+              <g key={i} style={{ cursor: "ew-resize" }} onMouseDown={(e) => handleMouseDown(i, e)}>
+                <line x1={x} y1={PAD.top} x2={x} y2={PAD.top+plotH} stroke={kleur} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.6" />
+                <circle cx={x} cy={yPos(0)+14} r="10" fill={kleur} stroke="white" strokeWidth="2" />
+                <text x={x} y={yPos(0)+15} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{i+1}</text>
+                <text x={x} y={PAD.top+plotH+26} textAnchor="middle" fontSize="8" fill={kleur} fontWeight="600">{p.positieM}m</text>
+              </g>
+            );
+          })}
+          <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <line x1={PAD.left} y1={PAD.top+plotH} x2={PAD.left+plotW} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <text x={PAD.left-40} y={PAD.top+plotH/2} textAnchor="middle" fontSize="9" fill="#6b7280" transform={`rotate(-90,${PAD.left-40},${PAD.top+plotH/2})`}>Diepte (m NAP)</text>
+          <text x={PAD.left+plotW/2} y={H-2} textAnchor="middle" fontSize="9" fill="#6b7280">Positie langs boorlijn (m)</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
 
   const W = 900, H = 200;
   const PAD = { top: 20, right: 20, bottom: 40, left: 50 };
@@ -367,14 +535,67 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     return snapNaarLijn(lat, lng, pts).positieM;
   }
 
+  const hoverMarkerRef = useRef(null);
+
+  async function handleAnalysePuntVerplaatst(idx, nieuwM) {
+    const pts = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
+    if (pts.length < 2) return;
+    let afstand = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const segLen = afstandM(pts[i], pts[i + 1]);
+      if (afstand + segLen >= nieuwM) {
+        const t = (nieuwM - afstand) / segLen;
+        const nLat = pts[i][0] + t * (pts[i+1][0] - pts[i][0]);
+        const nLng = pts[i][1] + t * (pts[i+1][1] - pts[i][1]);
+        setAnalysePunten(prev => {
+          const gesorteerd = [...prev].sort((a, b) => a.positieM - b.positieM);
+          const punt = gesorteerd[idx];
+          if (!punt) return prev;
+          if (punt._marker) punt._marker.setLatLng([nLat, nLng]);
+          punt.lat = nLat; punt.lng = nLng; punt.positieM = Math.round(nieuwM);
+          return [...prev];
+        });
+        return;
+      }
+      afstand += segLen;
+    }
+  }
+
   function tekenPolyline(kaart, pts) {
     const L = window.L;
-    if (polylineRef.current) kaart.removeLayer(polylineRef.current);
+    if (polylineRef.current) {
+      kaart.removeLayer(polylineRef.current);
+      if (hoverMarkerRef.current && kaart.hasLayer(hoverMarkerRef.current)) {
+        kaart.removeLayer(hoverMarkerRef.current);
+      }
+    }
     if (pts.length < 2) return;
-    const lijn = L.polyline(pts, { color: "#2563eb", weight: 4, opacity: 0.9 }).addTo(kaart);
+    const lijn = L.polyline(pts, { color: "#2563eb", weight: 6, opacity: 0.9 }).addTo(kaart);
     polylineRef.current = lijn;
 
-    // Klik op lijn om punt in te voegen (bewerken + tekenen modus)
+    // Hover preview marker — groene cirkel met plus
+    const preview = L.marker([0, 0], {
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="width:24px;height:24px;background:#16a34a;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="color:white;font-size:14px;font-weight:700;line-height:1;">+</span></div>`,
+        iconSize: [24, 24], iconAnchor: [12, 12],
+      }),
+      interactive: false, zIndexOffset: 3000,
+    });
+    hoverMarkerRef.current = preview;
+
+    lijn.on("mousemove", (e) => {
+      if (modeRef.current !== "analyse") return;
+      const snap = snapNaarLijn(e.latlng.lat, e.latlng.lng, pts);
+      if (!kaart.hasLayer(preview)) preview.addTo(kaart);
+      preview.setLatLng([snap.lat, snap.lng]);
+    });
+
+    lijn.on("mouseout", () => {
+      if (kaart.hasLayer(preview)) kaart.removeLayer(preview);
+    });
+
+    // Klik op lijn om controlepunt in te voegen (bewerken + tekenen modus)
     lijn.on("click", (e) => {
       L.DomEvent.stopPropagation(e);
       const mode = modeRef.current;
@@ -677,6 +898,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           controlePunten={actievePunten}
           analysePunten={analysePunten}
           project={project}
+          onAnalysePuntVerplaatst={handleAnalysePuntVerplaatst}
         />
       </div>
 
