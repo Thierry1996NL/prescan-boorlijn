@@ -1,17 +1,7 @@
-// app/api/bgt/route.js — Edge runtime Frankfurt
+// app/api/bgt/route.js — Grondige debug versie
 
 export const runtime = "edge";
 export const preferredRegion = "fra1";
-
-const BGT_NAAR_NL = {
-  "gesloten verharding": { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣", herstel: "Hoog" },
-  "open verharding": { label: "Klinkers / Tegels", kleur: "#6b7280", icoon: "🧱", herstel: "Midden" },
-  "half verhard": { label: "Half verhard", kleur: "#92400e", icoon: "🪨", herstel: "Laag" },
-  "onverhard": { label: "Onverhard", kleur: "#78350f", icoon: "🌱", herstel: "Laag" },
-  "gras- en kruidachtigen": { label: "Grasberm", kleur: "#16a34a", icoon: "🌿", herstel: "Laag" },
-  "groenvoorziening": { label: "Groen", kleur: "#15803d", icoon: "🌳", herstel: "Laag" },
-  "zand": { label: "Zand", kleur: "#d97706", icoon: "🏖", herstel: "Laag" },
-};
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -21,28 +11,48 @@ export async function GET(request) {
 
   const delta = 0.0003;
   const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+  const resultaten = [];
 
-  // Probeer alleen wegdeel — snelste laag
-  for (const { naam, prop } of [
-    { naam: "wegdeel", prop: "fysiekVoorkomen" },
-    { naam: "begroeidterreindeel", prop: "fysiekVoorkomen" },
-    { naam: "onbegroeidterreindeel", prop: "fysiekVoorkomen" },
-  ]) {
-    try {
-      const res = await fetch(
-        `https://service.pdok.nl/lv/bgt/ogc/v1_0/collections/${naam}/items?bbox=${bbox}&limit=1&f=json`,
-        { signal: AbortSignal.timeout(3000) }
-      );
-      if (!res.ok) continue;
-      const json = await res.json();
-      const props = json.features?.[0]?.properties ?? {};
-      const type = props[prop] ?? null;
-      if (type && type !== "transitie") {
-        const vertaald = BGT_NAAR_NL[type.toLowerCase()] ?? { label: type, kleur: "#6b7280", icoon: "📍", herstel: "?" };
-        return Response.json({ laag: naam, type, vertaald, bron: "pdok" });
-      }
-    } catch (e) { continue; }
-  }
+  // Test 1: PDOK BGT OGC op service.pdok.nl
+  try {
+    const url = `https://service.pdok.nl/lv/bgt/ogc/v1_0/collections/wegdeel/items?bbox=${bbox}&limit=1&f=json`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const body = await r.text();
+    resultaten.push({ test: "pdok_ogc_service", status: r.status, preview: body.slice(0, 200) });
+  } catch(e) { resultaten.push({ test: "pdok_ogc_service", fout: e.message }); }
 
-  return Response.json({ laag: null, type: null });
+  // Test 2: PDOK BGT OGC op api.pdok.nl (alternatief domein)
+  try {
+    const url = `https://api.pdok.nl/lv/bgt/ogc/v1_0/collections/wegdeel/items?bbox=${bbox}&limit=1&f=json`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const body = await r.text();
+    resultaten.push({ test: "pdok_ogc_api", status: r.status, preview: body.slice(0, 200) });
+  } catch(e) { resultaten.push({ test: "pdok_ogc_api", fout: e.message }); }
+
+  // Test 3: PDOK WFS
+  try {
+    const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=bgt:wegdeel&bbox=${bbox}&outputFormat=application/json&count=1`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const body = await r.text();
+    resultaten.push({ test: "pdok_wfs", status: r.status, preview: body.slice(0, 200) });
+  } catch(e) { resultaten.push({ test: "pdok_wfs", fout: e.message }); }
+
+  // Test 4: Nominatim reverse geocode met extratags
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&extratags=1`;
+    const r = await fetch(url, { headers: { "User-Agent": "PrescanBoorlijnAI/1.0" }, signal: AbortSignal.timeout(4000) });
+    const body = await r.text();
+    resultaten.push({ test: "nominatim", status: r.status, preview: body.slice(0, 400) });
+  } catch(e) { resultaten.push({ test: "nominatim", fout: e.message }); }
+
+  // Test 5: Overpass zonder headers
+  try {
+    const query = `[out:json][timeout:3];way(around:15,${lat},${lng})[surface];out tags 1;`;
+    const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const body = await r.text();
+    resultaten.push({ test: "overpass", status: r.status, preview: body.slice(0, 300) });
+  } catch(e) { resultaten.push({ test: "overpass", fout: e.message }); }
+
+  return Response.json({ resultaten, lat, lng, bbox });
 }
