@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// ─── PDOK LAGEN ───────────────────────────────────────────────
 const LAGEN = [
   { id: "luchtfoto", label: "Luchtfoto", kleur: "#6b7280", standaardAan: false, type: "wmts", url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:3857/{z}/{x}/{y}.jpeg" },
   { id: "panden", label: "BAG Panden", kleur: "#ea580c", standaardAan: true, type: "wms", url: "https://service.pdok.nl/lv/bag/wms/v2_0", layers: "pand" },
@@ -10,7 +11,6 @@ const LAGEN = [
   { id: "kunstwerken", label: "Duikers & Kunstwerken", kleur: "#8b5cf6", standaardAan: true, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "kunstwerkdeel" },
   { id: "wegen", label: "Wegdelen", kleur: "#64748b", standaardAan: false, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "wegdeel" },
   { id: "begroeide", label: "Begroeid terrein", kleur: "#22c55e", standaardAan: false, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "begroeidterreindeel" },
-  { id: "onbegroeide", label: "Onbegroeid terrein", kleur: "#a3a3a3", standaardAan: false, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "onbegroeidterreindeel" },
   { id: "berm", label: "Berm / Ondersteunend", kleur: "#84cc16", standaardAan: false, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "ondersteunendwegdeel" },
   { id: "spoor", label: "Spoorbaandelen", kleur: "#dc2626", standaardAan: true, type: "wms", url: "https://service.pdok.nl/lv/bgt/wms/v1_0", layers: "spoor" },
   { id: "buisleidingen", label: "Buisleidingen", kleur: "#f97316", standaardAan: true, type: "wms", url: "https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0", layers: "buisleiding" },
@@ -18,338 +18,207 @@ const LAGEN = [
   { id: "ahn", label: "AHN Hoogte", kleur: "#84cc16", standaardAan: false, type: "wms", url: "https://service.pdok.nl/rws/ahn/wms/v1_0", layers: "dtm_05m" },
 ];
 
+// ─── BGT OPPERVLAK ────────────────────────────────────────────
+const BGT_NAAR_NL = {
+  "gesloten verharding": { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣", herstel: "Hoog" },
+  "open verharding": { label: "Klinkers / Tegels", kleur: "#6b7280", icoon: "🧱", herstel: "Midden" },
+  "half verhard": { label: "Half verhard", kleur: "#92400e", icoon: "🪨", herstel: "Laag" },
+  "onverhard": { label: "Onverhard", kleur: "#78350f", icoon: "🌱", herstel: "Laag" },
+  "gras- en kruidachtigen": { label: "Grasberm", kleur: "#16a34a", icoon: "🌿", herstel: "Laag" },
+  "groenvoorziening": { label: "Groen / Plantsoen", kleur: "#15803d", icoon: "🌳", herstel: "Laag" },
+  "struiken": { label: "Struiken", kleur: "#166534", icoon: "🌿", herstel: "Laag" },
+  "zand": { label: "Zand", kleur: "#d97706", icoon: "🏖", herstel: "Laag" },
+  "rietland en moeras": { label: "Riet / Moeras", kleur: "#0369a1", icoon: "🌾", herstel: "Speciaal" },
+};
 
-// Haal oppervlaktype op via eigen proxy (OpenStreetMap)
 async function haalOppervlakOp(lat, lng) {
   try {
     const res = await fetch(`/api/bgt?lat=${lat}&lng=${lng}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.type) {
-      return {
-        laag: data.laag,
-        type: data.type,
-        // Gebruik vertaald object als het er is, anders vertaal zelf
-        _vertaald: data.vertaald ?? null,
-      };
+      const lc = data.type.toLowerCase();
+      const vertaald = data.vertaald ?? BGT_NAAR_NL[lc] ?? { label: data.type, kleur: "#6b7280", icoon: "📍", herstel: "?" };
+      return { type: data.type, vertaald };
     }
-  } catch (e) {
-    console.error("Oppervlak proxy fout:", e);
-  }
+  } catch (e) {}
   return null;
 }
 
-async function haalAHNHoogteOp(lat, lng) {
-  try {
-    const params = new URLSearchParams({
-      SERVICE: "WCS", VERSION: "2.0.1", REQUEST: "GetCoverage",
-      COVERAGEID: "dtm_05m", FORMAT: "image/tiff",
-      SUBSET: `Long(${lng - 0.0001},${lng + 0.0001})`,
-      SUBSETCRS: "EPSG:4326",
-    });
-    // Gebruik PDOK locatieserver als fallback voor hoogte
-    const url = `https://api.pdok.nl/bzk/locatieserver/search/v3_1/lookup?id=${lat},${lng}&fl=identificatie,weergavenaam`;
-    // AHN WCS is complex — gebruik geschatte waarde op basis van Nederland (NAP)
-    return Math.round((Math.random() * 2 - 0.5) * 10) / 10; // placeholder tot WCS geconfigureerd
-  } catch (e) {
-    return null;
-  }
-}
-
-function vertaalOppervlak(type) {
-  if (!type) return { label: "Onbekend", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
-  const lc = type.toLowerCase();
-  if (lc.includes("gesloten")) return { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣", herstel: "Hoog" };
-  if (lc.includes("open verharding")) return { label: "Klinkers / Tegels", kleur: "#6b7280", icoon: "🧱", herstel: "Midden" };
-  if (lc.includes("half verhard")) return { label: "Half verhard", kleur: "#92400e", icoon: "🪨", herstel: "Laag" };
-  if (lc.includes("onverhard")) return { label: "Onverhard", kleur: "#78350f", icoon: "🌱", herstel: "Laag" };
-  if (lc.includes("gras")) return { label: "Grasberm", kleur: "#16a34a", icoon: "🌿", herstel: "Laag" };
-  if (lc.includes("groenvoorziening")) return { label: "Groen", kleur: "#15803d", icoon: "🌳", herstel: "Laag" };
-  if (lc.includes("bos")) return { label: "Bos", kleur: "#14532d", icoon: "🌲", herstel: "Laag" };
-  if (lc.includes("zand")) return { label: "Zand", kleur: "#d97706", icoon: "🏖", herstel: "Laag" };
-  if (lc.includes("water") || lc.includes("sloot") || lc.includes("kanaal")) return { label: "Water", kleur: "#0284c7", icoon: "💧", herstel: "Speciaal" };
-  return { label: type, kleur: "#6b7280", icoon: "📍", herstel: "?" };
-}
-
-// Haversine afstand in meters
-function afstandTussenPunten(p1, p2) {
+// ─── DWARSPROFIEL ─────────────────────────────────────────────
+function afstandM(p1, p2) {
   const R = 6371000;
   const dLat = (p2[0] - p1[0]) * Math.PI / 180;
   const dLng = (p2[1] - p1[1]) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1[0] * Math.PI / 180) * Math.cos(p2[0] * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const a = Math.sin(dLat/2)**2 + Math.cos(p1[0]*Math.PI/180)*Math.cos(p2[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Dwarsprofiel SVG component
-function Dwarsprofiel({ punten, livePunten, project }) {
-  if (punten.length < 2) {
+function Dwarsprofiel({ controlePunten, analysePunten, project }) {
+  if (controlePunten.length < 2) {
     return (
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boortracé</h3>
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
         </div>
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <div className="text-3xl mb-3">📐</div>
-          <p className="text-sm text-gray-400 font-medium">Nog geen tracé getekend</p>
-          <p className="text-xs text-gray-300 mt-1">Teken een tracé om het dwarsprofiel te zien.</p>
+          <p className="text-sm text-gray-400 font-medium">Nog geen boorlijn getekend</p>
+          <p className="text-xs text-gray-300 mt-1">Teken een boorlijn om het dwarsprofiel te zien.</p>
         </div>
       </div>
     );
   }
 
-  const W = 900;
-  const H = 200;
-  const PADDING = { top: 20, right: 20, bottom: 40, left: 50 };
-  const plotW = W - PADDING.left - PADDING.right;
-  const plotH = H - PADDING.top - PADDING.bottom;
+  const W = 900, H = 200;
+  const PAD = { top: 20, right: 20, bottom: 40, left: 50 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
 
-  // Totale tracélengte
   let totaalM = 0;
-  const cumulatief = [0];
-  for (let i = 1; i < punten.length; i++) {
-    totaalM += afstandTussenPunten(punten[i - 1], punten[i]);
-    cumulatief.push(totaalM);
+  const cumul = [0];
+  for (let i = 1; i < controlePunten.length; i++) {
+    totaalM += afstandM(controlePunten[i-1], controlePunten[i]);
+    cumul.push(totaalM);
   }
 
-  const minDiepte = -5;
-  const maxDiepte = 1;
-  const diepteBereik = maxDiepte - minDiepte;
+  const minD = -5, maxD = 1, bereik = maxD - minD;
+  const xPos = m => PAD.left + (m / totaalM) * plotW;
+  const yPos = d => PAD.top + ((maxD - d) / bereik) * plotH;
+  const boringD = -1.5;
+  const BAR_H = 28, BAR_Y = 8;
 
-  function xPos(m) { return PADDING.left + (m / totaalM) * plotW; }
-  function yPos(d) { return PADDING.top + ((maxDiepte - d) / diepteBereik) * plotH; }
-
-  const boringDiepte = -1.5;
-
-  // Oppervlaktestroken met cumulatieve positie
-  const oppervlakSegmenten = livePunten.map((p, i) => ({
-    m: cumulatief[Math.min(i, cumulatief.length - 1)] ?? (i / livePunten.length) * totaalM,
-    ...p,
-  }));
-
-  // Groepeer aaneengesloten zelfde types tot segmenten
+  // Groepeer analyse punten per type voor de straatwerk balk
   const groepen = [];
-  oppervlakSegmenten.forEach((seg, i) => {
+  analysePunten.forEach((p, i) => {
     const vorige = groepen[groepen.length - 1];
-    if (vorige && vorige.label === seg.label) {
-      vorige.eindeM = cumulatief[Math.min(i + 1, cumulatief.length - 1)] ?? totaalM;
+    const label = p.vertaald?.label ?? "Geen data";
+    if (vorige && vorige.label === label) {
+      vorige.eindeM = p.positieM ?? totaalM;
     } else {
-      groepen.push({
-        label: seg.label,
-        icoon: seg.icoon,
-        kleur: seg.kleur,
-        herstel: seg.herstel,
-        startM: seg.m,
-        eindeM: cumulatief[Math.min(i + 1, cumulatief.length - 1)] ?? totaalM,
-      });
+      groepen.push({ label, kleur: p.vertaald?.kleur ?? "#9ca3af", icoon: p.vertaald?.icoon ?? "❓", startM: p.positieM ?? 0, eindeM: p.positieM ?? totaalM });
     }
   });
-  if (groepen.length > 0) groepen[groepen.length - 1].eindeM = totaalM;
+  if (groepen.length > 0) groepen[groepen.length-1].eindeM = totaalM;
 
-  // Overgangen (transities)
-  const overgangen = groepen.slice(1).map((g, i) => ({
-    m: groepen[i].eindeM,
-    van: groepen[i],
-    naar: g,
-  }));
-
-  const kruisingen = project?.kruisingen?.length > 0 ? project.kruisingen : [];
-
-  // BAR hoogte
-  const BAR_H = 28;
-  const BAR_Y = 8;
-  const BAR_LABEL_Y = BAR_Y + BAR_H + 11;
+  const overgangen = groepen.slice(1).map((g, i) => ({ m: groepen[i].eindeM, van: groepen[i], naar: g }));
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boortracé</h3>
+        <h3 className="text-sm font-semibold text-gray-900">📐 Dwarsprofiel boorlijn</h3>
         <div className="flex items-center gap-4 text-xs text-gray-400">
           <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-blue-600" /> Boring ({project?.diameter_mm ?? "—"} mm)</span>
-          {kruisingen.length > 0 && <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-red-400" /> Kruisingen</span>}
           <span className="text-gray-300">Totaal: {Math.round(totaalM)} m</span>
         </div>
       </div>
 
-      {/* Straatwerk analyse balk */}
       {groepen.length > 0 && (
         <div className="px-5 pt-4 pb-2 border-b border-gray-100">
           <div className="text-xs font-medium text-gray-500 mb-2">Straatwerk analyse</div>
-          <svg viewBox={`0 0 ${W} ${BAR_LABEL_Y + 10}`} className="w-full" style={{ height: BAR_LABEL_Y + 14 }}>
-
-            {/* Segmenten */}
+          <svg viewBox={`0 0 ${W} ${BAR_Y + BAR_H + 22}`} className="w-full" style={{ height: BAR_Y + BAR_H + 26 }}>
             {groepen.map((g, i) => {
-              const x1 = xPos(g.startM);
-              const x2 = xPos(g.eindeM);
+              const x1 = xPos(g.startM), x2 = xPos(g.eindeM);
               const breedte = Math.max(x2 - x1, 2);
-              const midden = x1 + breedte / 2;
-              const lengte = Math.round(g.eindeM - g.startM);
               return (
                 <g key={i}>
-                  {/* Segment blok */}
-                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" rx={i === 0 ? "4 0 0 4" : i === groepen.length - 1 ? "0 4 4 0" : "0"} />
-                  {/* Label */}
-                  {breedte > 40 && (
-                    <text x={midden} y={BAR_Y + BAR_H / 2 + 1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">
-                      {g.icoon} {g.label}
-                    </text>
-                  )}
-                  {breedte > 25 && (
-                    <text x={midden} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">
-                      {lengte}m
-                    </text>
-                  )}
+                  <rect x={x1} y={BAR_Y} width={breedte} height={BAR_H} fill={g.kleur} opacity="0.85" />
+                  {breedte > 40 && <text x={x1+breedte/2} y={BAR_Y+BAR_H/2+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{g.icoon} {g.label}</text>}
+                  {breedte > 25 && <text x={x1+breedte/2} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill={g.kleur} fontWeight="500">{Math.round(g.eindeM-g.startM)}m</text>}
                 </g>
               );
             })}
-
-            {/* Startpunt */}
-            <circle cx={xPos(0)} cy={BAR_Y + BAR_H / 2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
-            <text x={xPos(0)} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
-
-            {/* Eindpunt */}
-            <circle cx={xPos(totaalM)} cy={BAR_Y + BAR_H / 2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
-            <text x={xPos(totaalM)} y={BAR_Y + BAR_H + 8} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
-
-            {/* Overgangsmarkeringen */}
-            {overgangen.map((o, i) => {
-              const x = xPos(o.m);
-              return (
-                <g key={i}>
-                  <line x1={x} y1={BAR_Y - 2} x2={x} y2={BAR_Y + BAR_H + 2} stroke="white" strokeWidth="2" />
-                  <polygon points={`${x},${BAR_Y - 6} ${x - 4},${BAR_Y - 2} ${x + 4},${BAR_Y - 2}`} fill="#374151" />
-                  <text x={x} y={BAR_Y - 8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
-                </g>
-              );
-            })}
+            <circle cx={xPos(0)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(0)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">0m</text>
+            <circle cx={xPos(totaalM)} cy={BAR_Y+BAR_H/2} r="5" fill="white" stroke="#374151" strokeWidth="1.5" />
+            <text x={xPos(totaalM)} y={BAR_Y+BAR_H+9} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{Math.round(totaalM)}m</text>
+            {overgangen.map((o, i) => (
+              <g key={i}>
+                <line x1={xPos(o.m)} y1={BAR_Y-2} x2={xPos(o.m)} y2={BAR_Y+BAR_H+2} stroke="white" strokeWidth="2" />
+                <polygon points={`${xPos(o.m)},${BAR_Y-6} ${xPos(o.m)-4},${BAR_Y-2} ${xPos(o.m)+4},${BAR_Y-2}`} fill="#374151" />
+                <text x={xPos(o.m)} y={BAR_Y-8} textAnchor="middle" fontSize="7.5" fill="#374151" fontWeight="600">{Math.round(o.m)}m</text>
+              </g>
+            ))}
           </svg>
         </div>
       )}
 
-      {/* Dwarsprofiel SVG */}
       <div className="px-5 pt-3 pb-4">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
-          <rect x={PADDING.left} y={PADDING.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
-          <rect x={PADDING.left} y={yPos(0)} width={plotW} height={yPos(minDiepte) - yPos(0)} fill="#e5e7eb" opacity="0.4" />
-          <line x1={PADDING.left} y1={yPos(0)} x2={PADDING.left + plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
-
-          {/* Kleurstroken van segmenten op maaiveld */}
-          {groepen.map((g, i) => {
-            const x1 = xPos(g.startM);
-            const x2 = xPos(g.eindeM);
-            return (
-              <rect key={i} x={x1} y={yPos(0) - 6} width={Math.max(x2 - x1, 2)} height={6} fill={g.kleur} opacity="0.5" />
-            );
-          })}
-
-          {/* Y-as */}
-          {[0, -1, -2, -3, -4, -5].map(d => (
+          <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="#f8fafc" rx="4" />
+          <rect x={PAD.left} y={yPos(0)} width={plotW} height={yPos(minD)-yPos(0)} fill="#e5e7eb" opacity="0.4" />
+          {groepen.map((g, i) => <rect key={i} x={xPos(g.startM)} y={yPos(0)-6} width={Math.max(xPos(g.eindeM)-xPos(g.startM),2)} height={6} fill={g.kleur} opacity="0.5" />)}
+          <line x1={PAD.left} y1={yPos(0)} x2={PAD.left+plotW} y2={yPos(0)} stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 2" />
+          {[0,-1,-2,-3,-4,-5].map(d => (
             <g key={d}>
-              <line x1={PADDING.left - 4} y1={yPos(d)} x2={PADDING.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
-              <text x={PADDING.left - 6} y={yPos(d) + 3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
-              <line x1={PADDING.left} y1={yPos(d)} x2={PADDING.left + plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
+              <line x1={PAD.left-4} y1={yPos(d)} x2={PAD.left} y2={yPos(d)} stroke="#d1d5db" strokeWidth="1" />
+              <text x={PAD.left-6} y={yPos(d)+3} textAnchor="end" fontSize="9" fill="#9ca3af">{d}m</text>
+              <line x1={PAD.left} y1={yPos(d)} x2={PAD.left+plotW} y2={yPos(d)} stroke="#f3f4f6" strokeWidth="0.5" />
             </g>
           ))}
-
-          {/* X-as */}
-          {[0, 0.25, 0.5, 0.75, 1].map(frac => {
-            const m = frac * totaalM;
-            const x = xPos(m);
+          {[0,0.25,0.5,0.75,1].map(f => {
+            const m = f*totaalM, x = xPos(m);
+            return (<g key={f}><line x1={x} y1={PAD.top+plotH} x2={x} y2={PAD.top+plotH+4} stroke="#d1d5db" strokeWidth="1" /><text x={x} y={PAD.top+plotH+13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text></g>);
+          })}
+          <line x1={PAD.left} y1={yPos(boringD)} x2={PAD.left+plotW} y2={yPos(boringD)} stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
+          <rect x={PAD.left} y={yPos(boringD)-2} width={plotW} height={4} fill="#2563eb" opacity="0.15" rx="2" />
+          <text x={PAD.left+plotW-4} y={yPos(boringD)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="600">{project?.materiaal ?? "PE"} Ø{project?.diameter_mm ?? "—"}mm</text>
+          {analysePunten.map((p, i) => {
+            const x = xPos(p.positieM ?? 0);
+            const kleur = p.vertaald?.kleur ?? "#9ca3af";
             return (
-              <g key={frac}>
-                <line x1={x} y1={PADDING.top + plotH} x2={x} y2={PADDING.top + plotH + 4} stroke="#d1d5db" strokeWidth="1" />
-                <text x={x} y={PADDING.top + plotH + 13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text>
+              <g key={i}>
+                <line x1={x} y1={PAD.top} x2={x} y2={PAD.top+plotH} stroke={kleur} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+                <circle cx={x} cy={yPos(0)} r="4" fill={kleur} opacity="0.9" />
               </g>
             );
           })}
-
-        {/* Boring lijn */}
-        <line
-          x1={PADDING.left} y1={yPos(boringDiepte)}
-          x2={PADDING.left + plotW} y2={yPos(boringDiepte)}
-          stroke="#2563eb" strokeWidth="3" strokeLinecap="round"
-        />
-        {/* Boring buis dikte indicatie */}
-        <rect
-          x={PADDING.left} y={yPos(boringDiepte) - 2}
-          width={plotW} height={4}
-          fill="#2563eb" opacity="0.15" rx="2"
-        />
-        <text x={PADDING.left + plotW - 4} y={yPos(boringDiepte) - 5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="600">
-          {project?.materiaal ?? "PE"} Ø{project?.diameter_mm ?? "—"}mm
-        </text>
-
-        {/* Kruisingen */}
-        {kruisingen.map((k, i) => {
-          const posM = k.kruising_positie_m ?? (totaalM * (i + 1) / (kruisingen.length + 1));
-          const diepteM = k.diepte_m ? -k.diepte_m : -1.2;
-          const x = xPos(posM);
-          const y = yPos(diepteM);
-          const kleur = k.risico === "rood" ? "#ef4444" : k.risico === "oranje" ? "#f97316" : "#22c55e";
-          return (
-            <g key={i}>
-              <line x1={x} y1={PADDING.top} x2={x} y2={PADDING.top + plotH} stroke={kleur} strokeWidth="1" strokeDasharray="4 3" opacity="0.6" />
-              <circle cx={x} cy={y} r="5" fill={kleur} opacity="0.9" />
-              <text x={x} y={y - 8} textAnchor="middle" fontSize="8" fill={kleur} fontWeight="600">
-                {k.leidingtype?.split(" ")[0] ?? "Leiding"}
-              </text>
-              <text x={x} y={PADDING.top + plotH + 25} textAnchor="middle" fontSize="8" fill={kleur}>
-                {Math.round(posM)}m
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Assen */}
-        <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={PADDING.top + plotH} stroke="#d1d5db" strokeWidth="1.5" />
-        <line x1={PADDING.left} y1={PADDING.top + plotH} x2={PADDING.left + plotW} y2={PADDING.top + plotH} stroke="#d1d5db" strokeWidth="1.5" />
-
-        {/* Labels assen */}
-        <text x={PADDING.left - 40} y={PADDING.top + plotH / 2} textAnchor="middle" fontSize="9" fill="#6b7280" transform={`rotate(-90, ${PADDING.left - 40}, ${PADDING.top + plotH / 2})`}>
-          Diepte (m NAP)
-        </text>
-        <text x={PADDING.left + plotW / 2} y={H - 2} textAnchor="middle" fontSize="9" fill="#6b7280">
-          Positie langs tracé (m)
-        </text>
-      </svg>
-
-      {/* Samenvatting onder profiel */}
-      {oppervlakSegmenten.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
-          {[...new Map(oppervlakSegmenten.map(s => [s.label, s])).values()].map((s, i) => (
-            <span key={i} className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium"
-              style={{ backgroundColor: s.kleur + "15", color: s.kleur, border: `1px solid ${s.kleur}30` }}>
-              {s.icoon} {s.label}
-              {s.herstel && <span className="opacity-60 ml-0.5">· herstel: {s.herstel}</span>}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+          <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <line x1={PAD.left} y1={PAD.top+plotH} x2={PAD.left+plotW} y2={PAD.top+plotH} stroke="#d1d5db" strokeWidth="1.5" />
+          <text x={PAD.left-40} y={PAD.top+plotH/2} textAnchor="middle" fontSize="9" fill="#6b7280" transform={`rotate(-90,${PAD.left-40},${PAD.top+plotH/2})`}>Diepte (m NAP)</text>
+          <text x={PAD.left+plotW/2} y={H-2} textAnchor="middle" fontSize="9" fill="#6b7280">Positie langs tracé (m)</text>
+        </svg>
+      </div>
     </div>
   );
 }
 
+// ─── HOOFD COMPONENT ──────────────────────────────────────────
 export default function MapTrace({ project, onTraceOpgeslagen }) {
   const mapRef = useRef(null);
   const leafletMapRef = useRef(null);
   const laagRefs = useRef({});
-  const tekenLijnLaagRef = useRef(null);
-  const traceLaagRef = useRef(null);   // opgeslagen tracé laag
-  const markerGroepRef = useRef(null); // alle cirkel markers
-  const tekenModusRef = useRef(false);
-  const puntenRef = useRef([]);
+  const polylineRef = useRef(null);      // de tracélijn
+  const controlepuntMarkersRef = useRef([]); // sleepbare vierkante markers
+  const traceLaagRef = useRef(null);     // opgeslagen GeoJSON laag
+  const modeRef = useRef("niets");       // "niets" | "tekenen" | "bewerken" | "analyse"
 
   const [actieveLagen, setActieveLagen] = useState(Object.fromEntries(LAGEN.map(l => [l.id, l.standaardAan])));
-  const [tekenModus, setTekenModus] = useState(false);
-  const [punten, setPunten] = useState([]);
+  const [modus, setModus] = useState("niets"); // "niets" | "tekenen" | "bewerken" | "analyse"
+  const [controlePunten, setControlePunten] = useState([]); // [[lat,lng], ...]
+  const [analysePunten, setAnalysePunten] = useState([]);   // [{lat,lng,vertaald,positieM}, ...]
   const [opgeslagen, setOpgeslagen] = useState(false);
   const [legendaOpen, setLegendaOpen] = useState(true);
-  const [livePunten, setLivePunten] = useState([]);
   const [analyseBezig, setAnalyseBezig] = useState(false);
   const [toonVerwijderPopup, setToonVerwijderPopup] = useState(false);
   const [verwijderBezig, setVerwijderBezig] = useState(false);
 
+  // Sync modus ref
+  useEffect(() => { modeRef.current = modus; }, [modus]);
+
+  // Bestaand tracé laden
+  const bestaandTrace = (() => {
+    try {
+      const g = project?.boortrace_geojson;
+      if (!g) return [];
+      const p = typeof g === "string" ? JSON.parse(g) : g;
+      return p.coordinates?.map(([lng, lat]) => [lat, lng]) ?? [];
+    } catch { return []; }
+  })();
+
+  const actievePunten = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
+
+  // Init kaart
   useEffect(() => {
     if (typeof window === "undefined" || leafletMapRef.current) return;
     const link = document.createElement("link");
@@ -366,13 +235,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   function initKaart() {
     const L = window.L;
     if (!mapRef.current || leafletMapRef.current) return;
-    const kaart = L.map(mapRef.current, { center: [52.15, 5.38], zoom: 8 });
+    const kaart = L.map(mapRef.current, { center: [52.15, 5.38], zoom: 8, maxZoom: 22 });
     leafletMapRef.current = kaart;
-
-    // Marker groep — makkelijk in één keer verwijderen
-    markerGroepRef.current = L.layerGroup().addTo(kaart);
-
-    L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png", { attribution: "© PDOK BRT", maxZoom: 19 }).addTo(kaart);
+    L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png", { attribution: "© PDOK BRT", maxZoom: 22 }).addTo(kaart);
     LAGEN.forEach(laag => {
       const l = laag.type === "wmts"
         ? L.tileLayer(laag.url, { maxZoom: 19, opacity: 0.9, attribution: "© PDOK" })
@@ -381,6 +246,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       if (laag.standaardAan) l.addTo(kaart);
     });
 
+    // Laad bestaand tracé
     if (project?.boortrace_geojson) {
       try {
         const geojson = typeof project.boortrace_geojson === "string" ? JSON.parse(project.boortrace_geojson) : project.boortrace_geojson;
@@ -389,49 +255,180 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       } catch (e) {}
     }
 
+    // Kaart klik handler
     kaart.on("click", async (e) => {
-      if (!tekenModusRef.current) return;
       const { lat, lng } = e.latlng;
-      const nieuwePunten = [...puntenRef.current, [lat, lng]];
-      puntenRef.current = nieuwePunten;
-      setPunten([...nieuwePunten]);
-      tekenLijn(kaart, nieuwePunten);
-      setAnalyseBezig(true);
-      const result = await haalOppervlakOp(lat, lng);
-      const vertaald = result?._vertaald
-        ? result._vertaald
-        : result
-        ? vertaalOppervlak(result.type)
-        : { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+      const mode = modeRef.current;
 
-      // Voeg marker toe aan groep
-      const L2 = window.L;
-      L2.circleMarker([lat, lng], { radius: 7, fillColor: vertaald.kleur, color: "#fff", weight: 2, fillOpacity: 1 })
-        .bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" })
-        .addTo(markerGroepRef.current);
+      if (mode === "tekenen") {
+        // Voeg controlepunt toe
+        setControlePunten(prev => {
+          const nieuw = [...prev, [lat, lng]];
+          tekenPolyline(kaart, nieuw);
+          voegControlepuntMarkerToe(kaart, nieuw, nieuw.length - 1);
+          return nieuw;
+        });
+      }
 
-      setLivePunten(prev => [...prev, { lat, lng, ...vertaald, origineel: result?.type }]);
-      setAnalyseBezig(false);
+      if (mode === "analyse") {
+        // Voeg analysepunt toe
+        setAnalyseBezig(true);
+        const result = await haalOppervlakOp(lat, lng);
+        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+        const huidigePunten = modeRef._controlePunten ?? [];
+        const positieM = berekenPositieOpLijn(lat, lng, huidigePunten);
+        const nieuwPunt = { lat, lng, vertaald, positieM };
+
+        // Voeg analyse marker toe op kaart
+        const marker = L.circleMarker([lat, lng], {
+          radius: 9, fillColor: vertaald.kleur, color: "#fff", weight: 2.5, fillOpacity: 1,
+        }).bindTooltip(`${vertaald.icoon} ${vertaald.label}`, { permanent: false, direction: "top" }).addTo(kaart);
+
+        marker.on("click", (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          kaart.removeLayer(marker);
+          setAnalysePunten(prev => prev.filter(p => p.lat !== lat || p.lng !== lng));
+        });
+
+        setAnalysePunten(prev => [...prev, { ...nieuwPunt, _marker: marker }]);
+        setAnalyseBezig(false);
+      }
     });
   }
 
-  // Verwijder alles van de kaart en reset state
-  function wisAlles() {
-    puntenRef.current = [];
-    setPunten([]);
-    setLivePunten([]);
-    setTekenModus(false);
-    const kaart = leafletMapRef.current;
-    if (!kaart) return;
-    if (tekenLijnLaagRef.current) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
-    if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
-    if (markerGroepRef.current) { markerGroepRef.current.clearLayers(); }
+  function berekenPositieOpLijn(lat, lng, pts) {
+    if (pts.length < 2) return 0;
+    let totaal = 0;
+    for (let i = 1; i < pts.length; i++) {
+      totaal += afstandM(pts[i-1], pts[i]);
+    }
+    // Simpel: bereken afstand van begin tot dichtstbijzijnde punt
+    let dichtstBij = 0, minDist = Infinity, distTot = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const d = afstandM([lat, lng], pts[i]);
+      if (d < minDist) { minDist = d; dichtstBij = i; }
+    }
+    let pos = 0;
+    for (let i = 1; i <= dichtstBij; i++) pos += afstandM(pts[i-1], pts[i]);
+    return Math.round(pos);
   }
 
-  useEffect(() => {
-    tekenModusRef.current = tekenModus;
-    if (leafletMapRef.current) leafletMapRef.current.getContainer().style.cursor = tekenModus ? "crosshair" : "";
-  }, [tekenModus]);
+  function tekenPolyline(kaart, pts) {
+    const L = window.L;
+    if (polylineRef.current) kaart.removeLayer(polylineRef.current);
+    if (pts.length < 2) return;
+    polylineRef.current = L.polyline(pts, { color: "#2563eb", weight: 4, opacity: 0.9 }).addTo(kaart);
+  }
+
+  // Vierkant icoon voor controlepunten
+  function maakControlepuntIcon(L, index, totaal) {
+    const isEerste = index === 0;
+    const isLaatste = index === totaal - 1;
+    const kleur = isEerste || isLaatste ? "#1d4ed8" : "#2563eb";
+    return L.divIcon({
+      className: "",
+      html: `<div style="width:12px;height:12px;background:${kleur};border:2px solid white;border-radius:${isEerste || isLaatste ? "50%" : "2px"};cursor:move;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+  }
+
+  function voegControlepuntMarkerToe(kaart, allePunten, index) {
+    const L = window.L;
+    const [lat, lng] = allePunten[index];
+
+    const marker = L.marker([lat, lng], {
+      draggable: true,
+      icon: maakControlepuntIcon(L, index, allePunten.length),
+    }).addTo(kaart);
+
+    // Sleep om lijn aan te passen
+    marker.on("drag", (e) => {
+      const { lat: nLat, lng: nLng } = e.latlng;
+      setControlePunten(prev => {
+        const nieuw = [...prev];
+        nieuw[index] = [nLat, nLng];
+        tekenPolyline(kaart, nieuw);
+        return nieuw;
+      });
+    });
+
+    // Rechtsklik om te verwijderen
+    marker.on("contextmenu", (e) => {
+      L.DomEvent.stopPropagation(e);
+      kaart.removeLayer(marker);
+      controlepuntMarkersRef.current = controlepuntMarkersRef.current.filter(m => m !== marker);
+      setControlePunten(prev => {
+        const nieuw = prev.filter((_, i) => i !== index);
+        tekenPolyline(kaart, nieuw);
+        return nieuw;
+      });
+    });
+
+    marker.bindTooltip(index === 0 ? "Startpunt" : index === allePunten.length - 1 ? "Eindpunt" : `Punt ${index + 1}<br><small>Rechtsklik om te verwijderen</small>`, { direction: "top" });
+    controlepuntMarkersRef.current.push(marker);
+  }
+
+  function startTekenen() {
+    wisControlepunten();
+    setControlePunten([]);
+    setModus("tekenen");
+    if (traceLaagRef.current && leafletMapRef.current) {
+      leafletMapRef.current.removeLayer(traceLaagRef.current);
+      traceLaagRef.current = null;
+    }
+  }
+
+  function startBewerken() {
+    const kaart = leafletMapRef.current;
+    if (!kaart) return;
+    wisControlepunten();
+
+    // Laad bestaand tracé als sleepbare punten
+    const pts = bestaandTrace;
+    setControlePunten(pts);
+    setModus("bewerken");
+    if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+    tekenPolyline(kaart, pts);
+    pts.forEach((_, i) => voegControlepuntMarkerToe(kaart, pts, i));
+  }
+
+  function wisControlepunten() {
+    const kaart = leafletMapRef.current;
+    if (!kaart) return;
+    controlepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
+    controlepuntMarkersRef.current = [];
+    if (polylineRef.current) { kaart.removeLayer(polylineRef.current); polylineRef.current = null; }
+  }
+
+  function wisAnalysePunten() {
+    const kaart = leafletMapRef.current;
+    analysePunten.forEach(p => { if (p._marker && kaart) kaart.removeLayer(p._marker); });
+    setAnalysePunten([]);
+  }
+
+  function wisAlles() {
+    wisControlepunten();
+    wisAnalysePunten();
+    setControlePunten([]);
+    setModus("niets");
+    const kaart = leafletMapRef.current;
+    if (traceLaagRef.current && kaart) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+  }
+
+  async function opslaanTrace() {
+    if (controlePunten.length < 2) return;
+    const geojson = { type: "LineString", coordinates: controlePunten.map(([lat, lng]) => [lng, lat]) };
+    const kaart = leafletMapRef.current;
+    const L = window.L;
+    wisControlepunten();
+    if (traceLaagRef.current && kaart) kaart.removeLayer(traceLaagRef.current);
+    traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+    await onTraceOpgeslagen(geojson);
+    setOpgeslagen(true);
+    setModus("niets");
+    setTimeout(() => setOpgeslagen(false), 3000);
+  }
 
   function toggleLaag(id) {
     const kaart = leafletMapRef.current;
@@ -444,44 +441,17 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     });
   }
 
-  function tekenLijn(kaart, pts) {
-    const L = window.L;
-    if (tekenLijnLaagRef.current) kaart.removeLayer(tekenLijnLaagRef.current);
-    if (pts.length < 2) return;
-    tekenLijnLaagRef.current = L.polyline(pts, { color: "#2563eb", weight: 4, dashArray: "8 5", opacity: 0.9 }).addTo(kaart);
-  }
+  // Update cursor op basis van modus
+  useEffect(() => {
+    if (!leafletMapRef.current) return;
+    const cursors = { tekenen: "crosshair", bewerken: "default", analyse: "cell", niets: "" };
+    leafletMapRef.current.getContainer().style.cursor = cursors[modus] ?? "";
+  }, [modus]);
 
-  function resetTekenen() {
-    puntenRef.current = [];
-    setPunten([]);
-    setLivePunten([]);
-    const kaart = leafletMapRef.current;
-    if (tekenLijnLaagRef.current && kaart) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
-    if (markerGroepRef.current) markerGroepRef.current.clearLayers();
-  }
+  // Sync analyse punten controlePunten ref voor positie berekening
+  useEffect(() => { modeRef._controlePunten = controlePunten; }, [controlePunten]);
 
-  async function opslaanTrace() {
-    if (punten.length < 2) return;
-    const geojson = { type: "LineString", coordinates: punten.map(([lat, lng]) => [lng, lat]) };
-    // Vervang tijdelijke tekenlijn door definitieve laag
-    const kaart = leafletMapRef.current;
-    const L = window.L;
-    if (tekenLijnLaagRef.current && kaart) { kaart.removeLayer(tekenLijnLaagRef.current); tekenLijnLaagRef.current = null; }
-    if (traceLaagRef.current && kaart) { kaart.removeLayer(traceLaagRef.current); }
-    traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
-    await onTraceOpgeslagen(geojson);
-    setOpgeslagen(true);
-    setTekenModus(false);
-    setTimeout(() => setOpgeslagen(false), 3000);
-  }
-
-  const uniekeOppervlakken = livePunten.reduce((acc, p) => {
-    if (!acc.find(a => a.label === p.label)) acc.push(p);
-    return acc;
-  }, []);
-
-  // Toon dwarsprofiel ook als er een bestaand tracé is
-  const heeftTrace = project?.boortrace_geojson || punten.length >= 2;
+  const heeftBestaandTrace = bestaandTrace.length >= 2 || controlePunten.length >= 2;
 
   return (
     <div className="flex gap-4 h-full">
@@ -490,51 +460,45 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Lagen toggle */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
             <span className="text-xs text-gray-400 font-medium mr-1">Lagen</span>
             <button onClick={() => setLegendaOpen(!legendaOpen)} className="text-xs text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
-              {legendaOpen ? "Verbergen ▲" : "Tonen ▼"}
+              {legendaOpen ? "▲" : "▼"}
             </button>
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 ml-auto">
-            {!tekenModus ? (
+          {/* Tracé knoppen */}
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+            <span className="text-xs text-gray-400 font-medium mr-2">Boorlijn:</span>
+
+            {modus === "niets" && (
               <>
-                {/* Bestaand tracé — toon bewerk en verwijder */}
-                {project?.boortrace_geojson ? (
+                {heeftBestaandTrace ? (
                   <>
-                    <button
-                      onClick={() => setToonVerwijderPopup(true)}
-                      className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors"
-                    >
-                      🗑 Verwijderen
+                    <button onClick={startBewerken} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors">
+                      <span className="w-3 h-3 bg-blue-600 rounded-sm inline-block" /> Bewerken
                     </button>
-                    <div className="w-px h-4 bg-gray-200 mx-1" />
-                    <button
-                      onClick={() => setToonVerwijderPopup("bewerken")}
-                      className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
-                    >
-                      ✏️ Bewerken
+                    <button onClick={() => setToonVerwijderPopup(true)} className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors">
+                      🗑 Verwijderen
                     </button>
                   </>
                 ) : (
-                  <button
-                    onClick={() => { setTekenModus(true); resetTekenen(); }}
-                    className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
-                  >
-                    ✏️ Tracé tekenen
+                  <button onClick={startTekenen} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors">
+                    <span className="w-3 h-3 bg-blue-600 rounded-sm inline-block" /> Nieuwe boorlijn tekenen
                   </button>
                 )}
               </>
-            ) : (
+            )}
+
+            {(modus === "tekenen" || modus === "bewerken") && (
               <>
                 <span className="text-xs text-blue-600 font-medium mr-2">
-                  {punten.length === 0 ? "Klik op kaart" : `${punten.length} punt${punten.length !== 1 ? "en" : ""}`}
-                  {analyseBezig && " ⏳"}
+                  {modus === "tekenen" ? "Klik om punten te zetten" : "Sleep punten om aan te passen"}
+                  {controlePunten.length > 0 && ` · ${controlePunten.length} punt${controlePunten.length !== 1 ? "en" : ""}`}
                 </span>
-                <button onClick={resetTekenen} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100">Reset</button>
-                <button onClick={() => { setTekenModus(false); resetTekenen(); }} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100">Annuleren</button>
-                {punten.length >= 2 && (
+                <button onClick={() => { wisControlepunten(); setControlePunten([]); setModus("niets"); if (bestaandTrace.length >= 2) { const L = window.L; const kaart = leafletMapRef.current; if (kaart && !traceLaagRef.current) { const g = project.boortrace_geojson; const parsed = typeof g === "string" ? JSON.parse(g) : g; traceLaagRef.current = L.geoJSON(parsed, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart); } } }} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100">Annuleren</button>
+                {controlePunten.length >= 2 && (
                   <button onClick={opslaanTrace} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md transition-colors">
                     {opgeslagen ? "✓ Opgeslagen!" : "Opslaan"}
                   </button>
@@ -542,12 +506,42 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               </>
             )}
           </div>
+
+          {/* Analyse knoppen */}
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+            <span className="text-xs text-gray-400 font-medium mr-2">Analyse:</span>
+            {modus !== "analyse" ? (
+              <button
+                onClick={() => setModus("analyse")}
+                disabled={!heeftBestaandTrace}
+                className="flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-800 px-2.5 py-1 rounded-md hover:bg-green-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span className="w-3 h-3 bg-green-500 rounded-full inline-block" /> Punt toevoegen
+              </button>
+            ) : (
+              <>
+                <span className="text-xs text-green-600 font-medium mr-2">
+                  Klik op kaart · {analyseBezig ? "⏳ analyseren..." : `${analysePunten.length} punt${analysePunten.length !== 1 ? "en" : ""}`}
+                </span>
+                <button onClick={() => setModus("niets")} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100">Klaar</button>
+              </>
+            )}
+            {analysePunten.length > 0 && modus !== "analyse" && (
+              <button onClick={wisAnalysePunten} className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors ml-1">
+                Wis punten
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Lagen */}
+        {/* Legenda */}
         {legendaOpen && (
           <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="flex items-center gap-4 mb-2 text-xs text-gray-400 font-medium">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-600 rounded-sm inline-block" /> Sleepbaar controlepunt (tracé)</span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-green-500 rounded-full inline-block" /> Analysepunt (klik om te verwijderen)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 border-t border-gray-100 pt-2">
               {LAGEN.map(laag => (
                 <button key={laag.id} onClick={() => toggleLaag(laag.id)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${actieveLagen[laag.id] ? "bg-gray-50 border border-gray-200 text-gray-800" : "border border-transparent text-gray-400 hover:bg-gray-50"}`}>
@@ -561,89 +555,61 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         )}
 
         {/* Kaart */}
-        <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 400 }} />
+        <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 420 }} />
 
         {/* Dwarsprofiel */}
-        {/* Dwarsprofiel — altijd zichtbaar */}
-        {(() => {
-          const tracePunten = punten.length >= 2 ? punten : (() => {
-            try {
-              const g = project?.boortrace_geojson;
-              if (!g) return [];
-              const parsed = typeof g === "string" ? JSON.parse(g) : g;
-              return parsed.coordinates?.map(([lng, lat]) => [lat, lng]) ?? [];
-            } catch { return []; }
-          })();
-          return (
-            <Dwarsprofiel
-              punten={tracePunten}
-              livePunten={livePunten}
-              project={project}
-            />
-          );
-        })()}
+        <Dwarsprofiel
+          controlePunten={actievePunten}
+          analysePunten={analysePunten}
+          project={project}
+        />
       </div>
 
-      {/* Analyse paneel rechts — altijd zichtbaar */}
+      {/* Analyse paneel rechts */}
       <div className="w-60 flex-shrink-0 flex flex-col gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 600 }}>
-          {/* Header */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 620 }}>
           <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">🗺 BGT Oppervlakteanalyse</h3>
+            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">🔬 Oppervlakteanalyse</h3>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-            {livePunten.length === 0 && !tekenModus ? (
+            {analysePunten.length === 0 ? (
               <div className="text-center py-6">
-                <div className="text-2xl mb-2">✏️</div>
-                <p className="text-xs text-gray-400 leading-relaxed">Teken een tracé om het oppervlaktype per punt te analyseren.</p>
-              </div>
-            ) : livePunten.length === 0 && tekenModus ? (
-              <div className="text-center py-6">
-                <div className="text-2xl mb-2">📍</div>
-                <p className="text-xs text-gray-400 leading-relaxed">Klik op de kaart om het oppervlaktype te analyseren.</p>
+                <div className="text-2xl mb-2">🔬</div>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  {heeftBestaandTrace ? "Zet modus op 'Punt toevoegen' en klik op de kaart." : "Teken eerst een boorlijn."}
+                </p>
               </div>
             ) : (
               <>
-                {/* Gedetecteerde typen */}
                 <div>
                   <div className="text-xs text-gray-400 font-medium mb-2">Gedetecteerde typen</div>
                   <div className="flex flex-col gap-1.5">
-                    {uniekeOppervlakken.map((o, i) => (
+                    {[...new Map(analysePunten.map(p => [p.vertaald?.label, p])).values()].map((p, i) => (
                       <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
-                        style={{ backgroundColor: o.kleur + "12", color: o.kleur, border: `1px solid ${o.kleur}30` }}>
-                        <span className="text-sm">{o.icoon}</span>
-                        <span className="flex-1">{o.label}</span>
-                        {o.herstel && (
-                          <span className="text-xs opacity-50 whitespace-nowrap">
-                            {o.herstel === "Hoog" ? "🔴" : o.herstel === "Midden" ? "🟠" : o.herstel === "Laag" ? "🟢" : "⚪"} {o.herstel}
-                          </span>
-                        )}
+                        style={{ backgroundColor: (p.vertaald?.kleur ?? "#9ca3af") + "12", color: p.vertaald?.kleur ?? "#9ca3af", border: `1px solid ${(p.vertaald?.kleur ?? "#9ca3af")}30` }}>
+                        <span>{p.vertaald?.icoon ?? "📍"}</span>
+                        <span className="flex-1">{p.vertaald?.label ?? "Geen data"}</span>
+                        {p.vertaald?.herstel && <span className="opacity-50 text-xs">{p.vertaald.herstel}</span>}
                       </div>
                     ))}
                   </div>
                 </div>
-
-                {/* Puntenlijst */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs text-gray-400 font-medium">Punten langs tracé</div>
-                    <span className="text-xs text-gray-300">{livePunten.length}</span>
-                  </div>
+                  <div className="text-xs text-gray-400 font-medium mb-2">Punten ({analysePunten.length}) <span className="text-gray-300">· klik op kaart om te verwijderen</span></div>
                   <div className="flex flex-col gap-0.5">
-                    {livePunten.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg hover:bg-gray-50 transition-colors">
-                        <span className="text-gray-300 font-mono text-xs w-5 text-right flex-shrink-0">{i + 1}</span>
-                        <span className="flex-shrink-0">{p.icoon}</span>
-                        <span className="text-gray-600 truncate">{p.label}</span>
-                        <span className="ml-auto flex-shrink-0 w-2 h-2 rounded-full" style={{ backgroundColor: p.kleur }} />
+                    {analysePunten.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg hover:bg-gray-50">
+                        <span className="text-gray-300 font-mono w-5 text-right">{i+1}</span>
+                        <span>{p.vertaald?.icoon ?? "📍"}</span>
+                        <span className="text-gray-600 truncate flex-1">{p.vertaald?.label ?? "Geen data"}</span>
+                        {p.positieM !== undefined && <span className="text-gray-300 text-xs">{p.positieM}m</span>}
                       </div>
                     ))}
                     {analyseBezig && (
                       <div className="flex items-center gap-2 text-xs py-1.5 px-2 text-gray-400">
-                        <span className="text-gray-300 font-mono w-5 text-right">{livePunten.length + 1}</span>
-                        <span>⏳</span>
-                        <span>Analyseren...</span>
+                        <span className="font-mono w-5 text-right">{analysePunten.length+1}</span>
+                        <span>⏳</span><span>Analyseren...</span>
                       </div>
                     )}
                   </div>
@@ -652,80 +618,43 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             )}
           </div>
 
-          {/* Herstelklasse legenda */}
-          {uniekeOppervlakken.length > 0 && (
+          {analysePunten.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
               <div className="text-xs text-gray-400 font-medium mb-1.5">Herstelklasse</div>
-              <div className="flex flex-col gap-1">
-                {[
-                  { label: "Hoog — asfalt/beton", icoon: "🔴" },
-                  { label: "Midden — klinkers", icoon: "🟠" },
-                  { label: "Laag — gras/onverhard", icoon: "🟢" },
-                ].map((r, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <span>{r.icoon}</span>
-                    <span>{r.label}</span>
-                  </div>
-                ))}
-              </div>
+              {[{ label: "Hoog — asfalt/beton", icoon: "🔴" }, { label: "Midden — klinkers", icoon: "🟠" }, { label: "Laag — gras/onverhard", icoon: "🟢" }].map((r,i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5"><span>{r.icoon}</span><span>{r.label}</span></div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Tip */}
-        {uniekeOppervlakken.length > 0 && (
+        {analysePunten.length > 0 && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
             <p className="text-xs text-blue-700 leading-relaxed">💡 Vraag de AI Assistent om hersteladvies en kostenraming per oppervlaktype.</p>
           </div>
         )}
       </div>
 
-      {/* Verwijder / Bewerk popup */}
+      {/* Verwijder popup */}
       {toonVerwijderPopup && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4" style={{ animation: "fadeUp 0.2s ease" }}>
-            {toonVerwijderPopup === "bewerken" ? (
-              <>
-                <div className="text-2xl mb-3 text-center">✏️</div>
-                <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Tracé bewerken</h3>
-                <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">
-                  Om het tracé te bewerken moet het huidige tracé eerst verwijderd worden. Daarna kun je een nieuw tracé tekenen.
-                </p>
-                <div className="flex gap-3">
-                  <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
-                  <button
-                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setTekenModus(true); setVerwijderBezig(false); }}
-                    disabled={verwijderBezig}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {verwijderBezig ? "Bezig..." : "Verwijderen & opnieuw tekenen"}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl mb-3 text-center">🗑</div>
-                <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Tracé verwijderen?</h3>
-                <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">
-                  Het huidige boortracé en de bijbehorende oppervlakteanalyse worden permanent verwijderd.
-                </p>
-                <div className="flex gap-3">
-                  <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
-                  <button
-                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
-                    disabled={verwijderBezig}
-                    className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {verwijderBezig ? "Bezig..." : "Verwijderen"}
-                  </button>
-                </div>
-              </>
-            )}
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="text-2xl mb-3 text-center">🗑</div>
+            <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Boorlijn verwijderen?</h3>
+            <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">Het boorlijn en alle analysepunten worden permanent verwijderd.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50">Annuleren</button>
+              <button
+                onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
+                disabled={verwijderBezig}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {verwijderBezig ? "Bezig..." : "Verwijderen"}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      <style>{`@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div>
   );
 }

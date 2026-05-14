@@ -104,7 +104,7 @@ export default function ProjectDetailPagina() {
 
   const tabs = [
     { id: "details", label: "Projectinformatie", icon: "📋" },
-    { id: "trace", label: "Tracé", icon: "📍" },
+    { id: "trace", label: "Boorlijn", icon: "📍" },
     { id: "kruisingen", label: "Kruisingen", icon: "⚡", count: project.kruisingen?.length ?? 0 },
     { id: "chat", label: "AI Assistent", icon: "🛠" },
   ];
