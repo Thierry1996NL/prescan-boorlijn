@@ -428,6 +428,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [modus, setModus] = useState("niets");
   const [controlePunten, setControlePunten] = useState([]);
   const [analysePunten, setAnalysePunten] = useState([]);
+  const analysePuntenRef = useRef([]); // mirror voor gebruik in Leaflet handlers
   const [opgeslagen, setOpgeslagen] = useState(false);
   const [legendaOpen, setLegendaOpen] = useState(true);
   const [analyseBezig, setAnalyseBezig] = useState(false);
@@ -437,7 +438,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [diepteModus, setDiepteModus] = useState(false);
   const opstellingRef = useRef({ boorMachine: null, bentonietTank: null });
   const opstellingKlikRef = useRef(null);
-  const plaatsAnalysePuntRef = useRef(null); // altijd de laatste versie
 
   // Laad opgeslagen dieptepunten uit project
   const [dieptePunten, setDieptePunten] = useState(() => {
@@ -615,7 +615,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         const snap = snapNaarLijn(lat, lng, pts2);
         // Max 50m afstand tot de lijn
         if (afstandM([lat, lng], [snap.lat, snap.lng]) > 50) return;
-        await plaatsAnalysePuntRef.current(kaart, L, snap.lat, snap.lng, snap.positieM);
+        plaatsAnalysePunt(snap.lat, snap.lng, snap.positieM);
         return;
       }
 
@@ -694,52 +694,54 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   }
 
 
-  async function plaatsAnalysePunt(kaart, L, lat, lng, positieM) {
-    setAnalyseBezig(true);
-    const result = await haalOppervlakOp(lat, lng);
-    const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+  // Analyse punt plaatsen — synchroon marker, async BGT
+  function plaatsAnalysePunt(lat, lng, positieM) {
+    const kaart = leafletMapRef.current;
+    const L = window.L;
+    if (!kaart || !L) return;
 
-    const pos = positieM ?? snapNaarLijn(lat, lng, modeRef._controlePunten ?? []).positieM;
-    const nieuwPunt = { lat, lng, vertaald, positieM: pos, _marker: null };    const icon0 = maakAnalyseIcon(L, 1, vertaald.kleur);
-    const marker = L.marker([snap.lat, snap.lng], { icon: icon0, zIndexOffset: 2000, draggable: true })
-      .bindTooltip(`1 — ${vertaald.icoon} ${vertaald.label}`, { direction: "top" })
-      .addTo(kaart);
-    nieuwPunt._marker = marker;
+    // 1. Direct een grijze placeholder marker plaatsen
+    const nr = (analysePuntenRef.current.length + 1);
+    const placeholder = L.circleMarker([lat, lng], {
+      radius: 11, fillColor: "#9ca3af", color: "#fff", weight: 2.5, fillOpacity: 1,
+    }).bindTooltip(`${nr} — ⏳ Laden...`, { direction: "top" }).addTo(kaart);
 
-    const hernummer = (arr) => {
-      arr.forEach((x, idx) => {
-        if (x._marker) {
-          x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af"));
-          x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`);
-        }
-      });
+    const nieuwPunt = {
+      lat, lng, positieM,
+      vertaald: { label: "Laden...", kleur: "#9ca3af", icoon: "⏳", herstel: "?" },
+      _marker: placeholder,
     };
 
-    marker.on("drag", (ev) => {
-      const s = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
-      marker.setLatLng([s.lat, s.lng]);
-      nieuwPunt.lat = s.lat; nieuwPunt.lng = s.lng; nieuwPunt.positieM = s.positieM;
-    });
-    marker.on("dragend", () => {
-      setAnalysePunten(h => { const n = h.map(x => x._marker === marker ? { ...x, lat: nieuwPunt.lat, lng: nieuwPunt.lng, positieM: nieuwPunt.positieM } : x).sort((a,b)=>a.positieM-b.positieM); hernummer(n); return n; });
-    });
-    marker.on("click", (ev) => {
+    // 2. Direct state updaten
+    const huidig = [...analysePuntenRef.current, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
+    analysePuntenRef.current = huidig;
+    setAnalysePunten([...huidig]);
+
+    // 3. Klik handler voor verwijderen
+    placeholder.on("click", (ev) => {
       L.DomEvent.stopPropagation(ev);
-      kaart.removeLayer(marker);
-      setAnalysePunten(h => { const n = h.filter(x => x._marker !== marker).sort((a,b)=>a.positieM-b.positieM); hernummer(n); return n; });
+      kaart.removeLayer(placeholder);
+      const nieuw = analysePuntenRef.current.filter(p => p._marker !== placeholder)
+        .sort((a, b) => a.positieM - b.positieM);
+      analysePuntenRef.current = nieuw;
+      setAnalysePunten([...nieuw]);
     });
 
-    setAnalysePunten(prev => {
-      const gesorteerd = [...prev, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
-      // Hernummer na render via timeout
-      setTimeout(() => hernummer(gesorteerd), 0);
-      return gesorteerd;
-    });
-    setAnalyseBezig(false);
+    // 4. Async: BGT data ophalen en marker updaten
+    haalOppervlakOp(lat, lng).then(result => {
+      const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+      // Update marker kleur en tooltip
+      placeholder.setStyle({ fillColor: vertaald.kleur });
+      placeholder.setTooltipContent(`${nr} — ${vertaald.icoon} ${vertaald.label}`);
+      // Update state
+      const bijgewerkt = analysePuntenRef.current.map(p =>
+        p._marker === placeholder ? { ...p, vertaald } : p
+      );
+      analysePuntenRef.current = bijgewerkt;
+      setAnalysePunten([...bijgewerkt]);
+    }).catch(() => {});
   }
 
-  // Altijd de laatste versie van plaatsAnalysePunt in de ref zetten
-  plaatsAnalysePuntRef.current = plaatsAnalysePunt;
 
   const eventPolylineRef = useRef(null); // onzichtbare brede lijn voor events
 
@@ -802,7 +804,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePuntRef.current(kaart, L, _s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); plaatsAnalysePunt(_s.lat, _s.lng, _s.positieM); }
     });
   }
 
@@ -866,7 +868,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePuntRef.current(kaart, L, _s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); plaatsAnalysePunt(_s.lat, _s.lng, _s.positieM); }
     });
   }
 
@@ -1014,7 +1016,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
   function wisAnalysePunten() {
     const kaart = leafletMapRef.current;
-    analysePunten.forEach(p => { if (p._marker && kaart) kaart.removeLayer(p._marker); });
+    analysePuntenRef.current.forEach(p => { if (p._marker && kaart) kaart.removeLayer(p._marker); });
+    analysePuntenRef.current = [];
     setAnalysePunten([]);
   }
 
