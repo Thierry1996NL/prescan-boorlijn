@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/bgt/route.js": {
+      "regions": ["fra1"]
+    }
+  }
+}
