@@ -348,9 +348,35 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
           gesorteerd.forEach((p, i) => {
             const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
-            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000 })
+            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
               .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
               .addTo(kaart);
+
+            // Sleep langs de boorlijn
+            marker.on("drag", (ev) => {
+              const pts2 = modeRef._controlePunten ?? [];
+              if (pts2.length < 2) return;
+              const snap = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, pts2);
+              marker.setLatLng([snap.lat, snap.lng]);
+              p.lat = snap.lat; p.lng = snap.lng; p.positieM = snap.positieM;
+            });
+
+            marker.on("dragend", () => {
+              setAnalysePunten(prev => {
+                const nieuw = prev.map(x => x._marker === marker
+                  ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM }
+                  : x
+                ).sort((a, b) => a.positieM - b.positieM);
+                // Hernummer alle markers
+                nieuw.forEach((x, idx) => {
+                  if (x._marker) {
+                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
+                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
+                  }
+                });
+                return nieuw;
+              });
+            });
 
             marker.on("click", (ev) => {
               L.DomEvent.stopPropagation(ev);
@@ -454,19 +480,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const lijn = L.polyline(pts, { color: "#2563eb", weight: 6, opacity: 0.9 }).addTo(kaart);
     polylineRef.current = lijn;
 
-    // Hover preview marker — groene cirkel met plus
+    // Hover preview marker — toont het echte analysepunt preview
     const preview = L.marker([0, 0], {
       icon: L.divIcon({
         className: "",
-        html: `<div style="width:24px;height:24px;background:#16a34a;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="color:white;font-size:14px;font-weight:700;line-height:1;">+</span></div>`,
-        iconSize: [24, 24], iconAnchor: [12, 12],
+        html: `<div style="width:26px;height:26px;background:#16a34a;border:3px solid white;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0.85;transition:opacity 0.1s;">
+          <span style="color:white;font-size:13px;font-weight:700;line-height:1;">+</span>
+        </div>`,
+        iconSize: [26, 26], iconAnchor: [13, 13],
       }),
       interactive: false, zIndexOffset: 3000,
     });
     hoverMarkerRef.current = preview;
 
     lijn.on("mousemove", (e) => {
-      if (modeRef.current !== "analyse") return;
+      if (modeRef.current !== "analyse") {
+        if (kaart.hasLayer(preview)) kaart.removeLayer(preview);
+        return;
+      }
       const snap = snapNaarLijn(e.latlng.lat, e.latlng.lng, pts);
       if (!kaart.hasLayer(preview)) preview.addTo(kaart);
       preview.setLatLng([snap.lat, snap.lng]);
@@ -749,13 +780,16 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             ) : (
               <>
                 <span className="text-xs text-green-600 font-medium mr-2">
-                  Klik op kaart · {analyseBezig ? "⏳ analyseren..." : `${analysePunten.length} punt${analysePunten.length !== 1 ? "en" : ""}`}
+                  Zweef over boorlijn · klik om punt te plaatsen{analyseBezig ? " ⏳" : analysePunten.length > 0 ? ` · ${analysePunten.length} punt${analysePunten.length !== 1 ? "en" : ""}` : ""}
                 </span>
                 <button onClick={() => setModus("niets")} className="text-xs text-gray-500 px-2.5 py-1 rounded-md hover:bg-gray-100">Klaar</button>
               </>
             )}
-            {analysePunten.length > 0 && modus !== "analyse" && (
-              <button onClick={wisAnalysePunten} className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors ml-1">
+            {analysePunten.length > 0 && modus === "niets" && (
+              <span className="text-xs text-gray-400 ml-1">· {analysePunten.length} punt{analysePunten.length !== 1 ? "en" : ""} — sleep om te verplaatsen</span>
+            )}
+            {analysePunten.length > 0 && (
+              <button onClick={wisAnalysePunten} className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors ml-2">
                 Wis punten
               </button>
             )}
