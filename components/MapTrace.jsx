@@ -436,7 +436,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [kaartTab, setKaartTab] = useState("boorlijn"); // "boorlijn" | "analyse" | "diepte"
   const [diepteModus, setDiepteModus] = useState(false);
   const opstellingRef = useRef({ boorMachine: null, bentonietTank: null });
-  const opstellingKlikRef = useRef(null); // eerste klik opgeslagen
+  const opstellingKlikRef = useRef(null);
+  const plaatsAnalysePuntRef = useRef(null); // altijd de laatste versie
 
   // Laad opgeslagen dieptepunten uit project
   const [dieptePunten, setDieptePunten] = useState(() => {
@@ -614,7 +615,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         const snap = snapNaarLijn(lat, lng, pts2);
         // Max 50m afstand tot de lijn
         if (afstandM([lat, lng], [snap.lat, snap.lng]) > 50) return;
-        await plaatsAnalysePunt(kaart, L, snap.lat, snap.lng, snap.positieM);
+        await plaatsAnalysePuntRef.current(kaart, L, snap.lat, snap.lng, snap.positieM);
         return;
       }
 
@@ -699,8 +700,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
 
     const pos = positieM ?? snapNaarLijn(lat, lng, modeRef._controlePunten ?? []).positieM;
-    const nieuwPunt = { lat, lng, vertaald, positieM: pos, _marker: null };
-    const icon0 = maakAnalyseIcon(L, 1, vertaald.kleur);
+    const nieuwPunt = { lat, lng, vertaald, positieM: pos, _marker: null };    const icon0 = maakAnalyseIcon(L, 1, vertaald.kleur);
     const marker = L.marker([snap.lat, snap.lng], { icon: icon0, zIndexOffset: 2000, draggable: true })
       .bindTooltip(`1 — ${vertaald.icoon} ${vertaald.label}`, { direction: "top" })
       .addTo(kaart);
@@ -737,6 +737,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     });
     setAnalyseBezig(false);
   }
+
+  // Altijd de laatste versie van plaatsAnalysePunt in de ref zetten
+  plaatsAnalysePuntRef.current = plaatsAnalysePunt;
 
   const eventPolylineRef = useRef(null); // onzichtbare brede lijn voor events
 
@@ -799,7 +802,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePunt(kaart, L, _s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePuntRef.current(kaart, L, _s.lat, _s.lng, _s.positieM); }
     });
   }
 
@@ -863,7 +866,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePunt(kaart, L, _s.lat, _s.lng, _s.positieM); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePuntRef.current(kaart, L, _s.lat, _s.lng, _s.positieM); }
     });
   }
 
