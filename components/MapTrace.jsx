@@ -435,6 +435,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [verwijderBezig, setVerwijderBezig] = useState(false);
   const [kaartTab, setKaartTab] = useState("boorlijn"); // "boorlijn" | "analyse" | "diepte"
   const [diepteModus, setDiepteModus] = useState(false);
+  const opstellingRef = useRef({ boorMachine: null, bentonietTank: null });
+  const opstellingKlikRef = useRef(null); // eerste klik opgeslagen
 
   // Laad opgeslagen dieptepunten uit project
   const [dieptePunten, setDieptePunten] = useState(() => {
@@ -582,6 +584,12 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         const geojson = typeof project.boortrace_geojson === "string" ? JSON.parse(project.boortrace_geojson) : project.boortrace_geojson;
         traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
         kaart.fitBounds(traceLaagRef.current.getBounds(), { padding: [40, 40] });
+
+        // Maak een onzichtbare brede polyline voor klik/hover events op opgeslagen lijn
+        const pts = geojson.coordinates?.map(([lng, lat]) => [lat, lng]) ?? [];
+        if (pts.length >= 2) {
+          voegEventPolylineToe(kaart, pts, L);
+        }
       } catch (e) {}
     }
 
@@ -599,7 +607,39 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (false && mode === "analyse") {  // Analyse via polyline click, niet map click
+      if (mode === "boor_machine" || mode === "bentoniet_tank") {
+        const kleur = mode === "boor_machine" ? "#f97316" : "#92400e";
+        const label = mode === "boor_machine" ? "🔶 Boormachine" : "🟫 Bentoniet tank";
+        const sleutel = mode === "boor_machine" ? "boorMachine" : "bentonietTank";
+
+        if (!opstellingKlikRef.current) {
+          // Eerste klik — sla op
+          opstellingKlikRef.current = { lat, lng };
+          // Toon tijdelijk marker
+          const tmpMarker = L.circleMarker([lat, lng], { radius: 6, color: kleur, fillColor: kleur, fillOpacity: 0.7 }).addTo(kaart);
+          opstellingKlikRef.current._tmpMarker = tmpMarker;
+        } else {
+          // Tweede klik — teken rechthoek
+          const p1 = opstellingKlikRef.current;
+          if (p1._tmpMarker) kaart.removeLayer(p1._tmpMarker);
+          opstellingKlikRef.current = null;
+
+          const bounds = [[Math.min(p1.lat, lat), Math.min(p1.lng, lng)], [Math.max(p1.lat, lat), Math.max(p1.lng, lng)]];
+
+          // Verwijder vorige
+          if (opstellingRef.current[sleutel]?._layer) kaart.removeLayer(opstellingRef.current[sleutel]._layer);
+
+          const rect = L.rectangle(bounds, {
+            color: kleur, weight: 2, fillColor: kleur, fillOpacity: 0.15, dashArray: "6 4"
+          }).addTo(kaart);
+          rect.bindTooltip(label, { permanent: true, direction: "center", className: "text-xs font-semibold" });
+          opstellingRef.current[sleutel] = { bounds, _layer: rect };
+          setModus("niets");
+          setKaartTab("opstelling");
+        }
+        return;
+      }
+
         setAnalyseBezig(true);
         const huidigePunten = modeRef._controlePunten ?? [];
         // Snap naar de boorlijn
@@ -716,31 +756,133 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     return snapNaarLijn(lat, lng, pts).positieM;
   }
 
-  const hoverMarkerRef = useRef(null);
+  const eventPolylineRef = useRef(null); // onzichtbare brede lijn voor events
 
-  async function handleAnalysePuntVerplaatst(idx, nieuwM) {
-    const pts = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
+  // Voeg event capture polyline toe — onzichtbaar maar breed voor hover/klik
+  function voegEventPolylineToe(kaart, pts, L) {
+    if (eventPolylineRef.current) kaart.removeLayer(eventPolylineRef.current);
     if (pts.length < 2) return;
-    let afstand = 0;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const segLen = afstandM(pts[i], pts[i + 1]);
-      if (afstand + segLen >= nieuwM) {
-        const t = (nieuwM - afstand) / segLen;
-        const nLat = pts[i][0] + t * (pts[i+1][0] - pts[i][0]);
-        const nLng = pts[i][1] + t * (pts[i+1][1] - pts[i][1]);
-        setAnalysePunten(prev => {
-          const gesorteerd = [...prev].sort((a, b) => a.positieM - b.positieM);
-          const punt = gesorteerd[idx];
-          if (!punt) return prev;
-          if (punt._marker) punt._marker.setLatLng([nLat, nLng]);
-          punt.lat = nLat; punt.lng = nLng; punt.positieM = Math.round(nieuwM);
-          return [...prev];
+
+    const eventLijn = L.polyline(pts, {
+      color: "transparent",
+      weight: 20,
+      opacity: 0,
+    }).addTo(kaart);
+
+    eventPolylineRef.current = eventLijn;
+
+    // Maak preview marker
+    const preview = L.marker([0, 0], {
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="width:26px;height:26px;background:#16a34a;border:3px solid white;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0.85;"><span style="color:white;font-size:13px;font-weight:700;line-height:1;">+</span></div>`,
+        iconSize: [26, 26], iconAnchor: [13, 13],
+      }),
+      interactive: false, zIndexOffset: 3000,
+    });
+    hoverMarkerRef.current = preview;
+
+    eventLijn.on("mousemove", (e) => {
+      if (modeRef.current !== "analyse") {
+        if (kaart.hasLayer(preview)) kaart.removeLayer(preview);
+        return;
+      }
+      const snap = snapNaarLijn(e.latlng.lat, e.latlng.lng, pts);
+      if (!kaart.hasLayer(preview)) preview.addTo(kaart);
+      preview.setLatLng([snap.lat, snap.lng]);
+    });
+
+    eventLijn.on("mouseout", () => {
+      if (kaart.hasLayer(preview)) kaart.removeLayer(preview);
+    });
+
+    eventLijn.on("click", async (e) => {
+      L.DomEvent.stopPropagation(e);
+      const mode = modeRef.current;
+      const { lat, lng } = e.latlng;
+
+      if (mode === "bewerken" || mode === "tekenen") {
+        setControlePunten(prev => {
+          let besteIdx = prev.length - 1, minDist = Infinity;
+          for (let i = 0; i < prev.length - 1; i++) {
+            const mid = [(prev[i][0]+prev[i+1][0])/2, (prev[i][1]+prev[i+1][1])/2];
+            const d = afstandM([lat, lng], mid);
+            if (d < minDist) { minDist = d; besteIdx = i; }
+          }
+          const nieuw = [...prev.slice(0, besteIdx+1), [lat, lng], ...prev.slice(besteIdx+1)];
+          tekenPolyline(kaart, nieuw);
+          hertekenAlleMarkers(kaart, nieuw);
+          return nieuw;
         });
         return;
       }
-      afstand += segLen;
-    }
+
+      if (mode === "analyse") {
+        const pts2 = modeRef._controlePunten ?? [];
+        const snap = snapNaarLijn(lat, lng, pts2);
+        setAnalyseBezig(true);
+        const result = await haalOppervlakOp(snap.lat, snap.lng);
+        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
+
+        setAnalysePunten(prev => {
+          const gesorteerd = [...prev, { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null }]
+            .sort((a, b) => a.positieM - b.positieM);
+
+          gesorteerd.forEach(p => { if (p._marker) { kaart.removeLayer(p._marker); p._marker = null; } });
+
+          gesorteerd.forEach((p, i) => {
+            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
+            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
+              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
+              .addTo(kaart);
+
+            marker.on("drag", (ev) => {
+              const s = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, modeRef._controlePunten ?? []);
+              marker.setLatLng([s.lat, s.lng]);
+              p.lat = s.lat; p.lng = s.lng; p.positieM = s.positieM;
+            });
+
+            marker.on("dragend", () => {
+              setAnalysePunten(huidig => {
+                const nieuw = huidig.map(x => x._marker === marker ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM } : x).sort((a,b)=>a.positieM-b.positieM);
+                nieuw.forEach((x, idx) => { if (x._marker) { x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af")); x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`); } });
+                return nieuw;
+              });
+            });
+
+            marker.on("click", (ev) => {
+              L.DomEvent.stopPropagation(ev);
+              kaart.removeLayer(marker);
+              setAnalysePunten(huidig => {
+                const nieuw = huidig.filter(x => x._marker !== marker).sort((a,b)=>a.positieM-b.positieM);
+                nieuw.forEach((x, idx) => { if (x._marker) { x._marker.setIcon(maakAnalyseIcon(L, idx+1, x.vertaald?.kleur??"#9ca3af")); x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon??"📍"} ${x.vertaald?.label??"?"}`); } });
+                return nieuw;
+              });
+            });
+
+            p._marker = marker;
+          });
+
+          return gesorteerd;
+        });
+        setAnalyseBezig(false);
+      }
+    });
   }
+
+  function tekenPolyline(kaart, pts) {
+    const L = window.L;
+    if (polylineRef.current) {
+      kaart.removeLayer(polylineRef.current);
+      if (hoverMarkerRef.current && kaart.hasLayer(hoverMarkerRef.current)) kaart.removeLayer(hoverMarkerRef.current);
+    }
+    if (pts.length < 2) return;
+
+    const lijn = L.polyline(pts, { color: "#2563eb", weight: 6, opacity: 0.9 }).addTo(kaart);
+    polylineRef.current = lijn;
+
+    // Voeg event capture polyline toe voor hover + klik
+    voegEventPolylineToe(kaart, pts, L);
 
   function tekenPolyline(kaart, pts) {
     const L = window.L;
@@ -1263,6 +1405,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               { id: "boorlijn", icon: "🔵", label: "Boorlijn" },
               { id: "analyse", icon: "🟢", label: "Analyse" },
               { id: "diepte", icon: "🔷", label: "Diepte" },
+              { id: "opstelling", icon: "🔶", label: "Opstelling" },
             ].map(tab => (
               <button key={tab.id} onClick={() => setKaartTab(tab.id)}
                 className={`flex-1 text-xs py-2.5 font-medium transition-colors border-r border-gray-100 last:border-r-0 ${
@@ -1363,9 +1506,65 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               </div>
             )}
 
-          </div>
+            {/* Opstelling tab */}
+            {kaartTab === "opstelling" && (
+              <div className="p-4 flex flex-col gap-3">
+                <div className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Opstelling intekenen</div>
+                <p className="text-xs text-gray-400 leading-relaxed">Klik op de kaart om de hoekpunten van elk vlak te tekenen.</p>
 
-          {/* Footer voor analyse tab */}
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setModus(modus === "boor_machine" ? "niets" : "boor_machine")}
+                    className={`flex items-center gap-2 text-xs font-medium px-3 py-2.5 rounded-lg border transition-colors ${
+                      modus === "boor_machine" ? "bg-orange-500 text-white border-orange-500" : "text-orange-600 border-orange-200 hover:bg-orange-50"
+                    }`}>
+                    <span className="w-4 h-4 bg-orange-500 rounded-sm inline-block opacity-70" />
+                    {modus === "boor_machine" ? "✓ Klik 2 hoekpunten..." : "HDD Boormachine tekenen"}
+                  </button>
+
+                  <button
+                    onClick={() => setModus(modus === "bentoniet_tank" ? "niets" : "bentoniet_tank")}
+                    className={`flex items-center gap-2 text-xs font-medium px-3 py-2.5 rounded-lg border transition-colors ${
+                      modus === "bentoniet_tank" ? "bg-amber-600 text-white border-amber-600" : "text-amber-700 border-amber-200 hover:bg-amber-50"
+                    }`}>
+                    <span className="w-4 h-4 bg-amber-600 rounded-sm inline-block opacity-70" />
+                    {modus === "bentoniet_tank" ? "✓ Klik 2 hoekpunten..." : "Bentoniet tank tekenen"}
+                  </button>
+                </div>
+
+                {(opstellingRef.current.boorMachine || opstellingRef.current.bentonietTank) && (
+                  <div className="flex flex-col gap-1 mt-2">
+                    <div className="text-xs text-gray-400 font-medium mb-1">Ingetekend:</div>
+                    {opstellingRef.current.boorMachine && (
+                      <div className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg bg-orange-50 text-orange-700">
+                        <span>🔶</span><span className="flex-1">Boormachine</span>
+                        <button onClick={() => {
+                          const kaart = leafletMapRef.current;
+                          if (opstellingRef.current.boorMachine?._layer) kaart?.removeLayer(opstellingRef.current.boorMachine._layer);
+                          opstellingRef.current.boorMachine = null;
+                          setKaartTab("opstelling");
+                        }} className="text-red-400 hover:text-red-600 ml-1">✕</button>
+                      </div>
+                    )}
+                    {opstellingRef.current.bentonietTank && (
+                      <div className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg bg-amber-50 text-amber-700">
+                        <span>🟫</span><span className="flex-1">Bentoniet tank</span>
+                        <button onClick={() => {
+                          const kaart = leafletMapRef.current;
+                          if (opstellingRef.current.bentonietTank?._layer) kaart?.removeLayer(opstellingRef.current.bentonietTank._layer);
+                          opstellingRef.current.bentonietTank = null;
+                          setKaartTab("opstelling");
+                        }} className="text-red-400 hover:text-red-600 ml-1">✕</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="text-xs text-gray-300 leading-relaxed mt-2">Klik twee diagonaal tegenoverliggende hoekpunten om een rechthoek te tekenen.</div>
+              </div>
+            )}
+
+          </div>
           {kaartTab === "analyse" && analysePunten.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
               <div className="text-xs text-gray-400 font-medium mb-1.5">Herstelklasse</div>
