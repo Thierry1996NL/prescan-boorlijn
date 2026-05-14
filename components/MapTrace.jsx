@@ -333,6 +333,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [livePunten, setLivePunten] = useState([]);
   const [analyseBezig, setAnalyseBezig] = useState(false);
   const [toonDwarsprofiel, setToonDwarsprofiel] = useState(false);
+  const [toonVerwijderPopup, setToonVerwijderPopup] = useState(false);
+  const [verwijderBezig, setVerwijderBezig] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || leafletMapRef.current) return;
@@ -450,11 +452,36 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               {legendaOpen ? "Verbergen ▲" : "Tonen ▼"}
             </button>
           </div>
+
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 ml-auto">
             {!tekenModus ? (
-              <button onClick={() => { setTekenModus(true); resetTekenen(); }} className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors">
-                ✏️ Tracé tekenen
-              </button>
+              <>
+                {/* Bestaand tracé — toon bewerk en verwijder */}
+                {project?.boortrace_geojson ? (
+                  <>
+                    <button
+                      onClick={() => setToonVerwijderPopup(true)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors"
+                    >
+                      🗑 Verwijderen
+                    </button>
+                    <div className="w-px h-4 bg-gray-200 mx-1" />
+                    <button
+                      onClick={() => setToonVerwijderPopup("bewerken")}
+                      className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                    >
+                      ✏️ Bewerken
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => { setTekenModus(true); resetTekenen(); }}
+                    className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                  >
+                    ✏️ Tracé tekenen
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 <span className="text-xs text-blue-600 font-medium mr-2">
@@ -604,6 +631,53 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           </div>
         )}
       </div>
+
+      {/* Verwijder / Bewerk popup */}
+      {toonVerwijderPopup && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999]">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4" style={{ animation: "fadeUp 0.2s ease" }}>
+            {toonVerwijderPopup === "bewerken" ? (
+              <>
+                <div className="text-2xl mb-3 text-center">✏️</div>
+                <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Tracé bewerken</h3>
+                <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">
+                  Om het tracé te bewerken moet het huidige tracé eerst verwijderd worden. Daarna kun je een nieuw tracé tekenen.
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
+                  <button
+                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); resetTekenen(); setToonVerwijderPopup(false); setTekenModus(true); setVerwijderBezig(false); }}
+                    disabled={verwijderBezig}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {verwijderBezig ? "Bezig..." : "Verwijderen & opnieuw tekenen"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl mb-3 text-center">🗑</div>
+                <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Tracé verwijderen?</h3>
+                <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">
+                  Het huidige boortracé en de bijbehorende oppervlakteanalyse worden permanent verwijderd.
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50 transition-colors">Annuleren</button>
+                  <button
+                    onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); resetTekenen(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
+                    disabled={verwijderBezig}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {verwijderBezig ? "Bezig..." : "Verwijderen"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div>
   );
 }

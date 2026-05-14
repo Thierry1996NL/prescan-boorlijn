@@ -62,6 +62,7 @@ export default function ProjectDetailPagina() {
   }
 
   async function handleTraceOpgeslagen(geojson) {
+    // geojson === null betekent verwijderen
     await updateProject(id, { boortrace_geojson: geojson });
     await laadProject();
   }
