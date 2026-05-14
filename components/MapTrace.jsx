@@ -640,81 +640,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-        setAnalyseBezig(true);
-        const huidigePunten = modeRef._controlePunten ?? [];
-        // Snap naar de boorlijn
-        const snap = snapNaarLijn(lat, lng, huidigePunten);
-        const result = await haalOppervlakOp(snap.lat, snap.lng);
-        const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
-
-        setAnalysePunten(prev => {
-          // Voeg toe en sorteer op positieM
-          const nieuwPunt = { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null };
-          const gesorteerd = [...prev, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
-
-          // Bouw alle markers opnieuw op in juiste volgorde
-          gesorteerd.forEach((p, i) => {
-            if (p._marker) {
-              kaart.removeLayer(p._marker);
-              p._marker = null;
-            }
-          });
-
-          gesorteerd.forEach((p, i) => {
-            const icon = maakAnalyseIcon(L, i + 1, p.vertaald?.kleur ?? "#9ca3af");
-            const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: 2000, draggable: true })
-              .bindTooltip(`<b>${i+1}</b> — ${p.vertaald?.icoon ?? "📍"} ${p.vertaald?.label ?? "?"}`, { direction: "top" })
-              .addTo(kaart);
-
-            // Sleep langs de boorlijn
-            marker.on("drag", (ev) => {
-              const pts2 = modeRef._controlePunten ?? [];
-              if (pts2.length < 2) return;
-              const snap = snapNaarLijn(ev.latlng.lat, ev.latlng.lng, pts2);
-              marker.setLatLng([snap.lat, snap.lng]);
-              p.lat = snap.lat; p.lng = snap.lng; p.positieM = snap.positieM;
-            });
-
-            marker.on("dragend", () => {
-              setAnalysePunten(prev => {
-                const nieuw = prev.map(x => x._marker === marker
-                  ? { ...x, lat: p.lat, lng: p.lng, positieM: p.positieM }
-                  : x
-                ).sort((a, b) => a.positieM - b.positieM);
-                // Hernummer alle markers
-                nieuw.forEach((x, idx) => {
-                  if (x._marker) {
-                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
-                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
-                  }
-                });
-                return nieuw;
-              });
-            });
-
-            marker.on("click", (ev) => {
-              L.DomEvent.stopPropagation(ev);
-              kaart.removeLayer(marker);
-              setAnalysePunten(huidig => {
-                const nieuw = huidig.filter(x => x._marker !== marker);
-                // Hernummer overige in positievolgorde
-                nieuw.forEach((x, idx) => {
-                  if (x._marker) {
-                    x._marker.setIcon(maakAnalyseIcon(L, idx + 1, x.vertaald?.kleur ?? "#9ca3af"));
-                    x._marker.setTooltipContent(`<b>${idx+1}</b> — ${x.vertaald?.icoon ?? "📍"} ${x.vertaald?.label ?? "?"}`);
-                  }
-                });
-                return nieuw;
-              });
-            });
-
-            p._marker = marker;
-          });
-
-          return gesorteerd;
-        });
-        setAnalyseBezig(false);
-      }
     });
   }
 
@@ -869,20 +794,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       }
     });
   }
-
-  function tekenPolyline(kaart, pts) {
-    const L = window.L;
-    if (polylineRef.current) {
-      kaart.removeLayer(polylineRef.current);
-      if (hoverMarkerRef.current && kaart.hasLayer(hoverMarkerRef.current)) kaart.removeLayer(hoverMarkerRef.current);
-    }
-    if (pts.length < 2) return;
-
-    const lijn = L.polyline(pts, { color: "#2563eb", weight: 6, opacity: 0.9 }).addTo(kaart);
-    polylineRef.current = lijn;
-
-    // Voeg event capture polyline toe voor hover + klik
-    voegEventPolylineToe(kaart, pts, L);
 
   function tekenPolyline(kaart, pts) {
     const L = window.L;
