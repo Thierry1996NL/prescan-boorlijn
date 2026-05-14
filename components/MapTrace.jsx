@@ -291,46 +291,76 @@ function Dwarsprofiel({ controlePunten, analysePunten, project, onAnalysePuntVer
             return <g key={f}><line x1={x} y1={PAD.top+plotH} x2={x} y2={PAD.top+plotH+4} stroke="#d1d5db" strokeWidth="1" /><text x={x} y={PAD.top+plotH+13} textAnchor="middle" fontSize="9" fill="#9ca3af">{Math.round(m)}m</text></g>;
           })}
 
-          {/* Boring buis (gevuld gebied) */}
+          {/* Boring buis */}
           <path d={`${boringPath} L ${xPos(totaalM)},${yPos(minD)} L ${PAD.left},${yPos(minD)} Z`} fill="#2563eb" opacity="0.06" />
-          {/* Boring lijn */}
           <path d={boringPath} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
 
-          {/* Intredepunt */}
-          <circle cx={xPos(0)} cy={yPos(alleDieptePunten[0]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
-          <text x={xPos(0)+10} y={yPos(alleDieptePunten[0]?.diepte ?? -1.5)-5} fontSize="8" fill="#2563eb" fontWeight="700">↘ {alleDieptePunten[0]?.diepte}m</text>
+          {/* Segmentlengtes en hoeken */}
+          {alleDieptePunten.map((p, i) => {
+            if (i >= alleDieptePunten.length - 1) return null;
+            const q = alleDieptePunten[i + 1];
+            const dM = q.positieM - p.positieM;
+            const dD = q.diepte - p.diepte;
+            const segLen = Math.sqrt(dM * dM + dD * dD).toFixed(1);
+            const hoek = Math.abs(Math.atan2(dD, dM) * 180 / Math.PI).toFixed(1);
+            const midX = (xPos(p.positieM) + xPos(q.positieM)) / 2;
+            const midY = (yPos(p.diepte) + yPos(q.diepte)) / 2 - 6;
+            return (
+              <g key={`seg-${i}`}>
+                <rect x={midX-26} y={midY-6} width={52} height={13} rx="3" fill="white" opacity="0.9" />
+                <text x={midX} y={midY+4} textAnchor="middle" fontSize="8" fill="#374151" fontWeight="600">{segLen}m / {hoek}°</text>
+              </g>
+            );
+          })}
 
-          {/* Uittredepunt */}
-          <circle cx={xPos(totaalM)} cy={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)} r="7" fill="#2563eb" stroke="white" strokeWidth="2" />
-          <text x={xPos(totaalM)-10} y={yPos(alleDieptePunten[alleDieptePunten.length-1]?.diepte ?? -1.5)-5} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="700">{alleDieptePunten[alleDieptePunten.length-1]?.diepte}m ↗</text>
+          {/* Intredepunt 1 */}
+          {(() => {
+            const p = alleDieptePunten[0];
+            if (!p) return null;
+            return (
+              <g style={{ cursor: "ns-resize" }} onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); const idx = dieptePunten.findIndex(x => x.id === "start"); setDiepteSlepen({ idx, mode: "y" }); }}>
+                <circle cx={xPos(0)} cy={yPos(p.diepte)} r="10" fill="#2563eb" stroke="white" strokeWidth="2.5" />
+                <text x={xPos(0)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">1</text>
+                <text x={xPos(0)+14} y={yPos(p.diepte)-8} fontSize="8" fill="#2563eb" fontWeight="700">↘ {p.diepte}m</text>
+              </g>
+            );
+          })()}
 
-          {/* Tussenpunten — sleepbaar in X én Y richting */}
-          {alleDieptePunten.filter(p => !p.vast).map((p) => {
+          {/* Tussenpunten — genummerd, sleepbaar XY */}
+          {alleDieptePunten.filter(p => !p.vast).map((p, fi) => {
+            const nummer = fi + 2;
             const idx = dieptePunten.findIndex(x => x.id === p.id);
+            const pIdx = alleDieptePunten.findIndex(x => x.id === p.id);
+            const pr = alleDieptePunten[pIdx - 1];
+            const nx = alleDieptePunten[pIdx + 1];
+            const hoekIn = pr ? Math.abs(Math.atan2(p.diepte - pr.diepte, p.positieM - pr.positieM) * 180 / Math.PI).toFixed(1) : "0";
+            const hoekUit = nx ? Math.abs(Math.atan2(nx.diepte - p.diepte, nx.positieM - p.positieM) * 180 / Math.PI).toFixed(1) : "0";
             return (
               <g key={p.id} style={{ cursor: "move" }}
                 onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen({ idx, mode: "xy" }); }}
                 onDoubleClick={(ev) => { ev.stopPropagation(); setDieptePunten(prev => prev.filter(x => x.id !== p.id)); }}>
-                <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+                <line x1={xPos(p.positieM)} y1={PAD.top} x2={xPos(p.positieM)} y2={PAD.top+plotH} stroke="#2563eb" strokeWidth="1" strokeDasharray="4 3" opacity="0.3" />
                 <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="10" fill="#2563eb" stroke="white" strokeWidth="2.5" />
-                <text x={xPos(p.positieM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="11" fill="white" fontWeight="700" dominantBaseline="middle">✥</text>
-                <rect x={xPos(p.positieM)-18} y={yPos(p.diepte)-22} width={36} height={14} rx="3" fill="#2563eb" opacity="0.9" />
-                <text x={xPos(p.positieM)} y={yPos(p.diepte)-13} textAnchor="middle" fontSize="8" fill="white" fontWeight="700">{p.diepte}m · {p.positieM}m</text>
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{nummer}</text>
+                <rect x={xPos(p.positieM)-30} y={yPos(p.diepte)-30} width={60} height={14} rx="3" fill="#1e40af" opacity="0.92" />
+                <text x={xPos(p.positieM)} y={yPos(p.diepte)-21} textAnchor="middle" fontSize="7.5" fill="white" fontWeight="700">{p.diepte}m · {p.positieM}m · ↓{hoekIn}° ↑{hoekUit}°</text>
               </g>
             );
           })}
 
-          {/* Start/eind punten — alleen verticaal sleepbaar */}
-          {alleDieptePunten.filter(p => p.vast).map((p) => {
-            const idx = dieptePunten.findIndex(x => x.id === p.id);
+          {/* Uittredepunt — genummerd */}
+          {(() => {
+            const p = alleDieptePunten[alleDieptePunten.length - 1];
+            const nummer = alleDieptePunten.length;
+            if (!p) return null;
             return (
-              <g key={p.id} style={{ cursor: "ns-resize" }}
-                onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); setDiepteSlepen({ idx, mode: "y" }); }}>
-                <circle cx={xPos(p.positieM)} cy={yPos(p.diepte)} r="8" fill="#2563eb" stroke="white" strokeWidth="2.5" />
-                <text x={xPos(p.positieM)+12} y={yPos(p.diepte)-6} fontSize="8" fill="#2563eb" fontWeight="700">{p.id === "start" ? "↘" : "↗"} {p.diepte}m</text>
+              <g style={{ cursor: "ns-resize" }} onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); const idx = dieptePunten.findIndex(x => x.id === "eind"); setDiepteSlepen({ idx, mode: "y" }); }}>
+                <circle cx={xPos(totaalM)} cy={yPos(p.diepte)} r="10" fill="#2563eb" stroke="white" strokeWidth="2.5" />
+                <text x={xPos(totaalM)} y={yPos(p.diepte)+1} textAnchor="middle" fontSize="9" fill="white" fontWeight="700" dominantBaseline="middle">{nummer}</text>
+                <text x={xPos(totaalM)-14} y={yPos(p.diepte)-8} textAnchor="end" fontSize="8" fill="#2563eb" fontWeight="700">{p.diepte}m ↗</text>
               </g>
             );
-          })}
+          })()}
 
           {/* Analyse bolletjes in profiel — gesorteerd */}
           {gesorteerdeAnalyse.map((p, i) => {
@@ -1052,6 +1082,74 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           diepteModus={diepteModus}
           setDiepteModus={setDiepteModus}
         />
+
+        {/* Profiel details tabel */}
+        {actievePunten.length >= 2 && (() => {
+          let totaalM = 0;
+          for (let i = 1; i < actievePunten.length; i++) totaalM += afstandM(actievePunten[i-1], actievePunten[i]);
+          const allePts = dieptePunten.map(p => ({ ...p, positieM: p.id === "eind" ? totaalM : (p.positieM ?? 0) })).sort((a,b) => a.positieM - b.positieM);
+          return (
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">📋 Boorlijn profiel — coördinaten</h3>
+                <span className="text-xs text-gray-400">Bewerk X (positie), Z (diepte) direct in de tabel</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">#</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">Type</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">X — positie (m)</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">Z — diepte (m)</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">Hoek ↓</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">Hoek ↑</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium">Segmentlengte</th>
+                      <th className="px-4 py-2 text-left text-gray-500 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allePts.map((p, i) => {
+                      const prev = allePts[i-1];
+                      const next = allePts[i+1];
+                      const hoekIn = prev ? (Math.abs(Math.atan2(p.diepte - prev.diepte, p.positieM - prev.positieM) * 180 / Math.PI)).toFixed(1) : "—";
+                      const hoekUit = next ? (Math.abs(Math.atan2(next.diepte - p.diepte, next.positieM - p.positieM) * 180 / Math.PI)).toFixed(1) : "—";
+                      const dM = prev ? p.positieM - prev.positieM : 0;
+                      const dD = prev ? p.diepte - prev.diepte : 0;
+                      const segLen = prev ? Math.sqrt(dM*dM + dD*dD).toFixed(2) : "—";
+                      return (
+                        <tr key={p.id} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors">
+                          <td className="px-4 py-2 font-bold text-blue-600">{i+1}</td>
+                          <td className="px-4 py-2 text-gray-500">{p.id === "start" ? "↘ Intrede" : p.id === "eind" ? "↗ Uittrede" : "Dieptepunt"}</td>
+                          <td className="px-4 py-2">
+                            {p.vast ? <span className="text-gray-400">{Math.round(p.positieM)}m</span> :
+                              <input type="number" step="1" min="1" max={Math.round(totaalM)-1}
+                                value={Math.round(p.positieM)}
+                                onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, positieM: parseInt(e.target.value) } : x))}
+                                className="w-16 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                            }
+                          </td>
+                          <td className="px-4 py-2">
+                            <input type="number" step="0.1" min="-6" max="0"
+                              value={p.diepte}
+                              onChange={e => setDieptePunten(prev2 => prev2.map(x => x.id === p.id ? { ...x, diepte: parseFloat(e.target.value) } : x))}
+                              className="w-16 border border-gray-200 rounded px-1 py-0.5 text-center focus:border-blue-500 outline-none text-xs" />
+                          </td>
+                          <td className="px-4 py-2 text-gray-500">{hoekIn}°</td>
+                          <td className="px-4 py-2 text-gray-500">{hoekUit}°</td>
+                          <td className="px-4 py-2 text-gray-500">{segLen}{prev ? "m" : ""}</td>
+                          <td className="px-4 py-2">
+                            {!p.vast && <button onClick={() => setDieptePunten(prev2 => prev2.filter(x => x.id !== p.id))} className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Analyse paneel rechts */}
