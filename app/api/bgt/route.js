@@ -1,19 +1,7 @@
-// app/api/bgt/route.js
+// app/api/bgt/route.js — debug v2
 
 export const runtime = "edge";
 export const preferredRegion = "fra1";
-
-const BGT_NAAR_NL = {
-  "gesloten verharding": { label: "Asfalt / Beton", kleur: "#374151", icoon: "🛣", herstel: "Hoog" },
-  "open verharding": { label: "Klinkers / Tegels", kleur: "#6b7280", icoon: "🧱", herstel: "Midden" },
-  "half verhard": { label: "Half verhard", kleur: "#92400e", icoon: "🪨", herstel: "Laag" },
-  "onverhard": { label: "Onverhard", kleur: "#78350f", icoon: "🌱", herstel: "Laag" },
-  "gras- en kruidachtigen": { label: "Grasberm", kleur: "#16a34a", icoon: "🌿", herstel: "Laag" },
-  "groenvoorziening": { label: "Groen / Plantsoen", kleur: "#15803d", icoon: "🌳", herstel: "Laag" },
-  "struiken": { label: "Struiken", kleur: "#166534", icoon: "🌿", herstel: "Laag" },
-  "zand": { label: "Zand", kleur: "#d97706", icoon: "🏖", herstel: "Laag" },
-  "rietland en moeras": { label: "Riet / Moeras", kleur: "#0369a1", icoon: "🌾", herstel: "Speciaal" },
-};
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -21,38 +9,47 @@ export async function GET(request) {
   const lng = parseFloat(searchParams.get("lng"));
   if (!lat || !lng) return Response.json({ error: "lat/lng verplicht" }, { status: 400 });
 
-  const delta = 0.0003;
+  // Grotere bbox — 100m radius
+  const delta = 0.001;
   const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
 
-  // Correcte URL: api.pdok.nl met /v1/ (niet service.pdok.nl of /v1_0/)
-  const COLLECTIES = [
-    { naam: "wegdeel", prop: "fysiekVoorkomen" },
-    { naam: "begroeidterreindeel", prop: "fysiekVoorkomen" },
-    { naam: "onbegroeidterreindeel", prop: "fysiekVoorkomen" },
-    { naam: "ondersteunendwegdeel", prop: "fysiekVoorkomen" },
-    { naam: "waterdeel", prop: "typeWater" },
-  ];
+  const resultaten = [];
 
-  for (const { naam, prop } of COLLECTIES) {
-    try {
-      const url = `https://api.pdok.nl/lv/bgt/ogc/v1/collections/${naam}/items?bbox=${bbox}&limit=1&f=json`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
-      if (!res.ok) continue;
+  // Test 1: Controleer beschikbare collecties
+  try {
+    const r = await fetch("https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=json", {
+      signal: AbortSignal.timeout(4000)
+    });
+    const json = await r.json();
+    const namen = json.collections?.map(c => c.id) ?? [];
+    resultaten.push({ test: "collecties", namen });
+  } catch(e) { resultaten.push({ test: "collecties", fout: e.message }); }
 
-      const json = await res.json();
-      const features = json.features ?? [];
+  // Test 2: Wegdeel met grotere bbox
+  try {
+    const url = `https://api.pdok.nl/lv/bgt/ogc/v1/collections/wegdeel/items?bbox=${bbox}&limit=3&f=json`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const json = await r.json();
+    resultaten.push({
+      test: "wegdeel",
+      status: r.status,
+      aantal: json.features?.length ?? 0,
+      eerste_props: json.features?.[0]?.properties ?? null,
+    });
+  } catch(e) { resultaten.push({ test: "wegdeel", fout: e.message }); }
 
-      if (features.length > 0) {
-        const props = features[0].properties ?? {};
-        const type = props[prop] ?? props[`plus-${prop}`] ?? null;
-        if (type && type !== "transitie" && type.trim() !== "") {
-          const lc = type.toLowerCase();
-          const vertaald = BGT_NAAR_NL[lc] ?? { label: type, kleur: "#6b7280", icoon: "📍", herstel: "?" };
-          return Response.json({ laag: naam, type, vertaald, bron: "pdok-bgt" });
-        }
-      }
-    } catch (e) { continue; }
-  }
+  // Test 3: Begroeid terrein
+  try {
+    const url = `https://api.pdok.nl/lv/bgt/ogc/v1/collections/begroeidterreindeel/items?bbox=${bbox}&limit=3&f=json`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const json = await r.json();
+    resultaten.push({
+      test: "begroeid",
+      status: r.status,
+      aantal: json.features?.length ?? 0,
+      eerste_props: json.features?.[0]?.properties ?? null,
+    });
+  } catch(e) { resultaten.push({ test: "begroeid", fout: e.message }); }
 
-  return Response.json({ laag: null, type: null });
+  return Response.json({ resultaten, lat, lng, bbox });
 }
