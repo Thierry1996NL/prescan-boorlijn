@@ -607,6 +607,17 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
+      // Analyse: klik op kaart, snap naar lijn als dicht genoeg
+      if (mode === "analyse") {
+        const pts2 = modeRef._controlePunten ?? [];
+        if (pts2.length < 2) return;
+        const snap = snapNaarLijn(lat, lng, pts2);
+        // Max 50m afstand tot de lijn
+        if (afstandM([lat, lng], [snap.lat, snap.lng]) > 50) return;
+        await plaatsAnalysePunt(kaart, L, snap.lat, snap.lng, snap.positieM);
+        return;
+      }
+
       if (mode === "boor_machine" || mode === "bentoniet_tank") {
         const kleur = mode === "boor_machine" ? "#f97316" : "#92400e";
         const label = mode === "boor_machine" ? "🔶 Boormachine" : "🟫 Bentoniet tank";
@@ -682,14 +693,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   }
 
 
-  async function plaatsAnalysePunt(kaart, L, lat, lng) {
-    const pts2 = modeRef._controlePunten ?? [];
-    const snap = snapNaarLijn(lat, lng, pts2);
+  async function plaatsAnalysePunt(kaart, L, lat, lng, positieM) {
     setAnalyseBezig(true);
-    const result = await haalOppervlakOp(snap.lat, snap.lng);
+    const result = await haalOppervlakOp(lat, lng);
     const vertaald = result?.vertaald ?? { label: "Geen data", kleur: "#9ca3af", icoon: "❓", herstel: "?" };
 
-    const nieuwPunt = { lat: snap.lat, lng: snap.lng, vertaald, positieM: snap.positieM, _marker: null };
+    const pos = positieM ?? snapNaarLijn(lat, lng, modeRef._controlePunten ?? []).positieM;
+    const nieuwPunt = { lat, lng, vertaald, positieM: pos, _marker: null };
     const icon0 = maakAnalyseIcon(L, 1, vertaald.kleur);
     const marker = L.marker([snap.lat, snap.lng], { icon: icon0, zIndexOffset: 2000, draggable: true })
       .bindTooltip(`1 — ${vertaald.icoon} ${vertaald.label}`, { direction: "top" })
@@ -721,7 +731,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
     setAnalysePunten(prev => {
       const gesorteerd = [...prev, nieuwPunt].sort((a, b) => a.positieM - b.positieM);
-      hernummer(gesorteerd);
+      // Hernummer na render via timeout
+      setTimeout(() => hernummer(gesorteerd), 0);
       return gesorteerd;
     });
     setAnalyseBezig(false);
@@ -788,7 +799,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         return;
       }
 
-      if (mode === "analyse") { await plaatsAnalysePunt(kaart, L, lat, lng); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePunt(kaart, L, _s.lat, _s.lng, _s.positieM); }
     });
   }
 
@@ -852,7 +863,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         });
       }
 
-      if (mode === "analyse") { await plaatsAnalysePunt(kaart, L, lat, lng); }
+      if (mode === "analyse") { const _s = snapNaarLijn(lat, lng, modeRef._controlePunten ?? []); await plaatsAnalysePunt(kaart, L, _s.lat, _s.lng, _s.positieM); }
     });
   }
 
