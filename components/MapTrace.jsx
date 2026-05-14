@@ -469,29 +469,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     }, 1500);
   }, [analysePunten]);
 
-  // Toon/verberg markers op basis van actieve tab
-  useEffect(() => {
-    const kaart = leafletMapRef.current;
-    if (!kaart) return;
-    // Dieptepunt markers
-    dieptepuntMarkersRef.current.forEach(m => {
-      if (kaartTab === "diepte") { if (!kaart.hasLayer(m)) m.addTo(kaart); }
-      else { if (kaart.hasLayer(m)) kaart.removeLayer(m); }
-    });
-    // Analyse markers
-    analysePunten.forEach(p => {
-      if (!p._marker) return;
-      if (kaartTab === "analyse") { if (!kaart.hasLayer(p._marker)) p._marker.addTo(kaart); }
-      else { if (kaart.hasLayer(p._marker)) kaart.removeLayer(p._marker); }
-    });
-    // Controlepunt markers — altijd zichtbaar in boorlijn tab of bewerken modus
-    controlepuntMarkersRef.current.forEach(m => {
-      if (kaartTab === "boorlijn") { if (!kaart.hasLayer(m)) m.addTo(kaart); }
-      else { if (kaart.hasLayer(m)) kaart.removeLayer(m); }
-    });
-  }, [kaartTab, analysePunten.length, dieptepuntMarkersRef.current.length]);
-
-
 
   // Bestaand tracé laden
   const bestaandTrace = (() => {
@@ -1030,22 +1007,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             </button>
           </div>
 
-          {/* Kaart tabbladen */}
-          <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden">
-            {[
-              { id: "boorlijn", label: "🔵 Boorlijn", title: "Controlepunten en lijn" },
-              { id: "analyse", label: "🟢 Analyse", title: "Oppervlakteanalyse punten" },
-              { id: "diepte", label: "🔷 Diepte", title: "Dieptepunten profiel" },
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setKaartTab(tab.id)} title={tab.title}
-                className={`text-xs px-3 py-1.5 font-medium transition-colors border-r border-gray-200 last:border-r-0 ${
-                  kaartTab === tab.id ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-50"
-                }`}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
           {/* Tracé knoppen */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
             <span className="text-xs text-gray-400 font-medium mr-2">Boorlijn:</span>
@@ -1227,60 +1188,120 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         })()}
       </div>
 
-      {/* Analyse paneel rechts */}
+      {/* Rechter paneel — inhoud op basis van actief tabblad */}
       <div className="w-60 flex-shrink-0 flex flex-col gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 620 }}>
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">🔬 Oppervlakteanalyse</h3>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 680 }}>
+
+          {/* Tab header */}
+          <div className="flex border-b border-gray-100">
+            {[
+              { id: "boorlijn", icon: "🔵", label: "Boorlijn" },
+              { id: "analyse", icon: "🟢", label: "Analyse" },
+              { id: "diepte", icon: "🔷", label: "Diepte" },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setKaartTab(tab.id)}
+                className={`flex-1 text-xs py-2.5 font-medium transition-colors border-r border-gray-100 last:border-r-0 ${
+                  kaartTab === tab.id ? "bg-blue-50 text-blue-700 border-b-2 border-b-blue-600" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                }`}>
+                {tab.icon} {tab.label}
+              </button>
+            ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-            {analysePunten.length === 0 ? (
-              <div className="text-center py-6">
-                <div className="text-2xl mb-2">🔬</div>
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  {heeftBestaandTrace ? "Zet modus op 'Punt toevoegen' en klik op de kaart." : "Teken eerst een boorlijn."}
-                </p>
+          <div className="flex-1 overflow-y-auto">
+
+            {/* Boorlijn tab */}
+            {kaartTab === "boorlijn" && (
+              <div className="p-4">
+                <div className="text-xs text-gray-400 font-medium mb-3 uppercase tracking-wide">Boorlijn info</div>
+                {heeftBestaandTrace ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                      <div className="font-semibold mb-1">✓ Boorlijn aanwezig</div>
+                      <div>Punten: {(controlePunten.length >= 2 ? controlePunten : bestaandTrace).length}</div>
+                      <div>Lengte: {Math.round((() => { const pts = controlePunten.length >= 2 ? controlePunten : bestaandTrace; let t = 0; for(let i=1;i<pts.length;i++) t+=afstandM(pts[i-1],pts[i]); return t; })())} m</div>
+                    </div>
+                    <div className="text-xs text-gray-400 leading-relaxed">Sleep de blauwe vierkante punten om de lijn aan te passen. Klik op de lijn om een punt in te voegen. Rechtsklik om een punt te verwijderen.</div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <div className="text-2xl mb-2">📍</div>
+                    <p className="text-xs text-gray-400">Nog geen boorlijn. Klik op "Nieuwe boorlijn tekenen" om te starten.</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <>
-                <div>
-                  <div className="text-xs text-gray-400 font-medium mb-2">Gedetecteerde typen</div>
-                  <div className="flex flex-col gap-1.5">
-                    {[...new Map(analysePunten.map(p => [p.vertaald?.label, p])).values()].map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
-                        style={{ backgroundColor: (p.vertaald?.kleur ?? "#9ca3af") + "12", color: p.vertaald?.kleur ?? "#9ca3af", border: `1px solid ${(p.vertaald?.kleur ?? "#9ca3af")}30` }}>
-                        <span>{p.vertaald?.icoon ?? "📍"}</span>
-                        <span className="flex-1">{p.vertaald?.label ?? "Geen data"}</span>
-                        {p.vertaald?.herstel && <span className="opacity-50 text-xs">{p.vertaald.herstel}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 font-medium mb-2">Punten ({analysePunten.length}) <span className="text-gray-300">· klik op kaart om te verwijderen</span></div>
-                  <div className="flex flex-col gap-0.5">
-                    {analysePunten.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg hover:bg-gray-50">
-                        <span className="text-gray-300 font-mono w-5 text-right">{i+1}</span>
-                        <span>{p.vertaald?.icoon ?? "📍"}</span>
-                        <span className="text-gray-600 truncate flex-1">{p.vertaald?.label ?? "Geen data"}</span>
-                        {p.positieM !== undefined && <span className="text-gray-300 text-xs">{p.positieM}m</span>}
-                      </div>
-                    ))}
-                    {analyseBezig && (
-                      <div className="flex items-center gap-2 text-xs py-1.5 px-2 text-gray-400">
-                        <span className="font-mono w-5 text-right">{analysePunten.length+1}</span>
-                        <span>⏳</span><span>Analyseren...</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
             )}
+
+            {/* Analyse tab */}
+            {kaartTab === "analyse" && (
+              <div className="p-4 flex flex-col gap-3">
+                {analysePunten.length === 0 ? (
+                  <div className="text-center py-6">
+                    <div className="text-2xl mb-2">🔬</div>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      {heeftBestaandTrace ? "Zet modus op 'Punt toevoegen' en zweef over de boorlijn." : "Teken eerst een boorlijn."}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-xs text-gray-400 font-medium mb-2">Gedetecteerde typen</div>
+                      <div className="flex flex-col gap-1.5">
+                        {[...new Map(analysePunten.map(p => [p.vertaald?.label, p])).values()].map((p, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
+                            style={{ backgroundColor: (p.vertaald?.kleur ?? "#9ca3af") + "12", color: p.vertaald?.kleur ?? "#9ca3af", border: `1px solid ${(p.vertaald?.kleur ?? "#9ca3af")}30` }}>
+                            <span>{p.vertaald?.icoon ?? "📍"}</span>
+                            <span className="flex-1">{p.vertaald?.label ?? "Geen data"}</span>
+                            {p.vertaald?.herstel && <span className="opacity-50">{p.vertaald.herstel}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-400 font-medium mb-2">Punten ({analysePunten.length})</div>
+                      <div className="flex flex-col gap-0.5">
+                        {[...analysePunten].sort((a,b) => a.positieM - b.positieM).map((p, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-gray-50">
+                            <span className="text-gray-300 font-mono w-4">{i+1}</span>
+                            <span>{p.vertaald?.icoon ?? "📍"}</span>
+                            <span className="text-gray-600 truncate flex-1">{p.vertaald?.label ?? "?"}</span>
+                            <span className="text-gray-300">{p.positieM}m</span>
+                          </div>
+                        ))}
+                        {analyseBezig && <div className="flex items-center gap-2 text-xs py-1.5 px-2 text-gray-400"><span>⏳</span><span>Analyseren...</span></div>}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Diepte tab */}
+            {kaartTab === "diepte" && (
+              <div className="p-4 flex flex-col gap-3">
+                <div className="text-xs text-gray-400 font-medium uppercase tracking-wide">Dieptepunten</div>
+                {dieptePunten.length === 0 ? (
+                  <p className="text-xs text-gray-400">Nog geen dieptepunten.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {dieptePunten.map((p, i) => (
+                      <div key={p.id} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-lg bg-blue-50">
+                        <span className="text-blue-600 font-bold w-4">{i+1}</span>
+                        <span className="text-gray-500">{p.id === "start" ? "↘" : p.id === "eind" ? "↗" : "◆"}</span>
+                        <span className="text-gray-600 flex-1">{p.diepte}m</span>
+                        <span className="text-gray-400">{p.id === "eind" ? "eind" : `${p.positieM ?? 0}m`}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="text-xs text-gray-300 leading-relaxed">Gebruik "+ Dieptepunt toevoegen" in het dwarsprofiel om punten toe te voegen en te slepen.</div>
+              </div>
+            )}
+
           </div>
 
-          {analysePunten.length > 0 && (
+          {/* Footer voor analyse tab */}
+          {kaartTab === "analyse" && analysePunten.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
               <div className="text-xs text-gray-400 font-medium mb-1.5">Herstelklasse</div>
               {[{ label: "Hoog — asfalt/beton", icoon: "🔴" }, { label: "Midden — klinkers", icoon: "🟠" }, { label: "Laag — gras/onverhard", icoon: "🟢" }].map((r,i) => (
@@ -1290,7 +1311,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           )}
         </div>
 
-        {analysePunten.length > 0 && (
+        {kaartTab === "analyse" && analysePunten.length > 0 && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
             <p className="text-xs text-blue-700 leading-relaxed">💡 Vraag de AI Assistent om hersteladvies en kostenraming per oppervlaktype.</p>
           </div>
