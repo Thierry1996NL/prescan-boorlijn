@@ -175,8 +175,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      // Herstel opgeslagen kaartpositie, of gebruik standaard Nederland
-      const opgeslagenPos = initInst.__kaartPositie;
+      // Herstel kaartpositie rechtstreeks uit laag_instellingen
+      // (los van bestanden – werkt ook als er nog geen lagen zijn)
+      const opgeslagenInst = (() => {
+        try { return JSON.parse(project.laag_instellingen || "{}"); } catch { return {}; }
+      })();
+      const opgeslagenPos = opgeslagenInst.__kaartPositie;
       const startCenter = opgeslagenPos ? [opgeslagenPos.lat, opgeslagenPos.lng] : [52.3, 5.3];
       const startZoom   = opgeslagenPos?.zoom ?? 13;
 
@@ -296,7 +300,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
               ingeslagen ? "bg-green-500 text-white" : "bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"
             }`}
           >
-            {ingeslagen ? "✓ Opgeslagen" : opslaanActief ? "Opslaan…" : "Instellingen opslaan"}
+            {ingeslagen ? "✓ Positie & lagen opgeslagen" : opslaanActief ? "Opslaan…" : "📍 Positie & lagen opslaan"}
           </button>
         </div>
 
