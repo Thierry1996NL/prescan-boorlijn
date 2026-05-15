@@ -563,6 +563,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       const t={...instellingen};
       if(kaartRef.current){const c=kaartRef.current.getCenter();t.__kaartPositie={lat:c.lat,lng:c.lng,zoom:kaartRef.current.getZoom()};}
       t.__achtergrond=actieveAchtergrond;t.__overlays=actieveOverlays;
+      if(kaartBox)t.__kaartBox=kaartBox;
       await updateProject(projectId,{laag_instellingen:JSON.stringify(t)});
       onOpgeslagen?.();setIngeslagen(true);setTimeout(()=>setIngeslagen(false),2500);
     }catch(err){console.error(err);setFoutmelding(err?.message??"Onbekende fout");setTimeout(()=>setFoutmelding(null),6000);}
@@ -667,13 +668,46 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       {/* ── Lagenpaneel ─────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{width:296}}>
 
-        {/* Header + opslaan */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div className="flex gap-1">
-            {["lagen","docs"].map(t=>(<button key={t} onClick={()=>setActieveTab(t)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${actieveTab===t?"bg-gray-100 text-gray-800":"text-gray-400 hover:text-gray-600"}`}>{t==="lagen"?"Lagen":"Documenten"}{t==="docs"&&documenten.length>0?` (${documenten.length})`:""}</button>))}
-          </div>
-          <button onClick={handleOpslaan} disabled={opslaanActief} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${ingeslagen?"bg-green-500 text-white":"bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"}`}>
-            {ingeslagen?"✓ Opgeslagen":opslaanActief?"Opslaan…":"📍 Opslaan"}
+        {/* Header: tabs + filterbox knop + opslaan */}
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-gray-100">
+          {/* Tabs */}
+          {["lagen","docs"].map(t=>(<button key={t} onClick={()=>setActieveTab(t)} className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${actieveTab===t?"bg-gray-100 text-gray-800":"text-gray-400 hover:text-gray-600"}`}>{t==="lagen"?"Lagen":"Docs"}{t==="docs"&&documenten.length>0?` (${documenten.length})`:""}</button>))}
+
+          <div className="flex-1"/>
+
+          {/* Filterbox knop */}
+          {!tekenModus&&!kaartBox&&(
+            <button onClick={startTekenBox} title="Teken een filterbox om alleen dat gebied te tonen"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs border border-gray-200 rounded-lg hover:bg-orange-50 hover:border-orange-300 text-gray-500 hover:text-orange-600 transition-colors font-medium">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Filterbox
+            </button>
+          )}
+          {tekenModus&&(
+            <span className="px-2.5 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg font-medium animate-pulse">
+              {boxStartRef.current?"Klik 2e hoek…":"Klik 1e hoek…"}
+            </span>
+          )}
+          {kaartBox&&!tekenModus&&(
+            <div className="flex gap-1">
+              <button onClick={startTekenBox} title="Nieuwe filterbox tekenen"
+                className="flex items-center gap-1 px-2 py-1 text-xs border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50 transition-colors font-medium">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Opnieuw
+              </button>
+              <button onClick={resetBox} title="Filterbox verwijderen"
+                className="px-2 py-1 text-xs border border-gray-200 text-gray-400 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors font-medium">×</button>
+            </div>
+          )}
+
+          {/* Opslaan */}
+          <button onClick={handleOpslaan} disabled={opslaanActief}
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-medium transition-colors flex-shrink-0 ${ingeslagen?"bg-green-500 text-white":"bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"}`}>
+            {ingeslagen?(
+              <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Opgeslagen</>
+            ):(
+              <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>{opslaanActief?"Opslaan…":"Opslaan"}</>
+            )}
           </button>
         </div>
 
@@ -750,35 +784,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
             </div>
           )}
 
-          {/* Box-teken knoppen rechtsboven in kaart */}
-          <div className="absolute top-3 right-3 z-[300] flex flex-col gap-1.5">
-            {!tekenModus&&!kaartBox&&(
-              <button onClick={startTekenBox}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-orange-50 hover:border-orange-300 text-gray-600 hover:text-orange-700 transition-colors font-medium">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-                Teken filterbox
-              </button>
-            )}
-            {tekenModus&&(
-              <div className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg shadow font-medium">
-                {!boxStartRef.current?"Klik 1e hoek…":"Klik 2e hoek…"}
-              </div>
-            )}
-            {kaartBox&&!tekenModus&&(
-              <div className="flex gap-1">
-                <button onClick={startTekenBox}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-orange-300 rounded-lg shadow-sm hover:bg-orange-50 text-orange-600 transition-colors font-medium">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-                  Opnieuw
-                </button>
-                <button onClick={resetBox}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:border-red-300 text-gray-500 hover:text-red-600 transition-colors font-medium">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  Reset
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Tekenmodus aanwijzing op kaart */}
+          {tekenModus&&(
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 bg-orange-500 text-white rounded-xl shadow-lg text-sm font-medium pointer-events-none">
+              {boxStartRef.current?"Klik voor de 2e hoek":"Klik voor de 1e hoek van de filterbox"}
+            </div>
+          )}
+          {kaartBox&&!tekenModus&&(
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-3 py-1.5 bg-white border border-orange-300 rounded-lg shadow text-xs text-orange-600 font-medium pointer-events-none">
+              Filterbox actief — alleen dit gebied is zichtbaar
+            </div>
+          )}
         </div>
         <FeatureDetail/>
       </div>
