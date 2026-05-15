@@ -317,11 +317,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [zipData,            setZipData]              = useState(null);
   const [isKaartLaden,       setIsKaartLaden]         = useState(false);
   const [kaartLaadBericht,   setKaartLaadBericht]     = useState("Laden…");
-  const [kaartBox,           setKaartBox]             = useState(null); // { lat1,lng1,lat2,lng2 } in WGS84
+  const [kaartBox,           setKaartBox]             = useState(opgeslagenInst.__kaartBox??null);
   const [tekenModus,         setTekenModus]           = useState(false);
   const tekenModusRef  = useRef(false);
   const boxRectRef     = useRef(null);   // L.Rectangle op de kaart
   const boxStartRef    = useRef(null);   // eerste hoekpunt tijdens tekenen
+  const appMarkersRef  = useRef([]);     // Appurtenance circleMarkers voor filterbox
 
   featureKlikRef.current = setGeselecteerdFeature;
   tekenModusRef.current  = tekenModus;
@@ -348,7 +349,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         // Live box preview tijdens tekenen
         if(tekenModusRef.current&&boxStartRef.current){
           if(boxRectRef.current)kaart.removeLayer(boxRectRef.current);
-          boxRectRef.current=L.rectangle([boxStartRef.current,e.latlng],{color:"#f97316",weight:2,fillColor:"#f97316",fillOpacity:0.08,dashArray:"6 3"});
+          boxRectRef.current=L.rectangle([boxStartRef.current,e.latlng],{color:"#6b7280",weight:1.5,fillColor:"transparent",fillOpacity:0,dashArray:"6 3"});
           boxRectRef.current.addTo(kaart);
         }
       });
@@ -369,7 +370,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
             kaart.getContainer().style.cursor="";
             // Teken definitieve box
             if(boxRectRef.current)kaart.removeLayer(boxRectRef.current);
-            boxRectRef.current=L.rectangle([[box.lat1,box.lng1],[box.lat2,box.lng2]],{color:"#f97316",weight:2.5,fillColor:"#f97316",fillOpacity:0.06,dashArray:null});
+            boxRectRef.current=L.rectangle([[box.lat1,box.lng1],[box.lat2,box.lng2]],{color:"#6b7280",weight:2,fillColor:"transparent",fillOpacity:0,dashArray:null});
             boxRectRef.current.addTo(kaart);
             // Filter toepassen via ref zodat we huidige state hebben
             setTimeout(()=>pasBoxFilterToeRef.current?.(box),100);
@@ -398,6 +399,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       kaart._verwijderOverlay=verwijderOverlay;
       voegAchtergrondToe(opgeslagenInst.__achtergrond??"brt_standaard");
       for(const id of(opgeslagenInst.__overlays??[])) voegOverlayToe(id);
+
+      // Herstel opgeslagen filterbox op de kaart
+      if(opgeslagenInst.__kaartBox){
+        const b=opgeslagenInst.__kaartBox;
+        boxRectRef.current=L.rectangle([[b.lat1,b.lng1],[b.lat2,b.lng2]],{
+          color:"#6b7280",weight:2,fillColor:"transparent",fillOpacity:0,dashArray:null
+        });
+        boxRectRef.current.addTo(kaart);
+        // Filter toepassen na laden van lagen
+        setTimeout(()=>pasBoxFilterToeRef.current?.(b),1500);
+      }
 
       // Laad bestanden
       const instSnap={...initInst};
@@ -494,7 +506,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     }catch(docErr){console.warn("PDF laden:",docErr);}
     setDocumenten(docList);
 
-      // Render lagen op kaart
+    // Render lagen op kaart
+    try{
       const L=LRef.current;const kaart=kaartRef.current;if(!L||!kaart)return;
       const nieuweInst={...instellingen};
       let eersteGeladen=false;
@@ -502,15 +515,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         const lagId=`klic_${thema}`;
         const inst2=instSnap[lagId]??standaardThemaInst(thema);
         nieuweInst[lagId]=inst2;
-        // Speciale constructies: gestippeld/gestreept voor duidelijkheid
         const SPEC_DASH={mantelbuis:"10 5",kabelbed:"12 4",duct:"8 4"};
         const dashArray=SPEC_DASH[thema]??null;
-
         const laag=L.geoJSON(geoJson,{
           coordsToLatLng:rdNaarLatLng(L),
           style:()=>({color:inst2.kleur,weight:inst2.dikte,opacity:inst2.helderheid,fillOpacity:inst2.helderheid*0.2,...(dashArray?{dashArray}:{})}),
           onEachFeature:(feature,layer)=>{
-            // Sla WGS84 coördinaten op voor nauwkeurige clipping
             try{
               const rdC=feature.geometry?.coordinates??[];
               layer._origWgs84=rdC.map(([x,y])=>{const[lng,lat]=rdNaarWgs84(x,y);return[lat,lng];});
@@ -524,23 +534,24 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         lagenRef.current[lagId]=laag;
         if(!eersteGeladen){try{kaart.fitBounds(laag.getBounds().pad(0.05));eersteGeladen=true;}catch{}}
       }
-
-      // Appurtenances als markers
+      appMarkersRef.current.forEach(m=>{try{kaart.removeLayer(m);}catch{}});
+      appMarkersRef.current=[];
       appurtenances.forEach(app=>{
         try{
           const ll=rdNaarLatLng(L)(app.coords);
           const kleur=THEMA[app.properties.thema]?.kleur??"#888";
           const marker=L.circleMarker(ll,{radius:4,color:kleur,fillColor:kleur,fillOpacity:0.9,weight:1.5,zIndex:250});
+          marker._appLatLng={lat:ll.lat,lng:ll.lng};
           marker.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.(app.properties);});
           marker.addTo(kaart);
+          appMarkersRef.current.push(marker);
         }catch{}
       });
-
       setInstellingen(nieuweInst);
       const totaal=Object.values(lagen).reduce((s,g)=>s+g.features.length,0);
       setBestandStatus(s=>({...s,[bestand.id]:`✓ ${totaal} objecten · ${Object.keys(lagen).length} lagen`}));
-      setIsKaartLaden(false);
-    }catch(err){console.error("KLIC:",err);setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));setIsKaartLaden(false);}
+    }catch(err){console.error("KLIC render:",err);setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));}
+    finally{setIsKaartLaden(false);}
   }
 
   // ── Enkel DXF/GML bestand ────────────────────────────────────
@@ -672,10 +683,18 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
               fillOpacity:h*0.2,
               interactive:false,
             }).addTo(kaart);
-            (extraClipLagenRef.current[lagId]??=[]).push(extra);
+            if(!extraClipLagenRef.current[lagId])extraClipLagenRef.current[lagId]=[];extraClipLagenRef.current[lagId].push(extra);
           }
         }
       });
+    });
+    // Appurtenance markers (los van geoJSON lagen)
+    appMarkersRef.current.forEach(m=>{
+      const ll=m._appLatLng??m.getLatLng?.();
+      if(!ll)return;
+      if(!box){m.setStyle?.({opacity:0.9,fillOpacity:0.9});return;}
+      const inBox=ll.lat>=box.lat1&&ll.lat<=box.lat2&&ll.lng>=box.lng1&&ll.lng<=box.lng2;
+      m.setStyle?.({opacity:inBox?0.9:0,fillOpacity:inBox?0.9:0});
     });
   }
   pasBoxFilterToeRef.current=pasBoxFilterToe;
