@@ -108,9 +108,32 @@ function maakRdCrs(L) {
   );
 }
 
-// ─── GeoJSON helper: RD-coördinaten [X,Y] direct doorgeven ───────
-// Met crs: RD_CRS neemt Leaflet L.latLng(Y, X) = L.latLng(northing, easting)
-const rdCoordsNaarLatLng = (L) => (coords) => L.latLng(coords[1], coords[0]);
+// ─── RD New → WGS84 voor vectordata display ──────────────────────
+// proj4leaflet projiceert de kaart, maar L.geoJSON verwacht WGS84 coördinaten.
+// Nadat proj4leaflet geladen is, gebruiken we proj4 voor de omrekening.
+function rdNaarWgs84(x, y) {
+  // Fallback wiskundige benadering als proj4 nog niet geladen is
+  if (typeof window !== "undefined" && window.proj4) {
+    try {
+      const wgs = proj4("EPSG:28992", "EPSG:4326", [x, y]);
+      return [wgs[0], wgs[1]]; // [lng, lat]
+    } catch {}
+  }
+  // Benadering (nauwkeurig tot ~1m)
+  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y];
+  const dX = (x - 155000) / 100000, dY = (y - 463000) / 100000;
+  const sumN = 3235.65389*dY + -32.58297*dX*dX + -0.24750*dY*dY
+    + -0.84978*dX*dX*dY + -0.06550*dY*dY*dY;
+  const sumE = 5260.52916*dX + 105.94684*dX*dY + 2.45656*dX*dY*dY
+    + -0.81885*dX*dX*dX;
+  return [5.38720621 + sumE / 3600, 52.15517440 + sumN / 3600];
+}
+
+// coordsToLatLng: RD [easting, northing] → L.latLng(wgs84_lat, wgs84_lng)
+const rdCoordsNaarLatLng = (L) => ([x, y]) => {
+  const [lng, lat] = rdNaarWgs84(x, y);
+  return L.latLng(lat, lng);
+};
 
 // ─── IMKL XML parser ─────────────────────────────────────────────
 // Coördinaten blijven in RD New [easting, northing] — geen conversie
@@ -269,10 +292,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       // RD New CRS
       const rdCrs = maakRdCrs(L);
 
-      // Herstel opgeslagen positie (opgeslagen als RD Y, X)
+      // setView altijd in WGS84 (ook met RD CRS — proj4leaflet vereiste)
       const pos = opgeslagenInst.__kaartPositie;
-      const startCenter = pos?.rdY ? [pos.rdY, pos.rdX] : [463000, 155000]; // Amersfoort
-      const startZoom   = pos?.zoom ?? 4;
+      const startCenter = pos?.lat ? [pos.lat, pos.lng] : [52.156, 5.387]; // Nederland
+      const startZoom   = pos?.zoom ?? 8;
 
       const kaart = L.map(mapElRef.current, {
         crs: rdCrs,
@@ -293,10 +316,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         }
       ).addTo(kaart);
 
-      // Live RD-coördinaten tonen
+      // Live RD-coördinaten tonen via proj4 (WGS84 → EPSG:28992)
       kaart.on("mousemove", e => {
-        // e.latlng.lat = RD northing (Y), e.latlng.lng = RD easting (X)
-        setRdCursor({ x: Math.round(e.latlng.lng), y: Math.round(e.latlng.lat) });
+        try {
+          const rd = proj4("EPSG:4326", "EPSG:28992", [e.latlng.lng, e.latlng.lat]);
+          setRdCursor({ x: Math.round(rd[0]), y: Math.round(rd[1]) });
+        } catch {}
       });
       kaart.on("mouseout", () => setRdCursor(null));
 
@@ -457,10 +482,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       const teOpslaan = { ...instellingen };
       if (kaartRef.current) {
         const c = kaartRef.current.getCenter();
-        // Sla op als RD New coördinaten (Y = northing, X = easting)
+        // Sla op als WGS84 (proj4leaflet setView verwacht WGS84)
         teOpslaan.__kaartPositie = {
-          rdY:  Math.round(c.lat),
-          rdX:  Math.round(c.lng),
+          lat:  c.lat,
+          lng:  c.lng,
           zoom: kaartRef.current.getZoom(),
         };
       }
