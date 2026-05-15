@@ -415,28 +415,70 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     return()=>{actief=false;if(kaartRef.current){kaartRef.current.remove();kaartRef.current=null;}};
   },[]);
 
-  // ── KLIC ZIP laden + parsen ───────────────────────────────────
+  // ── KLIC ZIP laden + parsen (met sessionStorage cache) ──────────
   async function laadKlicBestand(bestand,inst,instSnap){
     if(!bestand.url)return;
-    setBestandStatus(s=>({...s,[bestand.id]:"ZIP ophalen…"}));
-    try{
+
+    // ─ Cache check ─────────────────────────────────────────────────
+    // Sla geparsede IMKL data op in sessionStorage zodat het maar 1x hoeft
+    const cacheSleutel=`klic_parsed_${bestand.id}`;
+    let lagen=null, docs=[], appurtenances=[];
+    let zipRef=null; // houd zip object voor PDF extractie
+
+    const gecached=sessionStorage.getItem(cacheSleutel);
+    if(gecached){
+      try{
+        const parsed=JSON.parse(gecached);
+        lagen=parsed.lagen;appurtenances=parsed.appurtenances??[];
+        docs=parsed.docs??[];
+        setBestandStatus(s=>({...s,[bestand.id]:"Uit cache laden…"}));
+        setKaartLaadBericht("KLIC uit cache…");
+      }catch{lagen=null;}
+    }
+
+    if(!lagen){
+      // Eerste keer: download + parse
+      setBestandStatus(s=>({...s,[bestand.id]:"ZIP ophalen…"}));
+      setIsKaartLaden(true);setKaartLaadBericht("ZIP ophalen…");
       const res=await fetch(bestand.url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
       const blob=await res.blob();
       setBestandStatus(s=>({...s,[bestand.id]:"Uitpakken…"}));
       const JSZip=await laadJSZip();
       const zip=await JSZip.loadAsync(blob);
+      zipRef=zip;
       setZipData(zip);
       const xmlNaam=Object.keys(zip.files).find(n=>n.includes("GI_gebiedsinformatie")&&n.endsWith(".xml"));
       if(!xmlNaam)throw new Error("Geen IMKL XML in ZIP");
       setBestandStatus(s=>({...s,[bestand.id]:"IMKL parsen…"}));
       setKaartLaadBericht("IMKL parsen…");
       const xmlTekst=await zip.files[xmlNaam].async("string");
-      const{lagen,documenten:docs,appurtenances}=parseImkl(xmlTekst,msg=>{setBestandStatus(s=>({...s,[bestand.id]:msg}));setKaartLaadBericht(msg);});
+      const parsed=parseImkl(xmlTekst,msg=>{setBestandStatus(s=>({...s,[bestand.id]:msg}));setKaartLaadBericht(msg);});
+      lagen=parsed.lagen;appurtenances=parsed.appurtenances;
+      docs=parsed.documenten;
 
-      setKlicLagen(lagen);
+      // Sla op in sessionStorage (lagen + appurtenances + doc metadata, geen blob URLs)
+      try{
+        sessionStorage.setItem(cacheSleutel,JSON.stringify({
+          lagen,appurtenances,
+          docs:docs.map(({blobUrl,...rest})=>rest), // blobUrls zijn ephemeral, niet opslaan
+        }));
+      }catch(e){console.warn("sessionStorage vol:",e);}
+    }
 
-      // Documenten extracten als blob URLs
-      const docList=[];
+    setKlicLagen(lagen);
+
+    // Documenten: haal PDF blob URLs op uit ZIP (ook na cache hit)
+    // ZIP opnieuw ophalen als we vanuit cache laadden
+    const docList=[];
+    try{
+      let zip=zipRef;
+      if(!zip){
+        setBestandStatus(s=>({...s,[bestand.id]:"PDFs laden…"}));
+        const JSZip=await laadJSZip();
+        const res2=await fetch(bestand.url);
+        zip=await JSZip.loadAsync(await res2.blob());
+        setZipData(zip);
+      }
       for(const doc of docs){
         const zipPad=Object.keys(zip.files).find(p=>p.includes(doc.pad.split("/").pop()));
         if(zipPad&&!zip.files[zipPad].dir){
@@ -447,10 +489,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           }catch{}
         }
       }
-      // Voeg ook leveringsbrief toe
       const liPad=Object.keys(zip.files).find(p=>p.includes("LI_")&&p.endsWith(".pdf"));
       if(liPad){try{const data=await zip.files[liPad].async("uint8array");const blobUrl=URL.createObjectURL(new Blob([data],{type:"application/pdf"}));docList.unshift({naam:liPad.split("/").pop(),type:"leveringsbrief",thema:"algemeen",broncode:"",blobUrl,grootte:data.length});}catch{}}
-      setDocumenten(docList);
+    }catch(docErr){console.warn("PDF laden:",docErr);}
+    setDocumenten(docList);
 
       // Render lagen op kaart
       const L=LRef.current;const kaart=kaartRef.current;if(!L||!kaart)return;
