@@ -73,6 +73,34 @@ export default function ProjectDetailPagina() {
     }
   }
 
+  // ── Boorlijn opslaan/verwijderen vanuit MapTrace ─────────────
+  async function handleTraceOpgeslagen(data) {
+    try {
+      if (!data) {
+        // Verwijderen: wis boorlijn + analyse + diepte
+        await updateProject(id, {
+          boortrace_geojson: null,
+          diepte_punten:     null,
+          analyse_punten:    null,
+        });
+      } else if (data._alleenDiepte) {
+        // Alleen dieptepunten opslaan (auto-save)
+        await updateProject(id, { diepte_punten: JSON.stringify(data.diepte_punten) });
+      } else if (data._alleenAnalyse) {
+        // Alleen analysepunten opslaan (auto-save)
+        await updateProject(id, { analyse_punten: JSON.stringify(data.analyse_punten) });
+      } else {
+        // Volledige boorlijn GeoJSON opslaan
+        await updateProject(id, {
+          boortrace_geojson: JSON.stringify(data),
+        });
+      }
+      await laadProject();
+    } catch (err) {
+      console.error("handleTraceOpgeslagen fout:", err);
+    }
+  }
+
   async function handleOpslaan(e) {
     e.preventDefault();
     setOpslaan(true);
@@ -418,7 +446,7 @@ export default function ProjectDetailPagina() {
           <MapTrace
             projectId={id}
             project={project}
-            onOpgeslagen={laadProject}
+            onTraceOpgeslagen={handleTraceOpgeslagen}
           />
         );
 
@@ -456,7 +484,7 @@ export default function ProjectDetailPagina() {
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-4 max-w-4xl">
               <p className="text-xs text-gray-500 mb-3">BGT-laag activeren via kaart (analysepunten tab):</p>
-              <MapTrace projectId={id} project={project} beginTab="analyse" onOpgeslagen={laadProject} />
+              <MapTrace projectId={id} project={project} beginTab="analyse" onTraceOpgeslagen={handleTraceOpgeslagen} />
             </div>
           </div>
         );
@@ -468,7 +496,7 @@ export default function ProjectDetailPagina() {
             <p className="text-sm text-gray-500 max-w-2xl mb-4">
               Stel de diepteligging in langs de boorlijn en vul het dwarsprofiel. Verwerk ook de bodemgesteldheid.
             </p>
-            <MapTrace projectId={id} project={project} beginTab="diepte" onOpgeslagen={laadProject} />
+            <MapTrace projectId={id} project={project} beginTab="diepte" onTraceOpgeslagen={handleTraceOpgeslagen} />
           </div>
         );
 
@@ -553,7 +581,7 @@ export default function ProjectDetailPagina() {
                 <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">read-only</span>
               </div>
               <div className="p-4 pointer-events-none opacity-90">
-                <MapTrace projectId={id} project={project} readOnly={true} onOpgeslagen={() => {}} />
+                <MapTrace projectId={id} project={project} readOnly={true} onTraceOpgeslagen={() => {}} />
               </div>
             </div>
           </div>
