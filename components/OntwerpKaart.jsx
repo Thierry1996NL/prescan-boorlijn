@@ -1,28 +1,36 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { updateProject, supabase } from "@/lib/supabase-queries";
+import { updateProject } from "@/lib/supabase-queries";
 
-// ─── Standaard laagkleuren per type ──────────────────────────────
-const TYPE_KLEUR = {
-  LS:    "#f59e0b",
-  MS:    "#f97316",
-  Gas:   "#eab308",
-  Water: "#3b82f6",
-  Data:  "#8b5cf6",
-  KLIC:  "#ef4444",
+// ─── IMKL thema configuratie ──────────────────────────────────────
+const THEMA = {
+  laagspanning:              { label: "Laagspanning",        kleur: "#f59e0b" },
+  middenspanning:            { label: "Middenspanning",       kleur: "#f97316" },
+  hoogspanning:              { label: "Hoogspanning",         kleur: "#ef4444" },
+  gasLageDruk:               { label: "Gas (lage druk)",      kleur: "#eab308" },
+  gasHogeDruk:               { label: "Gas (hoge druk)",      kleur: "#ca8a04" },
+  water:                     { label: "Water",                kleur: "#3b82f6" },
+  datatransport:             { label: "Data / Telecom",       kleur: "#8b5cf6" },
+  rioolVrijverval:           { label: "Riool (vrijverval)",   kleur: "#92400e" },
+  rioolOnderOverOfOnderdruk: { label: "Riool (druk)",         kleur: "#78350f" },
+  warmte:                    { label: "Warmte",               kleur: "#dc2626" },
+  overig:                    { label: "Overig",               kleur: "#6b7280" },
 };
 
-function standaardInst(type) {
-  return { zichtbaar: true, kleur: TYPE_KLEUR[type] ?? "#3b82f6", dikte: 2, helderheid: 0.85 };
-}
+const TYPE_KLEUR = {
+  LS: "#f59e0b", MS: "#f97316", Gas: "#eab308",
+  Water: "#3b82f6", Data: "#8b5cf6", KLIC: "#6b7280",
+};
 
-// ─── Leaflet laden via CDN (geen npm pakket nodig) ────────────────
-async function laadLeaflet() {
+function standaardInst(type)  { return { zichtbaar: true, kleur: TYPE_KLEUR[type] ?? "#3b82f6", dikte: 2, helderheid: 0.85 }; }
+function standaardThemaInst(t){ return { zichtbaar: true, kleur: THEMA[t]?.kleur ?? "#6b7280", dikte: 2, helderheid: 0.85 }; }
+
+// ─── CDN: Leaflet + proj4 + proj4leaflet ─────────────────────────
+async function laadKaartBibliotheken() {
   if (typeof window === "undefined") return null;
-  if (window.L?.version) return window.L;
 
-  // CSS
+  // 1. Leaflet CSS
   if (!document.querySelector('link[href*="leaflet"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -30,107 +38,190 @@ async function laadLeaflet() {
     document.head.appendChild(link);
   }
 
-  // JS
-  await new Promise((ok, fout) => {
-    if (window.L?.version) return ok();
-    const s = document.createElement("script");
-    s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    s.onload = ok;
-    s.onerror = fout;
-    document.head.appendChild(s);
-  });
+  // 2. Leaflet JS
+  if (!window.L?.version) {
+    await new Promise((ok, err) => {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      s.onload = ok; s.onerror = err;
+      document.head.appendChild(s);
+    });
+  }
+
+  // 3. proj4
+  if (!window.proj4) {
+    await new Promise((ok, err) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";
+      s.onload = ok; s.onerror = err;
+      document.head.appendChild(s);
+    });
+  }
+
+  // 4. proj4leaflet
+  if (!window.L?.Proj) {
+    await new Promise((ok, err) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js";
+      s.onload = ok; s.onerror = err;
+      document.head.appendChild(s);
+    });
+  }
 
   return window.L;
 }
 
-// ─── RD New → WGS84 (geen externe library) ───────────────────────
-function rdNaarWgs84(x, y) {
-  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y]; // al WGS84
-  const dX = (x - 155000) / 100000;
-  const dY = (y - 463000) / 100000;
-  const sumN =
-     3235.65389 * dY   + -32.58297 * dX*dX + -0.24750 * dY*dY
-    + -0.84978  * dX*dX*dY + -0.06550 * dY*dY*dY
-    + -0.01709  * dX*dX*dY*dY + -0.00738 * dX*dX*dX*dX
-    +  0.00530  * dX*dX*dY*dY*dY;
-  const sumE =
-     5260.52916 * dX   + 105.94684 * dX*dY  + 2.45656 * dX*dY*dY
-    + -0.81885  * dX*dX*dX + 0.05594 * dX*dY*dY*dY
-    + -0.05607  * dX*dX*dX*dY + 0.01199 * dX*dY*dY*dY*dY;
-  return [5.38720621 + sumE / 3600, 52.15517440 + sumN / 3600];
+// ─── CDN: JSZip ──────────────────────────────────────────────────
+async function laadJSZip() {
+  if (window.JSZip) return window.JSZip;
+  await new Promise((ok, err) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload = ok; s.onerror = err;
+    document.head.appendChild(s);
+  });
+  return window.JSZip;
 }
 
-// ─── Ingebouwde DXF-parser ────────────────────────────────────────
+// ─── RD New CRS definitie (EPSG:28992) ───────────────────────────
+// Coördinaten blijven in meters — geen conversie nodig
+function maakRdCrs(L) {
+  return new L.Proj.CRS(
+    "EPSG:28992",
+    "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 " +
+    "+x_0=155000 +y_0=463000 +ellps=bessel " +
+    "+towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 " +
+    "+units=m +no_defs",
+    {
+      // Standaard PDOK zoom-niveaus voor EPSG:28992
+      resolutions: [
+        3440.640, 1720.320, 860.160, 430.080, 215.040,
+        107.520,  53.760,   26.880,  13.440,  6.720,
+        3.360,    1.680,    0.840,   0.420,
+      ],
+      origin: [-285401.920, 22598.080],
+      bounds: L.bounds(
+        [-285401.920, 22598.080],
+        [595401.920, 903401.920]
+      ),
+    }
+  );
+}
+
+// ─── GeoJSON helper: RD-coördinaten [X,Y] direct doorgeven ───────
+// Met crs: RD_CRS neemt Leaflet L.latLng(Y, X) = L.latLng(northing, easting)
+const rdCoordsNaarLatLng = (L) => (coords) => L.latLng(coords[1], coords[0]);
+
+// ─── IMKL XML parser ─────────────────────────────────────────────
+// Coördinaten blijven in RD New [easting, northing] — geen conversie
+function imklNaarGeoJson(xmlTekst, onVoortgang) {
+  const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
+
+  // 1. Netwerk-ID → thema
+  const netThema = {};
+  doc.querySelectorAll("Utiliteitsnet").forEach(net => {
+    const id = net.getAttributeNS("http://www.opengis.net/gml/3.2", "id") ||
+               net.getAttribute("gml:id") || "";
+    const href = net.querySelector("thema")
+      ?.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "";
+    if (id) netThema[id] = href.split("/").pop() || "overig";
+  });
+  onVoortgang?.("Netwerken gelezen…");
+
+  // 2. UtilityLink geometrieën → groepeer per thema
+  const themalagen = {};
+  const links = doc.querySelectorAll("UtilityLink");
+  let teller = 0;
+
+  links.forEach(link => {
+    teller++;
+    if (teller % 100 === 0) onVoortgang?.(`${teller} / ${links.length} leidingen…`);
+
+    const netHref = (link.querySelector("inNetwork")
+      ?.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "").replace(/^#/, "");
+    const thema = netThema[netHref] ||
+                  netThema["nl.imkl-" + netHref] ||
+                  "overig";
+
+    const posListEl = link.querySelector("posList");
+    if (!posListEl) return;
+
+    const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
+    // posList bevat X Y paren in RD New (meters) — direct gebruiken
+    const coords = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      coords.push([nums[i], nums[i + 1]]); // [easting, northing] in RD
+    }
+    if (coords.length < 2) return;
+
+    if (!themalagen[thema]) themalagen[thema] = [];
+    themalagen[thema].push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: coords },
+      properties: { thema },
+    });
+  });
+
+  onVoortgang?.("GeoJSON bouwen…");
+
+  const result = {};
+  for (const [thema, features] of Object.entries(themalagen)) {
+    result[thema] = { type: "FeatureCollection", features };
+  }
+  return result;
+}
+
+// ─── DXF parser — coördinaten blijven in RD ──────────────────────
 function dxfNaarGeoJson(tekst) {
   try {
     const features = [];
     const regels = tekst.split(/\r?\n/);
     let i = 0;
-
     while (i < regels.length) {
       if (regels[i].trim() !== "0") { i++; continue; }
       const type = regels[i + 1]?.trim();
-      const start = i;
       let einde = i + 2;
       while (einde < regels.length && regels[einde].trim() !== "0") einde++;
-
-      const blok = regels.slice(start, einde);
-
-      const getW = (code) => {
-        for (let k = 0; k < blok.length - 1; k++)
-          if (blok[k].trim() === String(code)) return parseFloat(blok[k + 1].trim()) || 0;
-        return 0;
-      };
-      const getLaag = () => {
-        for (let k = 0; k < blok.length - 1; k++)
-          if (blok[k].trim() === "8") return blok[k + 1].trim();
-        return "0";
-      };
-
+      const blok = regels.slice(i, einde);
+      const getW = c => { for (let k=0;k<blok.length-1;k++) if(blok[k].trim()===String(c)) return parseFloat(blok[k+1].trim())||0; return 0; };
       try {
         if (type === "LINE") {
-          features.push({ type: "Feature", geometry: { type: "LineString", coordinates: [rdNaarWgs84(getW(10), getW(20)), rdNaarWgs84(getW(11), getW(21))] }, properties: { layer: getLaag() } });
+          // [X, Y] = [easting, northing] in RD
+          features.push({ type:"Feature", geometry:{type:"LineString",
+            coordinates:[[getW(10),getW(20)],[getW(11),getW(21)]]}, properties:{} });
         } else if (type === "LWPOLYLINE" || type === "POLYLINE") {
           const coords = [];
-          for (let k = 0; k < blok.length - 3; k++)
-            if (blok[k].trim() === "10" && blok[k + 2]?.trim() === "20") {
-              const x = parseFloat(blok[k + 1].trim()), y = parseFloat(blok[k + 3].trim());
-              if (!isNaN(x) && !isNaN(y)) coords.push(rdNaarWgs84(x, y));
+          for (let k=0;k<blok.length-3;k++) {
+            if (blok[k].trim()==="10" && blok[k+2]?.trim()==="20") {
+              const x=parseFloat(blok[k+1].trim()), y=parseFloat(blok[k+3].trim());
+              if (!isNaN(x)&&!isNaN(y)) coords.push([x, y]);
             }
-          if (coords.length >= 2) features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { layer: getLaag() } });
+          }
+          if (coords.length>=2) features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});
         } else if (type === "POINT") {
-          features.push({ type: "Feature", geometry: { type: "Point", coordinates: rdNaarWgs84(getW(10), getW(20)) }, properties: { layer: getLaag() } });
-        } else if (type === "ARC" || type === "CIRCLE") {
-          const cx = getW(10), cy = getW(20), r = getW(40);
-          const a0 = (type === "ARC" ? getW(50) : 0) * Math.PI / 180;
-          const a1 = (type === "ARC" ? getW(51) : 360) * Math.PI / 180;
-          const coords = Array.from({ length: 25 }, (_, idx) => {
-            const a = a0 + (a1 - a0) * idx / 24;
-            return rdNaarWgs84(cx + r * Math.cos(a), cy + r * Math.sin(a));
-          });
-          features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { layer: getLaag() } });
+          features.push({type:"Feature",geometry:{type:"Point",coordinates:[getW(10),getW(20)]},properties:{}});
         }
-      } catch { /* skip */ }
+      } catch {}
       i = einde;
     }
-    return { type: "FeatureCollection", features };
+    return { type:"FeatureCollection", features };
   } catch { return null; }
 }
 
-// ─── GML-parser ───────────────────────────────────────────────────
+// ─── GML parser — RD coördinaten bewaren ─────────────────────────
 function gmlNaarGeoJson(tekst) {
   try {
     const doc = new DOMParser().parseFromString(tekst, "text/xml");
     const features = [];
     doc.querySelectorAll("LineString, gml\\:LineString").forEach(el => {
-      const raw = (el.querySelector("posList, gml\\:posList") ?? el.querySelector("coordinates"))?.textContent?.trim();
+      const raw = (el.querySelector("posList, gml\\:posList") || el.querySelector("coordinates"))?.textContent?.trim();
       if (!raw) return;
       const nums = raw.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
       const coords = [];
-      for (let i = 0; i < nums.length - 1; i += 2) coords.push(rdNaarWgs84(nums[i], nums[i + 1]));
-      if (coords.length >= 2) features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} });
+      for (let i=0;i<nums.length-1;i+=2) coords.push([nums[i], nums[i+1]]); // [X, Y] RD
+      if (coords.length>=2) features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});
     });
-    return { type: "FeatureCollection", features };
+    return { type:"FeatureCollection", features };
   } catch { return null; }
 }
 
@@ -144,30 +235,30 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const lagenRef = useRef({});
 
   const bestanden = (() => { try { return JSON.parse(project.bestanden_meta || "[]"); } catch { return []; } })();
+  const opgeslagenInst = (() => { try { return JSON.parse(project.laag_instellingen || "{}"); } catch { return {}; } })();
 
-  const initInst = (() => {
-    const op = (() => { try { return JSON.parse(project.laag_instellingen || "{}"); } catch { return {}; } })();
-    const r = {};
-    for (const b of bestanden) r[b.id] = op[b.id] ?? standaardInst(b.type);
-    return r;
-  })();
+  const initInst = {};
+  for (const b of bestanden) initInst[b.id] = opgeslagenInst[b.id] ?? standaardInst(b.type);
+  for (const [k, v] of Object.entries(opgeslagenInst)) if (k.startsWith("klic_")) initInst[k] = v;
 
   const [instellingen,  setInstellingen]  = useState(initInst);
+  const [klicLagen,     setKlicLagen]     = useState({});
   const [bestandStatus, setBestandStatus] = useState({});
   const [opslaanActief, setOpslaanActief] = useState(false);
   const [ingeslagen,    setIngeslagen]    = useState(false);
+  const [foutmelding,   setFoutmelding]   = useState(null);
+  const [rdCursor,      setRdCursor]      = useState(null); // Live RD-coördinaten onder cursor
 
-  // ── Kaart initialiseren ───────────────────────────────────────
+  // ── Kaart init ────────────────────────────────────────────────
   useEffect(() => {
     let actief = true;
     (async () => {
       if (typeof window === "undefined" || !mapElRef.current || kaartRef.current) return;
 
-      const L = await laadLeaflet();
+      const L = await laadKaartBibliotheken();
       if (!L || !actief || !mapElRef.current) return;
       LRef.current = L;
 
-      // Fix standaard marker-iconen
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -175,33 +266,58 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      // Herstel kaartpositie rechtstreeks uit laag_instellingen
-      // (los van bestanden – werkt ook als er nog geen lagen zijn)
-      const opgeslagenInst = (() => {
-        try { return JSON.parse(project.laag_instellingen || "{}"); } catch { return {}; }
-      })();
-      const opgeslagenPos = opgeslagenInst.__kaartPositie;
-      const startCenter = opgeslagenPos ? [opgeslagenPos.lat, opgeslagenPos.lng] : [52.3, 5.3];
-      const startZoom   = opgeslagenPos?.zoom ?? 13;
+      // RD New CRS
+      const rdCrs = maakRdCrs(L);
 
-      const kaart = L.map(mapElRef.current, { zoomControl: true, preferCanvas: true }).setView(startCenter, startZoom);
+      // Herstel opgeslagen positie (opgeslagen als RD Y, X)
+      const pos = opgeslagenInst.__kaartPositie;
+      const startCenter = pos?.rdY ? [pos.rdY, pos.rdX] : [463000, 155000]; // Amersfoort
+      const startZoom   = pos?.zoom ?? 4;
+
+      const kaart = L.map(mapElRef.current, {
+        crs: rdCrs,
+        zoomControl: true,
+        preferCanvas: true,
+      }).setView(startCenter, startZoom);
+
       kaartRef.current = kaart;
 
+      // PDOK BRT in native RD New projectie — geen conversie
       L.tileLayer(
-        "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
-        { maxZoom: 22, maxNativeZoom: 19, attribution: "© PDOK BRT, © PDOK" }
+        "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
+        {
+          minZoom: 0,
+          maxZoom: 13,
+          tileSize: 256,
+          attribution: "© PDOK BRT, © Kadaster",
+        }
       ).addTo(kaart);
 
-      // Laad alle bestanden
+      // Live RD-coördinaten tonen
+      kaart.on("mousemove", e => {
+        // e.latlng.lat = RD northing (Y), e.latlng.lng = RD easting (X)
+        setRdCursor({ x: Math.round(e.latlng.lng), y: Math.round(e.latlng.lat) });
+      });
+      kaart.on("mouseout", () => setRdCursor(null));
+
+      // Laad bestanden
+      const instSnapshot = { ...initInst };
       let eersteGeladen = false;
+
       for (const bestand of bestanden) {
-        const inst = instellingen[bestand.id] ?? standaardInst(bestand.type);
-        const laag = await laadBestandOp(bestand, inst);
-        if (laag) {
-          if (inst.zichtbaar) laag.addTo(kaart);
-          lagenRef.current[bestand.id] = laag;
-          if (!eersteGeladen) {
-            try { kaart.fitBounds(laag.getBounds().pad(0.15)); eersteGeladen = true; } catch {}
+        const ext = bestand.naam.split(".").pop().toLowerCase();
+        const inst = instSnapshot[bestand.id] ?? standaardInst(bestand.type);
+
+        if (ext === "zip") {
+          await laadKlicBestand(bestand, inst, instSnapshot);
+        } else {
+          const laag = await laadEnkelBestand(bestand, inst);
+          if (laag) {
+            if (inst.zichtbaar) laag.addTo(kaart);
+            lagenRef.current[bestand.id] = laag;
+            if (!eersteGeladen) {
+              try { kaart.fitBounds(laag.getBounds().pad(0.1)); eersteGeladen = true; } catch {}
+            }
           }
         }
       }
@@ -213,8 +329,71 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     };
   }, []);
 
-  // ── Bestand ophalen & parsen ──────────────────────────────────
-  async function laadBestandOp(bestand, inst) {
+  // ── KLIC ZIP laden ────────────────────────────────────────────
+  async function laadKlicBestand(bestand, inst, instSnapshot) {
+    if (!bestand.url) return;
+    setBestandStatus(s => ({ ...s, [bestand.id]: "ZIP ophalen…" }));
+    try {
+      const res = await fetch(bestand.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+
+      setBestandStatus(s => ({ ...s, [bestand.id]: "ZIP uitpakken…" }));
+      const JSZip = await laadJSZip();
+      const zip   = await JSZip.loadAsync(blob);
+
+      const xmlNaam = Object.keys(zip.files).find(n =>
+        n.includes("GI_gebiedsinformatie") && n.endsWith(".xml")
+      );
+      if (!xmlNaam) throw new Error("Geen IMKL XML in ZIP");
+
+      setBestandStatus(s => ({ ...s, [bestand.id]: "IMKL parsen…" }));
+      const xmlTekst = await zip.files[xmlNaam].async("string");
+
+      const lagen = imklNaarGeoJson(xmlTekst, msg =>
+        setBestandStatus(s => ({ ...s, [bestand.id]: msg }))
+      );
+
+      setKlicLagen(lagen);
+
+      const L    = LRef.current;
+      const kaart = kaartRef.current;
+      if (!L || !kaart) return;
+
+      const nieuweInst = { ...instellingen };
+      let eersteGeladen = false;
+
+      for (const [thema, geoJson] of Object.entries(lagen)) {
+        const lagId = `klic_${thema}`;
+        const inst2 = instSnapshot[lagId] ?? standaardThemaInst(thema);
+        nieuweInst[lagId] = inst2;
+
+        // coordsToLatLng: RD [easting, northing] → L.latLng(northing, easting)
+        const laag = L.geoJSON(geoJson, {
+          coordsToLatLng: rdCoordsNaarLatLng(L),
+          style: () => ({ color: inst2.kleur, weight: inst2.dikte, opacity: inst2.helderheid, fillOpacity: inst2.helderheid * 0.2 }),
+        });
+
+        if (inst2.zichtbaar) laag.addTo(kaart);
+        lagenRef.current[lagId] = laag;
+
+        if (!eersteGeladen) {
+          try { kaart.fitBounds(laag.getBounds().pad(0.05)); eersteGeladen = true; } catch {}
+        }
+      }
+
+      setInstellingen(nieuweInst);
+
+      const totaal = Object.values(lagen).reduce((s, g) => s + g.features.length, 0);
+      setBestandStatus(s => ({ ...s, [bestand.id]: `✓ ${totaal} objecten · ${Object.keys(lagen).length} lagen` }));
+    } catch (err) {
+      console.error("KLIC:", err);
+      setBestandStatus(s => ({ ...s, [bestand.id]: `✗ ${err.message}` }));
+    }
+  }
+
+  // ── Enkel bestand laden ───────────────────────────────────────
+  async function laadEnkelBestand(bestand, inst) {
     if (!bestand.url) return null;
     setBestandStatus(s => ({ ...s, [bestand.id]: "Laden…" }));
     try {
@@ -223,12 +402,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       const ext = bestand.naam.split(".").pop().toLowerCase();
       let geoJson = null;
 
-      if (ext === "dxf")                    { geoJson = dxfNaarGeoJson(await res.text()); }
-      else if (ext === "gml" || ext === "xml") { geoJson = gmlNaarGeoJson(await res.text()); }
-      else if (ext === "geojson" || ext === "json") { geoJson = await res.json(); }
+      if (ext === "dxf")                       geoJson = dxfNaarGeoJson(await res.text());
+      else if (ext === "gml" || ext === "xml")  geoJson = gmlNaarGeoJson(await res.text());
+      else if (ext === "geojson" || ext === "json") geoJson = await res.json();
 
       if (!geoJson?.features?.length) {
-        setBestandStatus(s => ({ ...s, [bestand.id]: "Geen geometrieën gevonden" }));
+        setBestandStatus(s => ({ ...s, [bestand.id]: "Geen geometrieën" }));
         return null;
       }
 
@@ -236,7 +415,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       if (!L) return null;
 
       const laag = L.geoJSON(geoJson, {
-        style: () => ({ color: inst.kleur, weight: inst.dikte, opacity: inst.helderheid, fillOpacity: inst.helderheid * 0.25 }),
+        coordsToLatLng: rdCoordsNaarLatLng(L),
+        style: () => ({ color: inst.kleur, weight: inst.dikte, opacity: inst.helderheid, fillOpacity: inst.helderheid * 0.2 }),
         pointToLayer: (_, ll) => L.circleMarker(ll, { radius: 4, color: inst.kleur, weight: 1, fillOpacity: 0.7 }),
       });
 
@@ -248,59 +428,111 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     }
   }
 
-  // ── Live instelling bijwerken ─────────────────────────────────
-  function wijzig(bestandId, sleutel, waarde) {
+  // ── Live laagstijl wijzigen ───────────────────────────────────
+  function wijzig(lagId, sleutel, waarde) {
     setInstellingen(prev => {
-      const nieuw = { ...prev, [bestandId]: { ...(prev[bestandId] ?? standaardInst("")), [sleutel]: waarde } };
+      const isKlic = lagId.startsWith("klic_");
+      const huidig = prev[lagId] ?? (isKlic ? standaardThemaInst(lagId.replace("klic_", "")) : standaardInst(""));
+      const nieuw = { ...prev, [lagId]: { ...huidig, [sleutel]: waarde } };
       const kaart = kaartRef.current;
-      const laag  = lagenRef.current[bestandId];
+      const laag  = lagenRef.current[lagId];
       if (kaart && laag) {
         if (sleutel === "zichtbaar") {
           if (waarde) { if (!kaart.hasLayer(laag)) kaart.addLayer(laag); }
           else        { if ( kaart.hasLayer(laag)) kaart.removeLayer(laag); }
         } else {
-          const i = nieuw[bestandId];
-          laag.setStyle({ color: i.kleur, weight: i.dikte, opacity: i.helderheid, fillOpacity: i.helderheid * 0.25 });
+          const i = nieuw[lagId];
+          laag.setStyle({ color: i.kleur, weight: i.dikte, opacity: i.helderheid, fillOpacity: i.helderheid * 0.2 });
         }
       }
       return nieuw;
     });
   }
 
-  // ── Opslaan ───────────────────────────────────────────────────
+  // ── Opslaan (positie in RD New) ───────────────────────────────
   async function handleOpslaan() {
     setOpslaanActief(true);
+    setFoutmelding(null);
     try {
-      // Voeg huidige kaartpositie toe aan instellingen
       const teOpslaan = { ...instellingen };
       if (kaartRef.current) {
         const c = kaartRef.current.getCenter();
-        teOpslaan.__kaartPositie = { lat: c.lat, lng: c.lng, zoom: kaartRef.current.getZoom() };
+        // Sla op als RD New coördinaten (Y = northing, X = easting)
+        teOpslaan.__kaartPositie = {
+          rdY:  Math.round(c.lat),
+          rdX:  Math.round(c.lng),
+          zoom: kaartRef.current.getZoom(),
+        };
       }
       await updateProject(projectId, { laag_instellingen: JSON.stringify(teOpslaan) });
       onOpgeslagen?.();
       setIngeslagen(true);
       setTimeout(() => setIngeslagen(false), 2500);
-    } catch (err) { console.error(err); }
-    finally { setOpslaanActief(false); }
+    } catch (err) {
+      console.error("Opslaan:", err);
+      setFoutmelding(err?.message ?? "Onbekende fout");
+      setTimeout(() => setFoutmelding(null), 6000);
+    } finally {
+      setOpslaanActief(false);
+    }
   }
 
-  // ── Render ────────────────────────────────────────────────────
+  // ── Sub-component: slider controls ───────────────────────────
+  function LaagControls({ lagId, inst }) {
+    return (
+      <div className={`space-y-1.5 pl-5 ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16">Kleur</span>
+          <input type="color" value={inst.kleur} onChange={e => wijzig(lagId, "kleur", e.target.value)}
+            className="w-8 h-5 rounded cursor-pointer border-0 p-0" />
+          <span className="text-xs text-gray-400">{inst.kleur}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16">Dikte</span>
+          <input type="range" min="0.5" max="8" step="0.5" value={inst.dikte}
+            onChange={e => wijzig(lagId, "dikte", Number(e.target.value))}
+            className="flex-1 accent-orange-500 h-1" />
+          <span className="text-xs text-gray-400 w-7 text-right">{inst.dikte}px</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16">Helderheid</span>
+          <input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid}
+            onChange={e => wijzig(lagId, "helderheid", Number(e.target.value))}
+            className="flex-1 accent-orange-500 h-1" />
+          <span className="text-xs text-gray-400 w-7 text-right">{Math.round(inst.helderheid * 100)}%</span>
+        </div>
+      </div>
+    );
+  }
+
+  function Toggle({ lagId, inst }) {
+    return (
+      <button onClick={() => wijzig(lagId, "zichtbaar", !inst.zichtbaar)}
+        className={`relative flex-shrink-0 rounded-full transition-colors ${inst.zichtbaar ? "bg-orange-500" : "bg-gray-200"}`}
+        style={{ width: 34, height: 18 }}>
+        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${inst.zichtbaar ? "translate-x-4" : "translate-x-0.5"}`} />
+      </button>
+    );
+  }
+
+  const gewoneLagen   = bestanden.filter(b => !b.naam.toLowerCase().endsWith(".zip"));
+  const klicBestanden = bestanden.filter(b => b.naam.toLowerCase().endsWith(".zip"));
+  const klicThemas    = Object.keys(klicLagen).length > 0
+    ? Object.keys(klicLagen)
+    : Object.keys(instellingen).filter(k => k.startsWith("klic_")).map(k => k.replace("klic_", ""));
+
   return (
     <div className="flex gap-4" style={{ height: "calc(100vh - 168px)", minHeight: 480 }}>
 
-      {/* Lagenpaneel */}
-      <div className="w-72 flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
+      {/* ── Lagenpaneel ──────────────────────────────────────── */}
+      <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{ width: 296 }}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <span className="text-sm font-semibold text-gray-800">Lagen</span>
-          <button
-            onClick={handleOpslaan}
-            disabled={opslaanActief}
+          <button onClick={handleOpslaan} disabled={opslaanActief}
             className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
               ingeslagen ? "bg-green-500 text-white" : "bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"
-            }`}
-          >
-            {ingeslagen ? "✓ Positie & lagen opgeslagen" : opslaanActief ? "Opslaan…" : "📍 Positie & lagen opslaan"}
+            }`}>
+            {ingeslagen ? "✓ Opgeslagen" : opslaanActief ? "Opslaan…" : "📍 Positie & lagen opslaan"}
           </button>
         </div>
 
@@ -313,68 +545,90 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {bestanden.map(b => {
+              {/* Gewone DXF/GML bestanden */}
+              {gewoneLagen.map(b => {
                 const inst = instellingen[b.id] ?? standaardInst(b.type);
                 return (
                   <div key={b.id} className="px-4 py-3 space-y-2">
-                    {/* Naam + toggle */}
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow" style={{ background: inst.kleur }} />
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: inst.kleur }} />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div>
                         <div className="text-xs text-gray-400">{b.type}</div>
                       </div>
-                      <button
-                        onClick={() => wijzig(b.id, "zichtbaar", !inst.zichtbaar)}
-                        className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${inst.zichtbaar ? "bg-orange-500" : "bg-gray-200"}`}
-                      >
-                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${inst.zichtbaar ? "translate-x-4" : "translate-x-0.5"}`} />
-                      </button>
+                      <Toggle lagId={b.id} inst={inst} />
                     </div>
-
-                    {/* Status */}
                     {bestandStatus[b.id] && (
                       <div className={`text-xs pl-5 ${bestandStatus[b.id].startsWith("✓") ? "text-green-600" : bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
                         {bestandStatus[b.id]}
                       </div>
                     )}
-
-                    {/* Sliders */}
-                    <div className={`space-y-2 pl-5 ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-16">Kleur</span>
-                        <input type="color" value={inst.kleur} onChange={e => wijzig(b.id, "kleur", e.target.value)}
-                          className="w-8 h-5 rounded cursor-pointer border-0 p-0 bg-transparent" />
-                        <span className="text-xs text-gray-400">{inst.kleur}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-16">Dikte</span>
-                        <input type="range" min="0.5" max="8" step="0.5" value={inst.dikte}
-                          onChange={e => wijzig(b.id, "dikte", Number(e.target.value))}
-                          className="flex-1 accent-orange-500 h-1" />
-                        <span className="text-xs text-gray-400 w-7 text-right">{inst.dikte}px</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 w-16">Helderheid</span>
-                        <input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid}
-                          onChange={e => wijzig(b.id, "helderheid", Number(e.target.value))}
-                          className="flex-1 accent-orange-500 h-1" />
-                        <span className="text-xs text-gray-400 w-7 text-right">{Math.round(inst.helderheid * 100)}%</span>
-                      </div>
-                    </div>
+                    <LaagControls lagId={b.id} inst={inst} />
                   </div>
                 );
               })}
+
+              {/* KLIC ZIP → sub-lagen per thema */}
+              {klicBestanden.map(b => (
+                <div key={b.id}>
+                  <div className="px-4 py-2 bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <span>🗂️</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-gray-700 truncate">{b.naam}</div>
+                        <div className="text-xs text-gray-400">KLIC-melding · IMKL</div>
+                      </div>
+                    </div>
+                    {bestandStatus[b.id] && (
+                      <div className={`text-xs mt-1 ml-6 ${
+                        bestandStatus[b.id].startsWith("✓") ? "text-green-600" :
+                        bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-orange-500"
+                      }`}>{bestandStatus[b.id]}</div>
+                    )}
+                  </div>
+
+                  {klicThemas.length > 0 ? klicThemas.map(thema => {
+                    const lagId = `klic_${thema}`;
+                    const inst  = instellingen[lagId] ?? standaardThemaInst(thema);
+                    const config = THEMA[thema] ?? { label: thema };
+                    const n = klicLagen[thema]?.features?.length;
+                    return (
+                      <div key={lagId} className="px-4 py-2 space-y-1.5 border-t border-gray-50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ml-3" style={{ background: inst.kleur }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-gray-700">{config.label}</div>
+                            {n && <div className="text-xs text-gray-400">{n} objecten</div>}
+                          </div>
+                          <Toggle lagId={lagId} inst={inst} />
+                        </div>
+                        <LaagControls lagId={lagId} inst={inst} />
+                      </div>
+                    );
+                  }) : (
+                    <div className="px-4 py-3 text-xs text-gray-400 italic pl-8">
+                      {bestandStatus[b.id] ? "Laden…" : "Geen lagen geladen"}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        <div className="border-t border-gray-100 px-4 py-2">
-          <p className="text-xs text-gray-400">Instellingen worden meegenomen als ondergrond in stap 4 t/m 8.</p>
+        {/* Footer: RD cursor + foutmelding */}
+        <div className="border-t border-gray-100 px-4 py-2 space-y-1">
+          {rdCursor && (
+            <div className="text-xs font-mono text-gray-500 bg-gray-50 rounded px-2 py-1">
+              RD X: {rdCursor.x.toLocaleString("nl-NL")} · Y: {rdCursor.y.toLocaleString("nl-NL")}
+            </div>
+          )}
+          {foutmelding && <p className="text-xs text-red-500 font-medium">✗ {foutmelding}</p>}
+          <p className="text-xs text-gray-400">Kaart in RD New (EPSG:28992) · instellingen gelden ook in stap 4 t/m 8.</p>
         </div>
       </div>
 
-      {/* Kaart */}
+      {/* ── Kaart ────────────────────────────────────────────── */}
       <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div ref={mapElRef} className="w-full h-full" />
       </div>
