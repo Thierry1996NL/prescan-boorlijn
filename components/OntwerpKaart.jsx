@@ -3,19 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import { updateProject } from "@/lib/supabase-queries";
 
-// ─── IMKL thema configuratie ──────────────────────────────────────
+// ─── IMKL thema configuratie — standaard KLIC/NEN-1775 kleuren ───
 const THEMA = {
-  laagspanning:              { label: "Laagspanning",        kleur: "#f59e0b" },
-  middenspanning:            { label: "Middenspanning",       kleur: "#f97316" },
-  hoogspanning:              { label: "Hoogspanning",         kleur: "#ef4444" },
-  gasLageDruk:               { label: "Gas (lage druk)",      kleur: "#eab308" },
-  gasHogeDruk:               { label: "Gas (hoge druk)",      kleur: "#ca8a04" },
-  water:                     { label: "Water",                kleur: "#3b82f6" },
-  datatransport:             { label: "Data / Telecom",       kleur: "#8b5cf6" },
-  rioolVrijverval:           { label: "Riool (vrijverval)",   kleur: "#92400e" },
-  rioolOnderOverOfOnderdruk: { label: "Riool (druk)",         kleur: "#78350f" },
-  warmte:                    { label: "Warmte",               kleur: "#dc2626" },
-  overig:                    { label: "Overig",               kleur: "#6b7280" },
+  laagspanning:              { label: "Laagspanning (LS)",    kleur: "#7B00AA" }, // paars/violet
+  middenspanning:            { label: "Middenspanning (MS)",  kleur: "#00CCFF" }, // cyaan
+  hoogspanning:              { label: "Hoogspanning (HS)",    kleur: "#FF4400" }, // oranje-rood
+  gasLageDruk:               { label: "Gas lage druk (LD)",   kleur: "#FFFF00" }, // geel
+  gasHogeDruk:               { label: "Gas hoge druk (HD)",   kleur: "#FF0000" }, // rood
+  water:                     { label: "Water",                kleur: "#000080" }, // donkerblauw
+  datatransport:             { label: "Data / Telecom",       kleur: "#00CC00" }, // groen
+  rioolVrijverval:           { label: "Riool (vrijverval)",   kleur: "#AA00CC" }, // paars
+  rioolOnderOverOfOnderdruk: { label: "Riool (druk)",         kleur: "#AA00CC" }, // paars
+  warmte:                    { label: "Warmte",               kleur: "#FF6600" }, // oranje
+  overig:                    { label: "Overig",               kleur: "#888888" }, // grijs
 };
 
 // ─── Achtergrond- en overlaylagen ────────────────────────────────
@@ -344,6 +344,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [rdCursor,      setRdCursor]      = useState(null);
   const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond ?? "brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays ?? []);
+  const [vergrendeld,        setVergrendeld]        = useState({}); // { lagId: true/false } — false = open
   const basisLaagRef  = useRef(null);
   const overlayRefs   = useRef({});
 
@@ -635,41 +636,78 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     }
   }
 
-  // ── Sub-component: slider controls ───────────────────────────
-  function LaagControls({ lagId, inst }) {
+  // ── Slot icoon ───────────────────────────────────────────────
+  function SlotIcoon({ lagId }) {
+    const open = vergrendeld[lagId] === false;
     return (
-      <div className={`space-y-1.5 pl-5 ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16">Kleur</span>
-          <input type="color" value={inst.kleur} onChange={e => wijzig(lagId, "kleur", e.target.value)}
-            className="w-8 h-5 rounded cursor-pointer border-0 p-0" />
-          <span className="text-xs text-gray-400">{inst.kleur}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16">Dikte</span>
-          <input type="range" min="0.5" max="8" step="0.5" value={inst.dikte}
-            onChange={e => wijzig(lagId, "dikte", Number(e.target.value))}
-            className="flex-1 accent-orange-500 h-1" />
-          <span className="text-xs text-gray-400 w-7 text-right">{inst.dikte}px</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16">Helderheid</span>
-          <input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid}
-            onChange={e => wijzig(lagId, "helderheid", Number(e.target.value))}
-            className="flex-1 accent-orange-500 h-1" />
-          <span className="text-xs text-gray-400 w-7 text-right">{Math.round(inst.helderheid * 100)}%</span>
-        </div>
-      </div>
+      <button
+        onClick={() => setVergrendeld(v => ({ ...v, [lagId]: !open }))}
+        title={open ? "Vergrendelen" : "Bewerken"}
+        className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors"
+      >
+        {open ? (
+          // Slot open
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+          </svg>
+        ) : (
+          // Slot dicht
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        )}
+      </button>
     );
   }
 
+  // ── Toggle schakelaar ─────────────────────────────────────────
   function Toggle({ lagId, inst }) {
     return (
-      <button onClick={() => wijzig(lagId, "zichtbaar", !inst.zichtbaar)}
-        className={`relative flex-shrink-0 rounded-full transition-colors ${inst.zichtbaar ? "bg-orange-500" : "bg-gray-200"}`}
-        style={{ width: 34, height: 18 }}>
-        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${inst.zichtbaar ? "translate-x-4" : "translate-x-0.5"}`} />
+      <button
+        onClick={() => wijzig(lagId, "zichtbaar", !inst.zichtbaar)}
+        className={`relative inline-flex flex-shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${
+          inst.zichtbaar ? "bg-orange-500" : "bg-gray-200"
+        }`}
+        style={{ width: 36, height: 20 }}
+      >
+        <span
+          className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ${
+            inst.zichtbaar ? "translate-x-4" : "translate-x-0.5"
+          }`}
+          style={{ marginTop: 2 }}
+        />
       </button>
+    );
+  }
+
+  // ── Slider controls (zichtbaar als slot open) ─────────────────
+  function LaagControls({ lagId, inst }) {
+    if (vergrendeld[lagId] !== false) return null; // vergrendeld = controls verborgen
+    return (
+      <div className={`mt-2 space-y-2 px-2 py-2 bg-gray-50 rounded-lg ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Kleur</span>
+          <input type="color" value={inst.kleur} onChange={e => wijzig(lagId, "kleur", e.target.value)}
+            className="w-7 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0" />
+          <span className="text-xs text-gray-400 font-mono">{inst.kleur}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Dikte</span>
+          <input type="range" min="0.5" max="8" step="0.5" value={inst.dikte}
+            onChange={e => wijzig(lagId, "dikte", Number(e.target.value))}
+            className="flex-1 accent-orange-500 h-1 min-w-0" />
+          <span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{inst.dikte}px</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Helderheid</span>
+          <input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid}
+            onChange={e => wijzig(lagId, "helderheid", Number(e.target.value))}
+            className="flex-1 accent-orange-500 h-1 min-w-0" />
+          <span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{Math.round(inst.helderheid * 100)}%</span>
+        </div>
+      </div>
     );
   }
 
@@ -751,10 +789,13 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                         <div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div>
                         <div className="text-xs text-gray-400">{b.type}</div>
                       </div>
-                      <Toggle lagId={b.id} inst={inst} />
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <SlotIcoon lagId={b.id} />
+                        <Toggle lagId={b.id} inst={inst} />
+                      </div>
                     </div>
                     {bestandStatus[b.id] && (
-                      <div className={`text-xs pl-5 ${bestandStatus[b.id].startsWith("✓") ? "text-green-600" : bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
+                      <div className={`text-xs ${bestandStatus[b.id].startsWith("✓") ? "text-green-600" : bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
                         {bestandStatus[b.id]}
                       </div>
                     )}
@@ -795,7 +836,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                             <div className="text-xs font-medium text-gray-700">{config.label}</div>
                             {n && <div className="text-xs text-gray-400">{n} objecten</div>}
                           </div>
-                          <Toggle lagId={lagId} inst={inst} />
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <SlotIcoon lagId={lagId} />
+                            <Toggle lagId={lagId} inst={inst} />
+                          </div>
                         </div>
                         <LaagControls lagId={lagId} inst={inst} />
                       </div>
