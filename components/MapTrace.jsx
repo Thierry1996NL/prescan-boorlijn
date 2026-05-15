@@ -2,6 +2,117 @@
 
 import { useEffect, useRef, useState } from "react";
 
+
+// ─── KLIC ACHTERGROND (stap 3 → stap 4) ─────────────────────────
+const KLIC_THEMA_KLEUR = {
+  laagspanning:"#7B00AA",middenspanning:"#00CCFF",hoogspanning:"#FF4400",
+  gasLageDruk:"#FFFF00",gasHogeDruk:"#FF0000",water:"#000080",
+  datatransport:"#00CC00",rioolVrijverval:"#AA00CC",rioolOnderOverOfOnderdruk:"#AA00CC",
+  warmte:"#FF6600",overig:"#888888",mantelbuis:"#4B5563",kabelbed:"#111827",duct:"#374151",
+};
+
+function rdNaarWgs84Klic(x, y) {
+  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y];
+  if (typeof window !== "undefined" && window.proj4) {
+    try { const w = proj4("EPSG:28992","EPSG:4326",[x,y]); return [w[0],w[1]]; } catch {}
+  }
+  const dX=(x-155000)/100000, dY=(y-463000)/100000;
+  const sumN=3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY;
+  const sumE=5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX;
+  return[5.38720621+sumE/3600,52.15517440+sumN/3600];
+}
+
+async function laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef) {
+  if (!kaart || typeof window === "undefined") return;
+  (klicLagenRef.current || []).forEach(l => { try { kaart.removeLayer(l); } catch {} });
+  klicLagenRef.current = [];
+  const bestanden = (() => { try { return JSON.parse(project?.bestanden_meta || "[]"); } catch { return []; } })();
+  const inst = (() => { try { return JSON.parse(project?.laag_instellingen || "{}"); } catch { return {}; } })();
+  const kaartBox = inst.__kaartBox ?? null;
+  if (bestanden.length === 0) return;
+
+  // Laad JSZip als nodig
+  if (!window.JSZip) {
+    await new Promise((ok, err) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload = ok; s.onerror = err;
+      document.head.appendChild(s);
+    });
+  }
+
+  for (const b of bestanden) {
+    if (!b.url) continue;
+    const ext = b.naam.split(".").pop().toLowerCase();
+    try {
+      const res = await fetch(b.url); if (!res.ok) continue;
+
+      if (ext === "zip") {
+        const blob = await res.blob();
+        const zip = await window.JSZip.loadAsync(blob);
+        const xmlNaam = Object.keys(zip.files).find(n => n.includes("GI_gebiedsinformatie") && n.endsWith(".xml"));
+        if (!xmlNaam) continue;
+        const xmlTekst = await zip.files[xmlNaam].async("string");
+        const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
+        const netThema = {};
+        doc.querySelectorAll("Utiliteitsnet").forEach(net => {
+          const id = net.getAttributeNS?.("http://www.opengis.net/gml/3.2","id") || net.getAttribute("gml:id") || "";
+          const href = net.querySelector("thema")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "";
+          if (id) netThema[id] = href.split("/").pop() || "overig";
+        });
+        doc.querySelectorAll("UtilityLink").forEach(link => {
+          const netHref = (link.querySelector("inNetwork")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "").replace(/^#/,"");
+          const thema = netThema[netHref] || "overig";
+          const lagId = `klic_${thema}`;
+          const li = inst[lagId]; if (li?.zichtbaar === false) return;
+          const kleur = li?.kleur ?? KLIC_THEMA_KLEUR[thema] ?? "#888";
+          const dikte = li?.dikte ?? 2;
+          const helderheid = li?.helderheid ?? 0.7;
+          const posListEl = link.querySelector("posList"); if (!posListEl) return;
+          const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
+          const coords = [];
+          for (let i = 0; i+1 < nums.length; i+=2) {
+            const [lng, lat] = rdNaarWgs84Klic(nums[i], nums[i+1]);
+            coords.push([lat, lng]);
+          }
+          if (coords.length < 2) return;
+          if (kaartBox) {
+            const ok = coords.some(([lat,lng]) => lat>=kaartBox.lat1&&lat<=kaartBox.lat2&&lng>=kaartBox.lng1&&lng<=kaartBox.lng2);
+            if (!ok) return;
+          }
+          const laag = window.L.polyline(coords, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
+          laag.addTo(kaart);
+          klicLagenRef.current.push(laag);
+        });
+
+      } else if (ext === "dxf") {
+        const li = inst[b.id]; if (li?.zichtbaar === false) continue;
+        const kleur = li?.kleur ?? "#888"; const dikte = li?.dikte ?? 2; const helderheid = li?.helderheid ?? 0.7;
+        const tekst = await res.text();
+        const regels = tekst.split(/\r?\n/); let i = 0;
+        while (i < regels.length) {
+          if (regels[i].trim() !== "0") { i++; continue; }
+          const type = regels[i+1]?.trim(); let einde = i+2;
+          while (einde < regels.length && regels[einde].trim() !== "0") einde++;
+          const blok = regels.slice(i, einde);
+          const getW = c => { for (let k=0;k<blok.length-1;k++) if(blok[k].trim()===String(c)) return parseFloat(blok[k+1].trim())||0; return 0; };
+          if (type === "LINE" || type === "LWPOLYLINE") {
+            const pts = type === "LINE" ? [[getW(10),getW(20)],[getW(11),getW(21)]] : [];
+            if (type === "LWPOLYLINE") for (let k=0;k<blok.length-3;k++) if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20") pts.push([parseFloat(blok[k+1].trim()),parseFloat(blok[k+3].trim())]);
+            if (pts.length >= 2) {
+              const coords = pts.map(([x,y]) => { const [lng,lat] = rdNaarWgs84Klic(x,y); return [lat,lng]; });
+              if (kaartBox) { const ok = coords.some(([lat,lng]) => lat>=kaartBox.lat1&&lat<=kaartBox.lat2&&lng>=kaartBox.lng1&&lng<=kaartBox.lng2); if (!ok) { i=einde; continue; } }
+              const laag = window.L.polyline(coords, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
+              laag.addTo(kaart); klicLagenRef.current.push(laag);
+            }
+          }
+          i = einde;
+        }
+      }
+    } catch (err) { console.warn("KLIC achtergrond:", b.naam, err.message); }
+  }
+}
+
 // ─── PDOK LAGEN ───────────────────────────────────────────────
 const LAGEN = [
   { id: "luchtfoto", label: "Luchtfoto", kleur: "#6b7280", standaardAan: false, type: "wmts", url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:3857/{z}/{x}/{y}.jpeg" },
@@ -423,6 +534,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const traceLaagRef = useRef(null);
   const modeRef = useRef("niets");
   const dieptepuntMarkersRef = useRef([]); // kaartmarkers voor dieptepunten
+  const klicLagenRef = useRef([]); // KLIC achtergrond lagen (stap 3 → stap 4)
 
   const [actieveLagen, setActieveLagen] = useState(Object.fromEntries(LAGEN.map(l => [l.id, l.standaardAan])));
   const [modus, setModus] = useState("niets");
@@ -601,6 +713,11 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         }
       } catch (e) {}
     }
+
+    // KLIC lagen als achtergrond laden (uit stap 3 opgeslagen instellingen)
+    setTimeout(() => {
+      laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef).catch(() => {});
+    }, 800);
 
     // Kaart klik handler
     kaart.on("click", async (e) => {
@@ -1199,6 +1316,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
         {/* Kaart */}
         <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 420 }} />
+
+        {/* KLIC achtergrond status */}
+        {project?.bestanden_meta && project.bestanden_meta !== "[]" && (
+          <div className="text-xs text-gray-400 px-1">
+            🗂 KLIC-ondergrond actief — lagen uit stap 3 worden als achtergrond getoond
+          </div>
+        )}
 
         {/* Dwarsprofiel */}
         <Dwarsprofiel
