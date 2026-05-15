@@ -353,6 +353,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond ?? "brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays ?? []);
   const [vergrendeld,        setVergrendeld]        = useState({}); // { lagId: true/false } — false = open
+  const [resetConfirm,       setResetConfirm]       = useState(null); // lagId of null
   const basisLaagRef  = useRef(null);
   const overlayRefs   = useRef({});
 
@@ -674,6 +675,86 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     );
   }
 
+  // ── Reset knop ───────────────────────────────────────────────
+  function ResetKnop({ lagId }) {
+    return (
+      <button
+        onClick={() => setResetConfirm(lagId)}
+        title="Terugzetten naar standaard"
+        className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 flex-shrink-0 transition-colors"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+      </button>
+    );
+  }
+
+  // ── Bevestiging popup ─────────────────────────────────────────
+  function ResetBevestiging() {
+    if (!resetConfirm) return null;
+    const isKlic = resetConfirm.startsWith("klic_");
+    const thema  = resetConfirm.replace("klic_", "");
+    const config = isKlic ? THEMA[thema] : null;
+    const naam   = config?.label ?? resetConfirm;
+
+    function bevestig() {
+      const standaard = isKlic
+        ? standaardThemaInst(thema)
+        : standaardInst(bestanden.find(b => b.id === resetConfirm)?.type ?? "");
+      // Reset kleur, dikte én helderheid naar standaard
+      setInstellingen(prev => {
+        const nieuw = { ...prev, [resetConfirm]: { ...(prev[resetConfirm] ?? standaard), ...standaard } };
+        // Pas ook de kaartlaag direct aan
+        const kaart = kaartRef.current;
+        const laag  = lagenRef.current[resetConfirm];
+        if (kaart && laag) {
+          laag.setStyle({ color: standaard.kleur, weight: standaard.dikte, opacity: standaard.helderheid, fillOpacity: standaard.helderheid * 0.2 });
+        }
+        return nieuw;
+      });
+      setResetConfirm(null);
+    }
+
+    return (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-gray-800">Standaard herstellen</div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                Kleur, dikte en helderheid van <span className="font-medium">{naam}</span> terugzetten naar standaard?
+              </div>
+            </div>
+          </div>
+          {isKlic && (
+            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: standaardThemaInst(thema).kleur }} />
+              <span className="text-xs text-gray-600">Standaard kleur: <span className="font-mono">{standaardThemaInst(thema).kleur}</span></span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button onClick={() => setResetConfirm(null)}
+              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
+              Annuleren
+            </button>
+            <button onClick={bevestig}
+              className="flex-1 px-3 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium">
+              Ja, herstellen
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Toggle schakelaar ─────────────────────────────────────────
   function Toggle({ lagId, inst }) {
     return (
@@ -730,6 +811,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     : Object.keys(instellingen).filter(k => k.startsWith("klic_")).map(k => k.replace("klic_", ""));
 
   return (
+    <>
+    <ResetBevestiging />
     <div className="flex gap-4" style={{ height: "calc(100vh - 168px)", minHeight: 480 }}>
 
       {/* ── Lagenpaneel ──────────────────────────────────────── */}
@@ -801,7 +884,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                         <div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div>
                         <div className="text-xs text-gray-400">{b.type}</div>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <ResetKnop lagId={b.id} />
                         <SlotIcoon lagId={b.id} />
                         <Toggle lagId={b.id} inst={inst} />
                       </div>
@@ -848,7 +932,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                             <div className="text-xs font-medium text-gray-700">{config.label}</div>
                             {n && <div className="text-xs text-gray-400">{n} objecten</div>}
                           </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <ResetKnop lagId={lagId} />
                             <SlotIcoon lagId={lagId} />
                             <Toggle lagId={lagId} inst={inst} />
                           </div>
@@ -884,5 +969,6 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         <div ref={mapElRef} className="w-full h-full" />
       </div>
     </div>
+    </>
   );
 }
