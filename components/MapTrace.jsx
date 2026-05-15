@@ -1185,13 +1185,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     controlepuntMarkersRef.current.push(marker);
   }
 
-  function startTekenen() {
+  async function startTekenen() {
+    // Verwijder bestaande boorlijn uit DB (er is er altijd maar één per project)
+    if (project?.boortrace_geojson) {
+      await onTraceOpgeslagen(null);
+    }
     wisControlepunten();
+    wisAnalysePunten();
     setControlePunten([]);
+    setDieptePunten([
+      { id: "start", positieM: 0, diepte: -1.5, vast: true },
+      { id: "eind", positieM: null, diepte: -1.5, vast: true },
+    ]);
     setModus("tekenen");
-    if (traceLaagRef.current && leafletMapRef.current) {
-      leafletMapRef.current.removeLayer(traceLaagRef.current);
-      traceLaagRef.current = null;
+    const kaart = leafletMapRef.current;
+    if (kaart) {
+      if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+      dieptepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
+      dieptepuntMarkersRef.current = [];
     }
   }
 
@@ -1337,8 +1348,14 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
                     <button onClick={startBewerken} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded-md hover:bg-blue-50 transition-colors">
                       <span className="w-3 h-3 bg-blue-600 rounded-sm inline-block" /> Bewerken
                     </button>
-                    <button onClick={() => setToonVerwijderPopup(true)} className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors">
-                      🗑 Verwijderen
+                    <button onClick={startTekenen} className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-800 px-2.5 py-1 rounded-md hover:bg-orange-50 transition-colors">
+                      ✏️ Nieuwe boorlijn
+                    </button>
+                    <button
+                      onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setVerwijderBezig(false); }}
+                      disabled={verwijderBezig}
+                      className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors disabled:opacity-40">
+                      {verwijderBezig ? "⏳" : "🗑"} {verwijderBezig ? "Verwijderen…" : "Verwijderen"}
                     </button>
                   </>
                 ) : (
@@ -1703,26 +1720,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         )}
       </div>
 
-      {/* Verwijder popup */}
-      {toonVerwijderPopup && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-            <div className="text-2xl mb-3 text-center">🗑</div>
-            <h3 className="text-sm font-semibold text-gray-900 text-center mb-2">Boorlijn verwijderen?</h3>
-            <p className="text-xs text-gray-500 text-center mb-5 leading-relaxed">De boorlijn, alle analysepunten en het dwarsprofiel worden permanent verwijderd.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setToonVerwijderPopup(false)} className="flex-1 border border-gray-200 text-gray-500 text-sm py-2.5 rounded-lg hover:bg-gray-50">Annuleren</button>
-              <button
-                onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setToonVerwijderPopup(false); setVerwijderBezig(false); }}
-                disabled={verwijderBezig}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {verwijderBezig ? "Bezig..." : "Verwijderen"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Verwijder popup verwijderd — direct via toolbar knop */}
     </div>
   );
 }
