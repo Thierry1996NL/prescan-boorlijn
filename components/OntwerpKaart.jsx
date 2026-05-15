@@ -15,6 +15,10 @@ const THEMA = {
   rioolOnderOverOfOnderdruk: { label: "Riool (druk)",        kleur: "#AA00CC" },
   warmte:                    { label: "Warmte",              kleur: "#FF6600" },
   overig:                    { label: "Overig",              kleur: "#888888" },
+  // Speciale constructies — dik + gestreept weergegeven
+  mantelbuis:                { label: "Mantelbuis",           kleur: "#4B5563" }, // donkergrijs
+  kabelbed:                  { label: "Kabelbed",             kleur: "#111827" }, // bijna zwart
+  duct:                      { label: "Duct / geleiding",     kleur: "#374151" }, // antraciet
 };
 
 const TYPE_KLEUR = { LS:"#7B00AA",MS:"#00CCFF",Gas:"#FFFF00",Water:"#000080",Data:"#00CC00",KLIC:"#FF0000" };
@@ -191,8 +195,14 @@ function parseImkl(xmlTekst, onVoortgang) {
     // Zoek de bijhorende leiding voor eigenschappen
     const leidingProps = linkId2props(doc,linkId,netRef,info,netbeheerder,thema);
 
-    if(!themalagen[thema]) themalagen[thema]=[];
-    themalagen[thema].push({ type:"Feature", geometry:{type:"LineString",coordinates:coords}, properties:leidingProps });
+    // Mantelbuis/Kabelbed/Duct krijgen eigen groep zodat ze visueel onderscheidend zijn
+    const SPECIALE_FEATURETYPES=["Mantelbuis","Kabelbed","Duct"];
+    const groeperingKey=SPECIALE_FEATURETYPES.includes(leidingProps.featuretype)
+      ? leidingProps.featuretype.toLowerCase()
+      : thema;
+
+    if(!themalagen[groeperingKey]) themalagen[groeperingKey]=[];
+    themalagen[groeperingKey].push({ type:"Feature", geometry:{type:"LineString",coordinates:coords}, properties:leidingProps });
   });
 
   const lagen={};
@@ -227,7 +237,10 @@ function linkId2props(doc,linkId,netRef,netInfo,netbeheerder,thema){
 
 // ─── Standaard instellingen ───────────────────────────────────────
 function standaardInst(type){return{zichtbaar:true,kleur:TYPE_KLEUR[type]??"#3b82f6",dikte:2,helderheid:0.85};}
-function standaardThemaInst(t){return{zichtbaar:true,kleur:THEMA[t]?.kleur??"#6b7280",dikte:2,helderheid:0.85};}
+function standaardThemaInst(t){
+  const DIKTES={mantelbuis:7,kabelbed:9,duct:5};
+  return{zichtbaar:true,kleur:THEMA[t]?.kleur??"#6b7280",dikte:DIKTES[t]??2,helderheid:DIKTES[t]?0.9:0.85};
+}
 
 // ════════════════════════════════════════════════════════════════
 export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
@@ -367,9 +380,13 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         const lagId=`klic_${thema}`;
         const inst2=instSnap[lagId]??standaardThemaInst(thema);
         nieuweInst[lagId]=inst2;
+        // Speciale constructies: gestippeld/gestreept voor duidelijkheid
+        const SPEC_DASH={mantelbuis:"10 5",kabelbed:"12 4",duct:"8 4"};
+        const dashArray=SPEC_DASH[thema]??null;
+
         const laag=L.geoJSON(geoJson,{
           coordsToLatLng:rdNaarLatLng(L),
-          style:()=>({color:inst2.kleur,weight:inst2.dikte,opacity:inst2.helderheid,fillOpacity:inst2.helderheid*0.2}),
+          style:()=>({color:inst2.kleur,weight:inst2.dikte,opacity:inst2.helderheid,fillOpacity:inst2.helderheid*0.2,...(dashArray?{dashArray}:{})}),
           onEachFeature:(feature,layer)=>{
             layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.(feature.properties);});
             layer.on("mouseover",()=>{layer.setStyle({weight:(inst2.dikte+2),opacity:1});});
