@@ -235,6 +235,46 @@ function linkId2props(doc,linkId,netRef,netInfo,netbeheerder,thema){
   return props;
 }
 
+
+// ─── Liang-Barsky lijnclipping naar filterbox ─────────────────────
+function liangBarsky(x1,y1,x2,y2,xMin,xMax,yMin,yMax){
+  const dx=x2-x1,dy=y2-y1;
+  const p=[-dx,dx,-dy,dy];
+  const q=[x1-xMin,xMax-x1,y1-yMin,yMax-y1];
+  let t0=0,t1=1;
+  for(let i=0;i<4;i++){
+    if(p[i]===0){if(q[i]<0)return null;}
+    else{const t=q[i]/p[i];if(p[i]<0)t0=Math.max(t0,t);else t1=Math.min(t1,t);}
+  }
+  if(t0>t1)return null;
+  return[x1+t0*dx,y1+t0*dy,x1+t1*dx,y1+t1*dy];
+}
+
+// Clip een array van [lng,lat] of [lat,lng] coördinaten naar box
+// Geeft array van segmenten terug (elk segment = array van [lat,lng])
+function clipPolylineNaarBox(latlngs, box){
+  // latlngs = [{lat,lng}] of [[lat,lng]]
+  const xMin=box.lng1,xMax=box.lng2,yMin=box.lat1,yMax=box.lat2;
+  const segmenten=[];
+  let huidig=null;
+  for(let i=0;i<latlngs.length-1;i++){
+    const p1=latlngs[i],p2=latlngs[i+1];
+    const lat1=p1.lat??p1[0],lng1=p1.lng??p1[1];
+    const lat2=p2.lat??p2[0],lng2=p2.lng??p2[1];
+    const c=liangBarsky(lng1,lat1,lng2,lat2,xMin,xMax,yMin,yMax);
+    if(!c){if(huidig){segmenten.push(huidig);huidig=null;}continue;}
+    const[cx1,cy1,cx2,cy2]=c;
+    if(!huidig){huidig=[[cy1,cx1],[cy2,cx2]];}
+    else{
+      const last=huidig[huidig.length-1];
+      if(Math.abs(last[0]-cy1)<1e-9&&Math.abs(last[1]-cx1)<1e-9){huidig.push([cy2,cx2]);}
+      else{segmenten.push(huidig);huidig=[[cy1,cx1],[cy2,cx2]];}
+    }
+  }
+  if(huidig)segmenten.push(huidig);
+  return segmenten;
+}
+
 // ─── Standaard instellingen ───────────────────────────────────────
 function standaardInst(type){return{zichtbaar:true,kleur:TYPE_KLEUR[type]??"#3b82f6",dikte:2,helderheid:0.85};}
 function standaardThemaInst(t){
@@ -428,6 +468,11 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           coordsToLatLng:rdNaarLatLng(L),
           style:()=>({color:inst2.kleur,weight:inst2.dikte,opacity:inst2.helderheid,fillOpacity:inst2.helderheid*0.2,...(dashArray?{dashArray}:{})}),
           onEachFeature:(feature,layer)=>{
+            // Sla WGS84 coördinaten op voor nauwkeurige clipping
+            try{
+              const rdC=feature.geometry?.coordinates??[];
+              layer._origWgs84=rdC.map(([x,y])=>{const[lng,lat]=rdNaarWgs84(x,y);return[lat,lng];});
+            }catch{}
             layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.(feature.properties);});
             layer.on("mouseover",()=>{layer.setStyle({weight:(inst2.dikte+2),opacity:1});});
             layer.on("mouseout",()=>{layer.setStyle({weight:inst2.dikte,opacity:inst2.helderheid});});
@@ -472,7 +517,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       const laag=L.geoJSON(geoJson,{
         coordsToLatLng:rdNaarLatLng(L),
         style:()=>({color:inst.kleur,weight:inst.dikte,opacity:inst.helderheid,fillOpacity:inst.helderheid*0.2}),
-        onEachFeature:(feature,layer)=>{layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.({...feature.properties,featuretype:bestand.type,naam:bestand.naam});});}
+        onEachFeature:(feature,layer)=>{
+          try{const rdC=feature.geometry?.coordinates??[];layer._origWgs84=rdC.map(([x,y])=>{const[lng,lat]=rdNaarWgs84(x,y);return[lat,lng];});}catch{}
+          layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.({...feature.properties,featuretype:bestand.type,naam:bestand.naam});});
+        }
       });
       setBestandStatus(s=>({...s,[bestand.id]:`✓ ${geoJson.features.length} objecten`}));
       return laag;
@@ -518,26 +566,73 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     setResetConfirm(null);
   }
 
-  // ── Box filter toepassen ────────────────────────────────────
+  // ── Box filter met nauwkeurige lijnclipping (Liang-Barsky) ─────
+  // Alias zodat pasBoxFilterToe clipeerLijn kan aanroepen
+  function clipeerLijn(latLngs, box) {
+    return clipPolylineNaarBox(latLngs, box);
+  }
+
   const pasBoxFilterToeRef = useRef(null);
-  function pasBoxFilterToe(box){
-    const L=LRef.current;if(!L)return;
+  const extraClipLagenRef  = useRef({}); // lagId → [extra L.polyline instances voor multi-segment clips]
+
+  function pasBoxFilterToe(box) {
+    const L=LRef.current; const kaart=kaartRef.current; if(!L||!kaart)return;
+
     Object.entries(lagenRef.current).forEach(([lagId,laag])=>{
       const inst=instellingen[lagId]??{};
       if(!laag?.eachLayer)return;
+
+      // Verwijder vorige extra clip-lagen
+      (extraClipLagenRef.current[lagId]||[]).forEach(l=>{try{kaart.removeLayer(l);}catch{}});
+      extraClipLagenRef.current[lagId]=[];
+
       laag.eachLayer(fl=>{
-        if(!inst.zichtbaar){fl.setStyle?.({opacity:0,fillOpacity:0});return;}
-        let inBox=true;
-        if(box){
-          try{
-            const boxB=L.latLngBounds([[box.lat1,box.lng1],[box.lat2,box.lng2]]);
-            const fB=fl.getBounds?.();const fLL=fl.getLatLng?.();
-            if(fB)inBox=boxB.intersects(fB);
-            else if(fLL)inBox=boxB.contains(fLL);
-          }catch{inBox=true;}
-        }
         const h=inst.helderheid??0.85;
-        fl.setStyle?.({opacity:inBox?(h):0,fillOpacity:inBox?(h*0.2):0});
+        if(!inst.zichtbaar){fl.setStyle?.({opacity:0,fillOpacity:0});return;}
+
+        if(!box){
+          // Geen filterbox → herstel originele coördinaten
+          if(fl._origWgs84&&fl._origWgs84.length>=2){
+            try{fl.setLatLngs(fl._origWgs84);}catch{}
+          }
+          fl.setStyle?.({opacity:h,fillOpacity:h*0.2});
+          return;
+        }
+
+        // Point markers: simpel inside/outside
+        if(fl.getLatLng){
+          const ll=fl.getLatLng();
+          const inBox=ll.lat>=box.lat1&&ll.lat<=box.lat2&&ll.lng>=box.lng1&&ll.lng<=box.lng2;
+          fl.setStyle?.({opacity:inBox?h:0,fillOpacity:inBox?h:0});
+          return;
+        }
+
+        // Lijnen: clip met Cohen-Sutherland
+        const orig=fl._origWgs84;
+        if(!orig||orig.length<2){fl.setStyle?.({opacity:0,fillOpacity:0});return;}
+
+        const segments=clipeerLijn(orig,box);
+
+        if(segments.length===0){
+          // Volledig buiten box
+          fl.setStyle?.({opacity:0,fillOpacity:0});
+        } else {
+          // Eerste segment op bestaande feature laag
+          try{fl.setLatLngs(segments[0]);}catch{}
+          fl.setStyle?.({opacity:h,fillOpacity:h*0.2});
+          // Extra segmenten (lijn snijdt box-rand meerdere keren) als losse polylines
+          for(let s=1;s<segments.length;s++){
+            if(segments[s].length<2)continue;
+            const extra=L.polyline(segments[s],{
+              color:inst.kleur??"#888",
+              weight:inst.dikte??2,
+              opacity:h,
+              fillOpacity:h*0.2,
+              interactive:false,
+            }).addTo(kaart);
+            (extraClipLagenRef.current[lagId]??=[]).push(extra);
+          }
+        }
       });
     });
   }

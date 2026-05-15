@@ -11,6 +11,39 @@ const KLIC_THEMA_KLEUR = {
   warmte:"#FF6600",overig:"#888888",mantelbuis:"#4B5563",kabelbed:"#111827",duct:"#374151",
 };
 
+
+// Liang-Barsky lijnclipping
+function liangBarskyKlic(x1,y1,x2,y2,xMin,xMax,yMin,yMax){
+  const dx=x2-x1,dy=y2-y1;
+  const p=[-dx,dx,-dy,dy],q=[x1-xMin,xMax-x1,y1-yMin,yMax-y1];
+  let t0=0,t1=1;
+  for(let i=0;i<4;i++){
+    if(p[i]===0){if(q[i]<0)return null;}
+    else{const t=q[i]/p[i];if(p[i]<0)t0=Math.max(t0,t);else t1=Math.min(t1,t);}
+  }
+  return t0>t1?null:[x1+t0*dx,y1+t0*dy,x1+t1*dx,y1+t1*dy];
+}
+
+function clipLijnsegmenten(coords, box){
+  // coords = [[lat,lng], ...], box = {lat1,lat2,lng1,lng2}
+  const{lat1:yMin,lat2:yMax,lng1:xMin,lng2:xMax}=box;
+  const segmenten=[];let huidig=null;
+  for(let i=0;i<coords.length-1;i++){
+    const[y1,x1]=coords[i],[y2,x2]=coords[i+1];
+    const c=liangBarskyKlic(x1,y1,x2,y2,xMin,xMax,yMin,yMax);
+    if(!c){if(huidig){segmenten.push(huidig);huidig=null;}continue;}
+    const[cx1,cy1,cx2,cy2]=c;
+    if(!huidig){huidig=[[cy1,cx1],[cy2,cx2]];}
+    else{
+      const last=huidig[huidig.length-1];
+      if(Math.abs(last[0]-cy1)<1e-9&&Math.abs(last[1]-cx1)<1e-9)huidig.push([cy2,cx2]);
+      else{segmenten.push(huidig);huidig=[[cy1,cx1],[cy2,cx2]];}
+    }
+  }
+  if(huidig)segmenten.push(huidig);
+  return segmenten;
+}
+
 function rdNaarWgs84Klic(x, y) {
   if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y];
   if (typeof window !== "undefined" && window.proj4) {
@@ -76,13 +109,14 @@ async function laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef) {
             coords.push([lat, lng]);
           }
           if (coords.length < 2) return;
-          if (kaartBox) {
-            const ok = coords.some(([lat,lng]) => lat>=kaartBox.lat1&&lat<=kaartBox.lat2&&lng>=kaartBox.lng1&&lng<=kaartBox.lng2);
-            if (!ok) return;
-          }
-          const laag = window.L.polyline(coords, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
-          laag.addTo(kaart);
-          klicLagenRef.current.push(laag);
+          // Clip naar filterbox (Liang-Barsky)
+          const teRenderen = kaartBox ? clipLijnsegmenten(coords, kaartBox) : [coords];
+          teRenderen.forEach(seg => {
+            if (seg.length < 2) return;
+            const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
+            laag.addTo(kaart);
+            klicLagenRef.current.push(laag);
+          });
         });
 
       } else if (ext === "dxf") {
@@ -101,9 +135,12 @@ async function laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef) {
             if (type === "LWPOLYLINE") for (let k=0;k<blok.length-3;k++) if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20") pts.push([parseFloat(blok[k+1].trim()),parseFloat(blok[k+3].trim())]);
             if (pts.length >= 2) {
               const coords = pts.map(([x,y]) => { const [lng,lat] = rdNaarWgs84Klic(x,y); return [lat,lng]; });
-              if (kaartBox) { const ok = coords.some(([lat,lng]) => lat>=kaartBox.lat1&&lat<=kaartBox.lat2&&lng>=kaartBox.lng1&&lng<=kaartBox.lng2); if (!ok) { i=einde; continue; } }
-              const laag = window.L.polyline(coords, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
-              laag.addTo(kaart); klicLagenRef.current.push(laag);
+              const teRenderenDxf = kaartBox ? clipLijnsegmenten(coords, kaartBox) : [coords];
+              teRenderenDxf.forEach(seg => {
+                if (seg.length < 2) return;
+                const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
+                laag.addTo(kaart); klicLagenRef.current.push(laag);
+              });
             }
           }
           i = einde;
