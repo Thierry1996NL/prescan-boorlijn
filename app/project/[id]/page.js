@@ -263,111 +263,138 @@ export default function ProjectDetailPagina() {
 
       // ── Stap 2: Ontwerp inladen ────────────────────────────────
       case 2: {
+        // NEN-1775 standaardkleuren (zelfde als stap 3)
         const TYPEN = [
-          { type: "LS",    label: "Laagspanning (LS)",        kleur: "bg-yellow-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
-          { type: "MS",    label: "Middenspanning (MS)",       kleur: "bg-orange-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
-          { type: "Gas",   label: "Gas",                       kleur: "bg-yellow-300", accept: ".dxf,.gml,.kml,.geojson,.zip" },
-          { type: "Water", label: "Water",                     kleur: "bg-blue-400",   accept: ".dxf,.gml,.kml,.geojson,.zip" },
-          { type: "Data",  label: "Data / Telecom",            kleur: "bg-purple-400", accept: ".dxf,.gml,.kml,.geojson,.zip" },
-          { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", kleur: "bg-red-400",    accept: ".zip,.gml" },
+          { type: "LS",    label: "Laagspanning (LS)",        kleur: "#7B00AA", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "MS",    label: "Middenspanning (MS)",       kleur: "#00CCFF", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Gas",   label: "Gas (lage druk)",           kleur: "#FFFF00", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Water", label: "Water",                     kleur: "#000080", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "Data",  label: "Data / Telecom",            kleur: "#00CC00", accept: ".dxf,.gml,.kml,.geojson,.zip" },
+          { type: "KLIC",  label: "KLIC-melding (ZIP / GML)", kleur: "#FF0000", accept: ".zip,.gml" },
         ];
-        const aantalGeladen = TYPEN.filter(t => bestaandeBestanden.find(b => b.type === t.type)).length;
+
+        // 3 aanpasbare extra velden — namen opgeslagen in project.custom_veld_namen (JSON)
+        const savedCustomNamen = (() => {
+          try { return JSON.parse(project.custom_veld_namen || "{}"); } catch { return {}; }
+        })();
+        const CUSTOM = [
+          { type: "custom1", defaultNaam: "Aangepast 1", kleur: "#888888" },
+          { type: "custom2", defaultNaam: "Aangepast 2", kleur: "#555555" },
+          { type: "custom3", defaultNaam: "Aangepast 3", kleur: "#333333" },
+        ];
+
+        const alleTypen = [...TYPEN, ...CUSTOM];
+        const aantalGeladen = alleTypen.filter(t => bestaandeBestanden.find(b => b.type === t.type)).length;
 
         async function verwijderBestand(type) {
           const meta = bestaandeBestanden.find(b => b.type === type);
           if (!meta) return;
-          try {
-            // Verwijder uit Storage
-            await supabase.storage.from("project-bestanden").remove([meta.pad]);
-          } catch {}
-          // Verwijder uit metadata
+          try { await supabase.storage.from("project-bestanden").remove([meta.pad]); } catch {}
           const nieuw = bestaandeBestanden.filter(b => b.type !== type);
           await updateProject(id, { bestanden_meta: JSON.stringify(nieuw) });
           await laadProject();
         }
 
+        async function slaCustomNaamOp(type, naam) {
+          const huidig = (() => {
+            try { return JSON.parse(project.custom_veld_namen || "{}"); } catch { return {}; }
+          })();
+          await updateProject(id, { custom_veld_namen: JSON.stringify({ ...huidig, [type]: naam }) });
+          await laadProject();
+        }
+
+        function LaagRij({ type, label, kleur, accept, isCustom }) {
+          const bestaand   = bestaandeBestanden.find(b => b.type === type);
+          const isLaden    = uploadLaden[type];
+          const uploadFout = uploadStatus[type]?.startsWith("✗") ? uploadStatus[type] : null;
+          const naam       = isCustom ? (savedCustomNamen[type] || label) : label;
+
+          return (
+            <div className="flex items-center gap-3 px-5 py-3.5">
+              {/* Kleurbol */}
+              <div className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm"
+                style={{ background: kleur }} />
+
+              {/* Naam (custom = bewerkbaar) */}
+              <div className="flex-1 min-w-0">
+                {isCustom ? (
+                  <input
+                    type="text"
+                    defaultValue={naam}
+                    onBlur={e => { if (e.target.value !== naam) slaCustomNaamOp(type, e.target.value); }}
+                    placeholder={label}
+                    className="text-xs font-medium text-gray-800 bg-transparent border-b border-dashed border-gray-200 focus:border-orange-400 outline-none w-full pb-0.5"
+                  />
+                ) : (
+                  <div className="text-xs font-medium text-gray-800">{naam}</div>
+                )}
+                {bestaand && !uploadFout ? (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-xs text-green-600 font-medium">✓ Opgeslagen</span>
+                    <span className="text-xs text-gray-400 truncate">{bestaand.naam}</span>
+                    {bestaand.grootte && (
+                      <span className="text-xs text-gray-300">· {(bestaand.grootte / 1024).toFixed(0)} KB</span>
+                    )}
+                  </div>
+                ) : uploadFout ? (
+                  <div className="text-xs text-red-500 mt-0.5">{uploadFout}</div>
+                ) : (
+                  <div className="text-xs text-gray-400 mt-0.5">{accept ?? ".dxf,.gml,.kml,.geojson,.zip"}</div>
+                )}
+              </div>
+
+              {/* Acties */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {bestaand && (
+                  <button onClick={() => verwijderBestand(type)}
+                    className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors text-sm"
+                    title="Verwijderen">×</button>
+                )}
+                <label className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg cursor-pointer text-gray-600 transition-colors ${isLaden ? "opacity-50 cursor-wait" : "hover:bg-gray-50"}`}>
+                  {isLaden ? "Uploaden…" : bestaand ? "Vervangen" : "Kiezen"}
+                  <input type="file" accept={accept ?? ".dxf,.gml,.kml,.geojson,.zip"} className="hidden"
+                    disabled={isLaden}
+                    onChange={e => { if (e.target.files?.[0]) uploadBestand(type, e.target.files[0]); }} />
+                </label>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="max-w-2xl space-y-4">
-            {/* Teller */}
             <div className="flex items-center gap-3">
               <p className="text-sm text-gray-500 flex-1">
                 Upload leidingenontwerpen per type. Bestanden worden opgeslagen en blijven bewaard.
               </p>
               {aantalGeladen > 0 && (
                 <span className="text-xs bg-green-100 text-green-700 font-medium px-2 py-1 rounded-full flex-shrink-0">
-                  {aantalGeladen} / {TYPEN.length} opgeslagen
+                  {aantalGeladen} / {alleTypen.length} opgeslagen
                 </span>
               )}
             </div>
 
-            {/* Bestandenlijst */}
+            {/* Standaard KLIC-lagen */}
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {TYPEN.map(({ type, label, kleur, accept }) => {
-                const bestaand = bestaandeBestanden.find(b => b.type === type);
-                const isLaden  = uploadLaden[type];
-                const uploadFout = uploadStatus[type]?.startsWith("✗") ? uploadStatus[type] : null;
-                const uploading  = uploadStatus[type] === "Uploaden…";
-
-                return (
-                  <div key={type} className="flex items-center gap-4 px-5 py-3.5">
-                    {/* Kleurbol */}
-                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${kleur}`} />
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-gray-800">{label}</div>
-                      {bestaand && !uploadFout ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-xs text-green-600 font-medium">✓ Opgeslagen</span>
-                          <span className="text-xs text-gray-400 truncate">{bestaand.naam}</span>
-                          {bestaand.grootte && (
-                            <span className="text-xs text-gray-300">· {(bestaand.grootte / 1024).toFixed(0)} KB</span>
-                          )}
-                        </div>
-                      ) : uploadFout ? (
-                        <div className="text-xs text-red-500 mt-0.5">{uploadFout}</div>
-                      ) : (
-                        <div className="text-xs text-gray-400 mt-0.5">{accept}</div>
-                      )}
-                    </div>
-
-                    {/* Acties */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {bestaand && (
-                        <button
-                          onClick={() => verwijderBestand(type)}
-                          className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors text-sm"
-                          title="Verwijderen"
-                        >
-                          ×
-                        </button>
-                      )}
-                      <label className={`px-3 py-1.5 text-xs border border-gray-200 rounded-lg cursor-pointer text-gray-600 transition-colors ${isLaden ? "opacity-50 cursor-wait" : "hover:bg-gray-50"}`}>
-                        {isLaden ? "Uploaden…" : bestaand ? "Vervangen" : "Kiezen"}
-                        <input
-                          type="file"
-                          accept={accept}
-                          className="hidden"
-                          disabled={isLaden}
-                          onChange={e => { if (e.target.files?.[0]) uploadBestand(type, e.target.files[0]); }}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                );
-              })}
+              {TYPEN.map(t => <LaagRij key={t.type} {...t} isCustom={false} />)}
             </div>
 
-            {/* Opslaan-knop + naar stap 3 */}
+            {/* Aangepaste lagen */}
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
+                Eigen lagen (klik op de naam om te hernoemen)
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+                {CUSTOM.map(t => <LaagRij key={t.type} {...t} isCustom={true} />)}
+              </div>
+            </div>
+
             <div className="flex items-center justify-between pt-1">
               <p className="text-xs text-gray-400">
-                Bucket: <code className="bg-gray-100 px-1 rounded">project-bestanden</code> (Supabase Storage → Public)
+                Bucket: <code className="bg-gray-100 px-1 rounded">project-bestanden</code>
               </p>
-              <button
-                onClick={() => setActieveStap(3)}
-                disabled={aantalGeladen === 0}
-                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
-              >
+              <button onClick={() => setActieveStap(3)} disabled={aantalGeladen === 0}
+                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors font-medium">
                 Opgeslagen — naar stap 3 →
               </button>
             </div>
