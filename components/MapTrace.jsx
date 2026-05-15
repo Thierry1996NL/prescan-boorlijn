@@ -46,6 +46,18 @@ const KLIC_KLEUR = {
 };
 const KLIC_DASH = { mantelbuis:"10 5", kabelbed:"12 4", duct:"8 4" };
 
+// ─── WGS84 → RD New (voor coördinatenkolom) ─────────────────────
+function wgs84NaarRd(lng, lat) {
+  if (typeof window !== "undefined" && window.proj4) {
+    try { const r = proj4("EPSG:4326","EPSG:28992",[lng,lat]); return [Math.round(r[0]), Math.round(r[1])]; } catch {}
+  }
+  // Wiskundige benadering
+  const dLat=(lat-52.15517440)*3600/3600, dLng=(lng-5.38720621)*3600/3600;
+  const X=155000+190094.945*dLng-11832.228*dLat*dLng-144.221*dLng*dLat*dLat-32.391*dLng*dLng*dLng;
+  const Y=463000+309056.544*dLat+3638.893*dLng*dLng-157.984*dLat*dLat*dLng-60.330*dLat*dLat*dLat;
+  return [Math.round(X), Math.round(Y)];
+}
+
 // ─── Afstand (Haversine) ─────────────────────────────────────────
 function afstandM([lat1,lng1],[lat2,lng2]) {
   const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
@@ -53,16 +65,39 @@ function afstandM([lat1,lng1],[lat2,lng2]) {
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
+// ─── Achtergrond en overlay configuratie ─────────────────────────
+const ACHTERGRONDEN = [
+  { id:"brt_standaard", label:"BRT Standaard", url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png" },
+  { id:"brt_grijs",     label:"BRT Grijs",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png" },
+  { id:"brt_pastel",    label:"BRT Pastel",    url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:3857/{z}/{x}/{y}.png" },
+  { id:"luchtfoto",     label:"Luchtfoto",     url:null, wms:true },
+];
+
+const OVERLAYS = [
+  { id:"kadaster",   label:"Kadastrale percelen", kleur:"#f59e0b", url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0", layers:"Perceel" },
+  { id:"bag_panden", label:"BAG Panden",           kleur:"#dc2626", url:"https://service.pdok.nl/lv/bag/wms/v2_0",                  layers:"pand" },
+  { id:"bag_adres",  label:"BAG Adressen",         kleur:"#2563eb", url:"https://service.pdok.nl/lv/bag/wms/v2_0",                  layers:"ligplaats,standplaats,verblijfsobject" },
+  { id:"bgt",        label:"BGT oppervlakten",     kleur:"#16a34a", url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                  layers:"wegdeel,waterdeel,ondersteunendwegdeel,begroeidterreindeel" },
+  { id:"kunstwerken",label:"Duikers & Kunstwerken",kleur:"#8b5cf6", url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                  layers:"kunstwerkdeel" },
+  { id:"wegen",      label:"Wegdelen",             kleur:"#64748b", url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                  layers:"wegdeel" },
+  { id:"spoor",      label:"Spoorbaandelen",       kleur:"#dc2626", url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                  layers:"spoor" },
+  { id:"buisleid",   label:"Buisleidingen",        kleur:"#f97316", url:"https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0",  layers:"buisleiding" },
+  { id:"ahn",        label:"AHN Hoogte",           kleur:"#84cc16", url:"https://service.pdok.nl/rws/ahn/wms/v1_0",                 layers:"dtm_05m" },
+  { id:"gemeenten",  label:"Gemeentegrenzen",      kleur:"#10b981", url:"https://service.pdok.nl/cbs/gebiedsindelingen/2024/wms/v1_0", layers:"gemeente_gegeneraliseerd" },
+];
+
 // ════════════════════════════════════════════════════════════════
 export default function MapTrace({ project, onTraceOpgeslagen }) {
-  const mapRef     = useRef(null);
-  const kaartRef   = useRef(null);
-  const polyRef    = useRef(null);   // blauwe boorlijn
-  const markersRef = useRef([]);     // sleepbare punten
-  const klicRef    = useRef([]);     // KLIC achtergrond lagen
-  const boxRef     = useRef(null);   // filterbox rechthoek
-  const tekenRef   = useRef(false);  // mirror van tekenModus voor Leaflet handlers
-  const puntenRef  = useRef([]);     // mirror van controlePunten voor handlers
+  const mapRef        = useRef(null);
+  const kaartRef      = useRef(null);
+  const polyRef       = useRef(null);
+  const markersRef    = useRef([]);
+  const klicRef       = useRef([]);
+  const boxRef        = useRef(null);
+  const tekenRef      = useRef(false);
+  const puntenRef     = useRef([]);
+  const basisLaagRef  = useRef(null);  // achtergrond tile layer
+  const overlayRefs   = useRef({});    // id → tile layer
 
   const [controlePunten, setControlePunten] = useState([]);
   const [tekenModus,     setTekenModus]     = useState(false);
@@ -71,8 +106,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [verwijdert,     setVerwijdert]     = useState(false);
   const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
-  const [legendaOpen,    setLegendaOpen]    = useState(true);
-  const [klicLagen,      setKlicLagen]      = useState([]); // [{label,kleur,aan}]
+  const [legendaOpen,       setLegendaOpen]       = useState(true);
+  const [klicLagen,         setKlicLagen]         = useState([]);
+  const [actieveAchtergrond,setActieveAchtergrond] = useState(null); // init vanuit s3
+  const [actieveOverlays,   setActieveOverlays]   = useState([]);   // init vanuit s3
 
   // Lees stap-3 instellingen
   const s3 = (() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
@@ -146,34 +183,46 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       const kaart = L.map(mapRef.current, { center, zoom, maxZoom:22, zoomControl:true });
       kaartRef.current = kaart;
 
-      // Achtergrond (zelfde als stap 3)
-      const brtUrls = {
-        brt_standaard: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
-        brt_grijs:     "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png",
-        brt_pastel:    "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:3857/{z}/{x}/{y}.png",
-      };
-      const achtergrond = s3.__achtergrond ?? "brt_standaard";
-      if (achtergrond === "luchtfoto") {
-        L.tileLayer.wms("https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
-          { layers:"Actueel_ortho25", format:"image/jpeg", transparent:false, maxZoom:22, attribution:"© PDOK" }
-        ).addTo(kaart);
-      } else {
-        L.tileLayer(brtUrls[achtergrond] ?? brtUrls.brt_standaard,
-          { maxZoom:22, attribution:"© PDOK BRT" }
-        ).addTo(kaart);
+      // Achtergrond vanuit stap 3 (of standaard)
+      const initAchtergrond = s3.__achtergrond ?? "brt_standaard";
+      const initOverlays    = s3.__overlays    ?? [];
+      setActieveAchtergrond(initAchtergrond);
+      setActieveOverlays(initOverlays);
+
+      // Helper: zet achtergrond laag
+      function zetAchtergrond(id) {
+        if (basisLaagRef.current) { kaart.removeLayer(basisLaagRef.current); basisLaagRef.current = null; }
+        if (id === "luchtfoto") {
+          basisLaagRef.current = L.tileLayer.wms("https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+            { layers:"Actueel_ortho25", format:"image/jpeg", transparent:false, maxZoom:22, attribution:"© PDOK", zIndex:1 }
+          ).addTo(kaart);
+        } else {
+          const cfg = ACHTERGRONDEN.find(a => a.id === id) ?? ACHTERGRONDEN[0];
+          basisLaagRef.current = L.tileLayer(cfg.url,
+            { maxZoom:22, attribution:"© PDOK BRT", zIndex:1 }
+          ).addTo(kaart);
+        }
       }
 
-      // PDOK overlays (zelfde als stap 3)
-      const overlayWMS = {
-        kadaster:   { url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0", layers:"Perceel" },
-        bag_panden: { url:"https://service.pdok.nl/lv/bag/wms/v2_0", layers:"pand" },
-        bag_adres:  { url:"https://service.pdok.nl/lv/bag/wms/v2_0", layers:"ligplaats,standplaats,verblijfsobject" },
-        bgt:        { url:"https://service.pdok.nl/lv/bgt/wms/v1_0", layers:"wegdeel,waterdeel,ondersteunendwegdeel,begroeidterreindeel" },
-      };
-      (s3.__overlays ?? []).forEach(id => {
-        const c = overlayWMS[id]; if (!c) return;
-        L.tileLayer.wms(c.url, { layers:c.layers, format:"image/png", transparent:true, opacity:0.7, zIndex:200, attribution:"© PDOK" }).addTo(kaart);
-      });
+      // Helper: zet overlay aan/uit
+      function zetOverlay(id, aan) {
+        if (aan) {
+          if (overlayRefs.current[id]) return;
+          const cfg = OVERLAYS.find(o => o.id === id); if (!cfg) return;
+          overlayRefs.current[id] = L.tileLayer.wms(cfg.url,
+            { layers:cfg.layers, format:"image/png", transparent:true, opacity:0.7, zIndex:200, attribution:"© PDOK" }
+          ).addTo(kaart);
+        } else {
+          if (overlayRefs.current[id]) { kaart.removeLayer(overlayRefs.current[id]); delete overlayRefs.current[id]; }
+        }
+      }
+
+      // Sla helpers op op kaart-object voor gebruik in state handlers
+      kaart._zetAchtergrond = zetAchtergrond;
+      kaart._zetOverlay     = zetOverlay;
+
+      zetAchtergrond(initAchtergrond);
+      initOverlays.forEach(id => zetOverlay(id, true));
 
       // Filterbox tonen (grijs, geen vulling)
       const box = s3.__kaartBox ?? null;
@@ -183,10 +232,13 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         }).addTo(kaart);
       }
 
-      // Bestaand tracé tekenen
+      // Bestaand tracé tekenen + laden in controlePunten zodat drag werkt
       if (bestaandTrace.length >= 2) {
-        tekenLijn(L, kaart, bestaandTrace);
-        maakMarkers(L, kaart, bestaandTrace);
+        const pts = [...bestaandTrace];
+        setControlePunten(pts);
+        puntenRef.current = pts;
+        tekenLijn(L, kaart, pts);
+        maakMarkers(L, kaart, pts);
       }
 
       // Kaart klik handler
@@ -220,6 +272,20 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Achtergrond en overlay wisselen ─────────────────────────────
+  function wisselAchtergrond(id) {
+    setActieveAchtergrond(id);
+    kaartRef.current?._zetAchtergrond?.(id);
+  }
+
+  function toggleOverlay(id) {
+    setActieveOverlays(prev => {
+      const aan = !prev.includes(id);
+      kaartRef.current?._zetOverlay?.(id, aan);
+      return aan ? [...prev, id] : prev.filter(o => o !== id);
+    });
+  }
+
   // ── Tekenen: lijn en markers ────────────────────────────────────
   function tekenLijn(L, kaart, pts) {
     try {
@@ -239,13 +305,11 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             const d = afstandM([lat,lng], mid);
             if (d < minDist) { minDist = d; besteIdx = i; }
           }
-          setControlePunten(prev => {
-            const nieuw = [...prev.slice(0, besteIdx+1), [lat,lng], ...prev.slice(besteIdx+1)];
-            puntenRef.current = nieuw;
-            tekenLijn(L, kaart, nieuw);
-            maakMarkers(L, kaart, nieuw);
-            return nieuw;
-          });
+          const nieuw = [...huidig.slice(0, besteIdx+1), [lat,lng], ...huidig.slice(besteIdx+1)];
+          puntenRef.current = nieuw;
+          setControlePunten(nieuw);
+          tekenLijn(L, kaart, nieuw);
+          maakMarkers(L, kaart, nieuw);
         } catch (err) { console.error("Invoegen:", err); }
       });
       polyRef.current = lijn;
@@ -268,25 +332,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         marker.on("drag", e => {
           try {
             const { lat:nLat, lng:nLng } = e.latlng;
-            setControlePunten(prev => {
-              const nieuw = [...prev]; nieuw[idx] = [nLat, nLng];
-              puntenRef.current = nieuw;
-              tekenLijn(L, kaart, nieuw);
-              return nieuw;
-            });
+            // puntenRef.current gebruiken — prev kan leeg zijn als bestaandTrace geladen was
+            const nieuw = [...puntenRef.current];
+            if (idx < 0 || idx >= nieuw.length) return;
+            nieuw[idx] = [nLat, nLng];
+            puntenRef.current = nieuw;
+            setControlePunten(nieuw);
+            tekenLijn(L, kaart, nieuw);
           } catch (err) { console.error("Drag:", err); }
         });
         // Rechtsklik verwijdert het punt
         marker.on("contextmenu", e => {
           L.DomEvent.stopPropagation(e);
           try {
-            setControlePunten(prev => {
-              const nieuw = prev.filter((_,i) => i !== idx);
-              puntenRef.current = nieuw;
-              tekenLijn(L, kaart, nieuw);
-              maakMarkers(L, kaart, nieuw);
-              return nieuw;
-            });
+            const nieuw = puntenRef.current.filter((_,i) => i !== idx);
+            puntenRef.current = nieuw;
+            setControlePunten(nieuw);
+            tekenLijn(L, kaart, nieuw);
+            maakMarkers(L, kaart, nieuw);
           } catch (err) { console.error("Verwijder punt:", err); }
         });
         markersRef.current.push(marker);
@@ -482,16 +545,35 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       {/* ── Linkerpaneel ──────────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{ width:280 }}>
 
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-800">Boorlijn tekenen</span>
-          <button onClick={() => setLegendaOpen(o => !o)} className="text-xs text-gray-400 hover:text-gray-600 px-1">
+        {/* Header + opslaan */}
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+          <span className="text-sm font-semibold text-gray-800 flex-1">Boorlijn tekenen</span>
+          {/* Opslaan knop — altijd zichtbaar wanneer er een tracé is */}
+          {controlePunten.length >= 2 && (
+            <button onClick={slaOp} disabled={opslaat}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-colors ${opgeslagen ? "bg-green-500 text-white" : "bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"}`}>
+              {opgeslagen ? (
+                <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Opgeslagen</>
+              ) : (
+                <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>{opslaat ? "Opslaan…" : "Opslaan"}</>
+              )}
+            </button>
+          )}
+          <button onClick={() => setLegendaOpen(o => !o)} className="text-xs text-gray-400 hover:text-gray-600 w-6 text-center flex-shrink-0">
             {legendaOpen ? "▲" : "▼"}
           </button>
         </div>
 
         {/* Acties */}
         <div className="px-4 py-3 border-b border-gray-100 space-y-2">
+          {/* Tekenmodus status */}
+          {tekenModus && (
+            <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2 font-medium">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+              {controlePunten.length === 0 ? "Klik voor het startpunt" : `${controlePunten.length} punt${controlePunten.length!==1?"en":""} — klik door`}
+            </div>
+          )}
+
           {!tekenModus ? (
             <button onClick={startTekenen}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -499,58 +581,47 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               {heeftTrace ? "Nieuwe boorlijn tekenen" : "Boorlijn tekenen"}
             </button>
           ) : (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2 font-medium">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
-                Klik op kaart om punten te zetten
-              </div>
-              <div className="flex gap-2">
-                {controlePunten.length >= 2 && (
-                  <button onClick={slaOp} disabled={opslaat}
-                    className="flex-1 py-1.5 text-xs font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors">
-                    {opgeslagen ? "✓ Opgeslagen" : opslaat ? "Opslaan…" : "💾 Opslaan"}
-                  </button>
-                )}
-                <button onClick={() => {
-                  stopTekenen();
-                  // Herstel opgeslagen tracé als aanwezig
-                  const L = window.L; const kaart = kaartRef.current;
-                  if (L && kaart && bestaandTrace.length >= 2) {
-                    tekenLijn(L, kaart, bestaandTrace);
-                    maakMarkers(L, kaart, bestaandTrace);
-                  } else {
-                    if (polyRef.current && kaart) { kaart.removeLayer(polyRef.current); polyRef.current = null; }
-                    markersRef.current.forEach(m => { try { kaart?.removeLayer(m); } catch {} });
-                    markersRef.current = [];
-                  }
-                  setControlePunten([]);
-                  puntenRef.current = [];
-                }} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
-                  Annuleren
-                </button>
-              </div>
-            </div>
-          )}
-
-          {heeftTrace && !tekenModus && (
-            <div className="flex gap-2">
-              <button onClick={() => {
-                // Bewerken: laad bestaand als controlepunten
-                const L = window.L; const kaart = kaartRef.current; if (!L || !kaart) return;
-                if (polyRef.current) { kaart.removeLayer(polyRef.current); polyRef.current = null; }
-                markersRef.current.forEach(m => { try { kaart.removeLayer(m); } catch {} });
-                markersRef.current = [];
+            <button onClick={() => {
+              stopTekenen();
+              const L = window.L; const kaart = kaartRef.current;
+              if (L && kaart && bestaandTrace.length >= 2) {
                 const pts = [...bestaandTrace];
                 setControlePunten(pts);
                 puntenRef.current = pts;
                 tekenLijn(L, kaart, pts);
                 maakMarkers(L, kaart, pts);
-                setTekenModus(true);
-                tekenRef.current = true;
-                kaart.getContainer().style.cursor = "crosshair";
-              }} className="flex-1 py-1.5 text-xs font-medium border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
-                ✏️ Bewerken
-              </button>
+              } else {
+                if (polyRef.current && kaart) { kaart.removeLayer(polyRef.current); polyRef.current = null; }
+                markersRef.current.forEach(m => { try { kaart?.removeLayer(m); } catch {} });
+                markersRef.current = [];
+                setControlePunten([]);
+                puntenRef.current = [];
+              }
+            }} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
+              ✓ Klaar met tekenen
+            </button>
+          )}
+
+          {heeftTrace && (
+            <div className="flex gap-2">
+              {!tekenModus && (
+                <button onClick={() => {
+                  const L = window.L; const kaart = kaartRef.current; if (!L || !kaart) return;
+                  if (polyRef.current) { kaart.removeLayer(polyRef.current); polyRef.current = null; }
+                  markersRef.current.forEach(m => { try { kaart.removeLayer(m); } catch {} });
+                  markersRef.current = [];
+                  const pts = [...bestaandTrace];
+                  setControlePunten(pts);
+                  puntenRef.current = pts;
+                  tekenLijn(L, kaart, pts);
+                  maakMarkers(L, kaart, pts);
+                  setTekenModus(true);
+                  tekenRef.current = true;
+                  kaart.getContainer().style.cursor = "crosshair";
+                }} className="flex-1 py-1.5 text-xs font-medium border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                  ✏️ Bewerken
+                </button>
+              )}
               <button onClick={verwijder} disabled={verwijdert}
                 className="flex-1 py-1.5 text-xs font-medium border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
                 {verwijdert ? "⏳ Bezig…" : "🗑 Verwijderen"}
@@ -572,21 +643,100 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
           </div>
         )}
 
-        {/* KLIC lagen legenda */}
-        {legendaOpen && (
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">KLIC achtergrond</div>
-            {klicLagen.length === 0 && (
-              <p className="text-xs text-gray-400 italic">
-                {isLaden ? laadBericht : "Geen KLIC bestanden — upload in stap 2."}
-              </p>
-            )}
-            {klicLagen.map((l, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background:l.kleur }} />
-                <span className="capitalize">{l.label}</span>
+        {/* Coördinaten tabel */}
+        {actievePunten.length >= 1 && (
+          <div className="px-4 py-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Punten — RD New coördinaten
+            </div>
+            <div className="overflow-auto max-h-48 rounded-lg border border-gray-100">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 sticky top-0">
+                    <th className="px-2 py-1.5 text-left text-gray-500 font-medium border-b border-gray-100 w-7">#</th>
+                    <th className="px-2 py-1.5 text-right text-gray-500 font-medium border-b border-gray-100">X (m)</th>
+                    <th className="px-2 py-1.5 text-right text-gray-500 font-medium border-b border-gray-100">Y (m)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {actievePunten.map(([lat, lng], i) => {
+                    const [rdX, rdY] = wgs84NaarRd(lng, lat);
+                    const isEerste = i === 0;
+                    const isLaatste = i === actievePunten.length - 1;
+                    return (
+                      <tr key={i} className={`border-b border-gray-50 ${isEerste ? "bg-green-50" : isLaatste ? "bg-red-50" : "hover:bg-gray-50"}`}>
+                        <td className="px-2 py-1 font-bold" style={{ color: isEerste ? "#15803d" : isLaatste ? "#dc2626" : "#2563eb" }}>{i+1}</td>
+                        <td className="px-2 py-1 text-right font-mono text-gray-700">{rdX.toLocaleString("nl-NL")}</td>
+                        <td className="px-2 py-1 text-right font-mono text-gray-700">{rdY.toLocaleString("nl-NL")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {actievePunten.length >= 2 && (
+              <div className="mt-1.5 text-xs text-gray-400 text-right">
+                Totaal: {Math.round(totaalM)} m · {actievePunten.length} punten
               </div>
-            ))}
+            )}
+          </div>
+        )}
+
+        {/* Lagen paneel */}
+        {legendaOpen && (
+          <div className="flex-1 overflow-y-auto">
+
+            {/* Achtergrond */}
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Achtergrond</div>
+              <div className="space-y-1">
+                {ACHTERGRONDEN.map(a => (
+                  <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
+                    className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id ? "bg-orange-50 text-orange-700" : "text-gray-600 hover:bg-gray-50"}`}>
+                    <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id ? "border-orange-500 bg-orange-500" : "border-gray-300"}`}/>
+                    <span className="text-xs font-medium">{a.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Overlays */}
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Overlays</div>
+              <div className="space-y-1">
+                {OVERLAYS.map(o => {
+                  const aan = actieveOverlays.includes(o.id);
+                  return (
+                    <button key={o.id} onClick={() => toggleOverlay(o.id)}
+                      className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                      <div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200 transition-colors"
+                        style={{ background: aan ? o.kleur : "transparent" }}/>
+                      <span className={`text-xs font-medium ${aan ? "text-blue-700" : "text-gray-600"}`}>{o.label}</span>
+                      {aan && <span className="ml-auto text-xs text-blue-400">aan</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* KLIC achtergrond */}
+            <div className="px-4 py-3">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">KLIC achtergrond</div>
+              {klicLagen.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">
+                  {isLaden ? laadBericht : "Geen KLIC bestanden — upload in stap 2."}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {klicLagen.map((l, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background:l.kleur }}/>
+                      <span className="capitalize">{l.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
