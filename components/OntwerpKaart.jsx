@@ -19,34 +19,28 @@ const THEMA = {
 };
 
 // ─── Achtergrond- en overlaylagen ────────────────────────────────
-// Alle achtergronden via WMS (bbox-gebaseerd, werkt met elke CRS + elk zoomniveau)
-// WMTS-tiles werken niet betrouwbaar met proj4leaflet's RD CRS.
-const WMS_BASIS = { format: "image/png", transparent: false, maxZoom: 22, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" };
+// BRT via WMTS (snelle tiles, werkt nu origin correct is ingesteld)
+// Luchtfoto via WMS (PDOK luchtfoto heeft geen betrouwbare WMTS voor deze CRS)
+const WMTS_BRT = { minZoom: 0, maxNativeZoom: 13, maxZoom: 22, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" };
 
 const ACHTERGROND = [
   {
     id: "brt_standaard",
     label: "BRT Standaard",
-    wms: true,
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
-    layers: "standaard",
-    opties: { ...WMS_BASIS },
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { ...WMTS_BRT },
   },
   {
     id: "brt_grijs",
     label: "BRT Grijs",
-    wms: true,
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
-    layers: "grijs",
-    opties: { ...WMS_BASIS },
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { ...WMTS_BRT },
   },
   {
     id: "brt_pastel",
     label: "BRT Pastel",
-    wms: true,
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
-    layers: "pastel",
-    opties: { ...WMS_BASIS },
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { ...WMTS_BRT },
   },
   {
     id: "luchtfoto",
@@ -174,7 +168,9 @@ function maakRdCrs(L) {
           0.105,   0.0525,  0.02625, 0.013125, 0.00656, // 15-19
           0.00328, 0.00164, 0.00082,                    // 20-22
       ],
-      origin: [-285401.920, 22598.080],
+      // TopLeftCorner van PDOK WMTS GetCapabilities voor EPSG:28992
+      // FOUT was: 22598.080 (onderste Y), CORRECT is: 903401.920 (bovenste Y)
+      origin: [-285401.920, 903401.920],
       bounds: L.bounds(
         [-285401.920, 22598.080],
         [595401.920, 903401.920]
