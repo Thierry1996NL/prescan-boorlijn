@@ -274,9 +274,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [resetConfirm,       setResetConfirm]        = useState(null);
   const [geselecteerdFeature,setGeselecteerdFeature] = useState(null);
   const [actieveTab,         setActieveTab]           = useState("lagen"); // "lagen" | "docs"
-  const [zipData,            setZipData]              = useState(null); // JSZip instance voor blob-extractie
+  const [zipData,            setZipData]              = useState(null);
+  const [isKaartLaden,       setIsKaartLaden]         = useState(false);
+  const [kaartLaadBericht,   setKaartLaadBericht]     = useState("Laden…");
+  const [kaartBox,           setKaartBox]             = useState(null); // { lat1,lng1,lat2,lng2 } in WGS84
+  const [tekenModus,         setTekenModus]           = useState(false);
+  const tekenModusRef  = useRef(false);
+  const boxRectRef     = useRef(null);   // L.Rectangle op de kaart
+  const boxStartRef    = useRef(null);   // eerste hoekpunt tijdens tekenen
 
   featureKlikRef.current = setGeselecteerdFeature;
+  tekenModusRef.current  = tekenModus;
 
   // ── Kaart init ────────────────────────────────────────────────
   useEffect(()=>{
@@ -295,10 +303,41 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       kaartRef.current=kaart;
 
       // Cursor RD coords
-      kaart.on("mousemove",e=>{try{if(window.proj4){const rd=proj4("EPSG:4326","EPSG:28992",[e.latlng.lng,e.latlng.lat]);setRdCursor({x:Math.round(rd[0]),y:Math.round(rd[1])});}}catch{}});
+      kaart.on("mousemove",e=>{
+        try{if(window.proj4){const rd=proj4("EPSG:4326","EPSG:28992",[e.latlng.lng,e.latlng.lat]);setRdCursor({x:Math.round(rd[0]),y:Math.round(rd[1])});}}catch{}
+        // Live box preview tijdens tekenen
+        if(tekenModusRef.current&&boxStartRef.current){
+          if(boxRectRef.current)kaart.removeLayer(boxRectRef.current);
+          boxRectRef.current=L.rectangle([boxStartRef.current,e.latlng],{color:"#f97316",weight:2,fillColor:"#f97316",fillOpacity:0.08,dashArray:"6 3"});
+          boxRectRef.current.addTo(kaart);
+        }
+      });
       kaart.on("mouseout",()=>setRdCursor(null));
-      // Deselect on map click (not on feature)
-      kaart.on("click",()=>featureKlikRef.current?.(null));
+      kaart.on("click",(e)=>{
+        if(tekenModusRef.current){
+          if(!boxStartRef.current){
+            // Eerste klik: startpunt
+            boxStartRef.current=e.latlng;
+          } else {
+            // Tweede klik: box afronden
+            const b=L.latLngBounds(boxStartRef.current,e.latlng);
+            const box={lat1:b.getSouth(),lng1:b.getWest(),lat2:b.getNorth(),lng2:b.getEast()};
+            boxStartRef.current=null;
+            setTekenModus(false);
+            tekenModusRef.current=false;
+            setKaartBox(box);
+            kaart.getContainer().style.cursor="";
+            // Teken definitieve box
+            if(boxRectRef.current)kaart.removeLayer(boxRectRef.current);
+            boxRectRef.current=L.rectangle([[box.lat1,box.lng1],[box.lat2,box.lng2]],{color:"#f97316",weight:2.5,fillColor:"#f97316",fillOpacity:0.06,dashArray:null});
+            boxRectRef.current.addTo(kaart);
+            // Filter toepassen via ref zodat we huidige state hebben
+            setTimeout(()=>pasBoxFilterToeRef.current?.(box),100);
+          }
+        } else {
+          featureKlikRef.current?.(null);
+        }
+      });
 
       // Achtergrond functions
       function voegAchtergrondToe(id){
@@ -350,8 +389,9 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       const xmlNaam=Object.keys(zip.files).find(n=>n.includes("GI_gebiedsinformatie")&&n.endsWith(".xml"));
       if(!xmlNaam)throw new Error("Geen IMKL XML in ZIP");
       setBestandStatus(s=>({...s,[bestand.id]:"IMKL parsen…"}));
+      setKaartLaadBericht("IMKL parsen…");
       const xmlTekst=await zip.files[xmlNaam].async("string");
-      const{lagen,documenten:docs,appurtenances}=parseImkl(xmlTekst,msg=>setBestandStatus(s=>({...s,[bestand.id]:msg})));
+      const{lagen,documenten:docs,appurtenances}=parseImkl(xmlTekst,msg=>{setBestandStatus(s=>({...s,[bestand.id]:msg}));setKaartLaadBericht(msg);});
 
       setKlicLagen(lagen);
 
@@ -412,7 +452,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       setInstellingen(nieuweInst);
       const totaal=Object.values(lagen).reduce((s,g)=>s+g.features.length,0);
       setBestandStatus(s=>({...s,[bestand.id]:`✓ ${totaal} objecten · ${Object.keys(lagen).length} lagen`}));
-    }catch(err){console.error("KLIC:",err);setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));}
+      setIsKaartLaden(false);
+    }catch(err){console.error("KLIC:",err);setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));setIsKaartLaden(false);}
   }
 
   // ── Enkel DXF/GML bestand ────────────────────────────────────
@@ -475,6 +516,45 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     setInstellingen(prev=>({...prev,[lagId]:{...(prev[lagId]??std),...std}}));
     const laag=lagenRef.current[lagId];if(laag)laag.setStyle({color:std.kleur,weight:std.dikte,opacity:std.helderheid,fillOpacity:std.helderheid*0.2});
     setResetConfirm(null);
+  }
+
+  // ── Box filter toepassen ────────────────────────────────────
+  const pasBoxFilterToeRef = useRef(null);
+  function pasBoxFilterToe(box){
+    const L=LRef.current;if(!L)return;
+    Object.entries(lagenRef.current).forEach(([lagId,laag])=>{
+      const inst=instellingen[lagId]??{};
+      if(!laag?.eachLayer)return;
+      laag.eachLayer(fl=>{
+        if(!inst.zichtbaar){fl.setStyle?.({opacity:0,fillOpacity:0});return;}
+        let inBox=true;
+        if(box){
+          try{
+            const boxB=L.latLngBounds([[box.lat1,box.lng1],[box.lat2,box.lng2]]);
+            const fB=fl.getBounds?.();const fLL=fl.getLatLng?.();
+            if(fB)inBox=boxB.intersects(fB);
+            else if(fLL)inBox=boxB.contains(fLL);
+          }catch{inBox=true;}
+        }
+        const h=inst.helderheid??0.85;
+        fl.setStyle?.({opacity:inBox?(h):0,fillOpacity:inBox?(h*0.2):0});
+      });
+    });
+  }
+  pasBoxFilterToeRef.current=pasBoxFilterToe;
+
+  function resetBox(){
+    setKaartBox(null);
+    if(boxRectRef.current&&kaartRef.current){kaartRef.current.removeLayer(boxRectRef.current);boxRectRef.current=null;}
+    pasBoxFilterToe(null);
+  }
+
+  function startTekenBox(){
+    setTekenModus(true);tekenModusRef.current=true;
+    boxStartRef.current=null;
+    if(kaartRef.current)kaartRef.current.getContainer().style.cursor="crosshair";
+    if(boxRectRef.current&&kaartRef.current){kaartRef.current.removeLayer(boxRectRef.current);boxRectRef.current=null;}
+    setKaartBox(null);
   }
 
   async function handleOpslaan(){
@@ -657,7 +737,49 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
       {/* ── Kaart + feature detail ───────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div ref={mapElRef} className="flex-1 min-h-0" style={{minHeight:300}}/>
+        {/* Kaart met overlay */}
+        <div className="flex-1 min-h-0 relative" style={{minHeight:300}}>
+          <div ref={mapElRef} className="w-full h-full"/>
+
+          {/* Laadspinner overlay */}
+          {isKaartLaden&&(
+            <div className="absolute inset-0 bg-white/70 flex flex-col items-center justify-center z-[400] pointer-events-none">
+              <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mb-3"/>
+              <p className="text-sm text-gray-700 font-medium">{kaartLaadBericht}</p>
+              <p className="text-xs text-gray-400 mt-1">Even geduld…</p>
+            </div>
+          )}
+
+          {/* Box-teken knoppen rechtsboven in kaart */}
+          <div className="absolute top-3 right-3 z-[300] flex flex-col gap-1.5">
+            {!tekenModus&&!kaartBox&&(
+              <button onClick={startTekenBox}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-orange-50 hover:border-orange-300 text-gray-600 hover:text-orange-700 transition-colors font-medium">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Teken filterbox
+              </button>
+            )}
+            {tekenModus&&(
+              <div className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg shadow font-medium">
+                {!boxStartRef.current?"Klik 1e hoek…":"Klik 2e hoek…"}
+              </div>
+            )}
+            {kaartBox&&!tekenModus&&(
+              <div className="flex gap-1">
+                <button onClick={startTekenBox}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-orange-300 rounded-lg shadow-sm hover:bg-orange-50 text-orange-600 transition-colors font-medium">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                  Opnieuw
+                </button>
+                <button onClick={resetBox}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:border-red-300 text-gray-500 hover:text-red-600 transition-colors font-medium">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Reset
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
         <FeatureDetail/>
       </div>
     </div>
