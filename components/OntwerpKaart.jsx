@@ -18,37 +18,43 @@ const THEMA = {
   overig:                    { label: "Overig",               kleur: "#6b7280" },
 };
 
-// ─── Achtergrond- en overlaylagen (PDOK EPSG:28992) ─────────────
-// maxNativeZoom: 13 = max PDOK-zoomniveau; maxZoom: 22 zoeft Leaflet verder in
-const WMTS_OPTIES = { minZoom: 0, maxNativeZoom: 13, maxZoom: 22, tileSize: 256 };
+// ─── Achtergrond- en overlaylagen ────────────────────────────────
+// Alle achtergronden via WMS (bbox-gebaseerd, werkt met elke CRS + elk zoomniveau)
+// WMTS-tiles werken niet betrouwbaar met proj4leaflet's RD CRS.
+const WMS_BASIS = { format: "image/png", transparent: false, maxZoom: 22, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" };
 
 const ACHTERGROND = [
   {
     id: "brt_standaard",
     label: "BRT Standaard",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
+    wms: true,
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
+    layers: "standaard",
+    opties: { ...WMS_BASIS },
   },
   {
     id: "brt_grijs",
     label: "BRT Grijs",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
+    wms: true,
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
+    layers: "grijs",
+    opties: { ...WMS_BASIS },
   },
   {
     id: "brt_pastel",
     label: "BRT Pastel",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
+    wms: true,
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0",
+    layers: "pastel",
+    opties: { ...WMS_BASIS },
   },
   {
     id: "luchtfoto",
     label: "Luchtfoto",
-    // PDOK luchtfoto via WMS — werkt op alle zoomniveaus in EPSG:28992
     wms: true,
     url: "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
     layers: "Actueel_ortho25",
-    opties: { format: "image/jpeg", transparent: false, attribution: "© PDOK, Beeldmateriaal NL", maxZoom: 22 },
+    opties: { format: "image/jpeg", transparent: false, maxZoom: 22, attribution: "© PDOK, Beeldmateriaal NL" },
   },
 ];
 
