@@ -333,7 +333,15 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
   const initInst = {};
   for (const b of bestanden) initInst[b.id] = opgeslagenInst[b.id] ?? standaardInst(b.type);
-  for (const [k, v] of Object.entries(opgeslagenInst)) if (k.startsWith("klic_")) initInst[k] = v;
+  // KLIC sub-lagen: herstel opgeslagen instellingen maar gebruik ALTIJD de THEMA-kleur
+  // als de gebruiker de kleur niet handmatig heeft aangepast (herkend via standaard check)
+  for (const [k, v] of Object.entries(opgeslagenInst)) {
+    if (k.startsWith("klic_")) {
+      const thema = k.replace("klic_", "");
+      // Gebruik opgeslagen waarden maar reset kleur naar THEMA standaard
+      initInst[k] = { ...standaardThemaInst(thema), ...v, kleur: THEMA[thema]?.kleur ?? v.kleur };
+    }
+  }
 
   const [instellingen,  setInstellingen]  = useState(initInst);
   const [klicLagen,     setKlicLagen]     = useState({});
@@ -637,16 +645,20 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   }
 
   // ── Slot icoon ───────────────────────────────────────────────
+  // vergrendeld[lagId] === true  → OPEN  (controls zichtbaar)
+  // vergrendeld[lagId] !== true  → DICHT (controls verborgen, standaard)
   function SlotIcoon({ lagId }) {
-    const open = vergrendeld[lagId] === false;
+    const isOpen = vergrendeld[lagId] === true;
     return (
       <button
-        onClick={() => setVergrendeld(v => ({ ...v, [lagId]: !open }))}
-        title={open ? "Vergrendelen" : "Bewerken"}
-        className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors"
+        onClick={() => setVergrendeld(v => ({ ...v, [lagId]: !isOpen }))}
+        title={isOpen ? "Vergrendelen" : "Bewerken"}
+        className={`w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 ${
+          isOpen ? "text-orange-500 hover:text-orange-700" : "text-gray-300 hover:text-gray-500 hover:bg-gray-100"
+        }`}
       >
-        {open ? (
-          // Slot open
+        {isOpen ? (
+          // Slot open (bewerkbaar)
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
             <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
@@ -684,7 +696,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
   // ── Slider controls (zichtbaar als slot open) ─────────────────
   function LaagControls({ lagId, inst }) {
-    if (vergrendeld[lagId] !== false) return null; // vergrendeld = controls verborgen
+    if (vergrendeld[lagId] !== true) return null; // controls alleen zichtbaar als slot open
     return (
       <div className={`mt-2 space-y-2 px-2 py-2 bg-gray-50 rounded-lg ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
         <div className="flex items-center gap-2">
