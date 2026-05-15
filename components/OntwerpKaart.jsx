@@ -691,66 +691,49 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     );
   }
 
-  // ── Bevestiging popup ─────────────────────────────────────────
-  function ResetBevestiging() {
-    if (!resetConfirm) return null;
-    const isKlic = resetConfirm.startsWith("klic_");
-    const thema  = resetConfirm.replace("klic_", "");
-    const config = isKlic ? THEMA[thema] : null;
-    const naam   = config?.label ?? resetConfirm;
+  // ── Reset uitvoeren (geen full-screen modal, inline bevestiging) ─
+  function voerResetUit(lagId) {
+    const isKlic   = lagId.startsWith("klic_");
+    const thema    = lagId.replace("klic_", "");
+    const standaard = isKlic
+      ? standaardThemaInst(thema)
+      : standaardInst(bestanden.find(b => b.id === lagId)?.type ?? "");
 
-    function bevestig() {
-      const standaard = isKlic
-        ? standaardThemaInst(thema)
-        : standaardInst(bestanden.find(b => b.id === resetConfirm)?.type ?? "");
-      // Reset kleur, dikte én helderheid naar standaard
-      setInstellingen(prev => {
-        const nieuw = { ...prev, [resetConfirm]: { ...(prev[resetConfirm] ?? standaard), ...standaard } };
-        // Pas ook de kaartlaag direct aan
-        const kaart = kaartRef.current;
-        const laag  = lagenRef.current[resetConfirm];
-        if (kaart && laag) {
-          laag.setStyle({ color: standaard.kleur, weight: standaard.dikte, opacity: standaard.helderheid, fillOpacity: standaard.helderheid * 0.2 });
-        }
-        return nieuw;
+    // 1. React state bijwerken
+    setInstellingen(prev => ({ ...prev, [lagId]: { ...(prev[lagId] ?? standaard), ...standaard } }));
+
+    // 2. Leaflet laag direct stylen (buiten setState callback!)
+    const laag = lagenRef.current[lagId];
+    if (laag) {
+      laag.setStyle({
+        color:       standaard.kleur,
+        weight:      standaard.dikte,
+        opacity:     standaard.helderheid,
+        fillOpacity: standaard.helderheid * 0.2,
       });
-      setResetConfirm(null);
     }
 
+    setResetConfirm(null);
+  }
+
+  // ── Inline bevestigingsbalkje (geen donkere overlay over de kaart) ─
+  function ResetBevestiging({ lagId }) {
+    if (resetConfirm !== lagId) return null;
+    const isKlic = lagId.startsWith("klic_");
+    const thema  = lagId.replace("klic_", "");
+    const std    = isKlic ? standaardThemaInst(thema) : standaardInst(bestanden.find(b => b.id === lagId)?.type ?? "");
     return (
-      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-              </svg>
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-gray-800">Standaard herstellen</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                Kleur, dikte en helderheid van <span className="font-medium">{naam}</span> terugzetten naar standaard?
-              </div>
-            </div>
-          </div>
-          {isKlic && (
-            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: standaardThemaInst(thema).kleur }} />
-              <span className="text-xs text-gray-600">Standaard kleur: <span className="font-mono">{standaardThemaInst(thema).kleur}</span></span>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button onClick={() => setResetConfirm(null)}
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
-              Annuleren
-            </button>
-            <button onClick={bevestig}
-              className="flex-1 px-3 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium">
-              Ja, herstellen
-            </button>
-          </div>
-        </div>
+      <div className="mt-1.5 flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
+        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: std.kleur }} />
+        <span className="text-xs text-orange-700 flex-1">Terugzetten naar standaard?</span>
+        <button onClick={() => setResetConfirm(null)}
+          className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-white transition-colors">
+          Nee
+        </button>
+        <button onClick={() => voerResetUit(lagId)}
+          className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded transition-colors font-medium">
+          Ja
+        </button>
       </div>
     );
   }
@@ -811,8 +794,6 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     : Object.keys(instellingen).filter(k => k.startsWith("klic_")).map(k => k.replace("klic_", ""));
 
   return (
-    <>
-    <ResetBevestiging />
     <div className="flex gap-4" style={{ height: "calc(100vh - 168px)", minHeight: 480 }}>
 
       {/* ── Lagenpaneel ──────────────────────────────────────── */}
@@ -895,6 +876,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                         {bestandStatus[b.id]}
                       </div>
                     )}
+                    <ResetBevestiging lagId={b.id} />
                     <LaagControls lagId={b.id} inst={inst} />
                   </div>
                 );
@@ -938,6 +920,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                             <Toggle lagId={lagId} inst={inst} />
                           </div>
                         </div>
+                        <ResetBevestiging lagId={lagId} />
                         <LaagControls lagId={lagId} inst={inst} />
                       </div>
                     );
@@ -969,6 +952,5 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         <div ref={mapElRef} className="w-full h-full" />
       </div>
     </div>
-    </>
   );
 }
