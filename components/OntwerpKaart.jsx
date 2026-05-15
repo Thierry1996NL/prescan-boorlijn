@@ -1,955 +1,647 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { updateProject } from "@/lib/supabase-queries";
 
-// ─── IMKL thema configuratie — standaard KLIC/NEN-1775 kleuren ───
+// ─── NEN-1775 thema configuratie ─────────────────────────────────
 const THEMA = {
-  laagspanning:              { label: "Laagspanning (LS)",    kleur: "#7B00AA" }, // paars/violet
-  middenspanning:            { label: "Middenspanning (MS)",  kleur: "#00CCFF" }, // cyaan
-  hoogspanning:              { label: "Hoogspanning (HS)",    kleur: "#FF4400" }, // oranje-rood
-  gasLageDruk:               { label: "Gas lage druk (LD)",   kleur: "#FFFF00" }, // geel
-  gasHogeDruk:               { label: "Gas hoge druk (HD)",   kleur: "#FF0000" }, // rood
-  water:                     { label: "Water",                kleur: "#000080" }, // donkerblauw
-  datatransport:             { label: "Data / Telecom",       kleur: "#00CC00" }, // groen
-  rioolVrijverval:           { label: "Riool (vrijverval)",   kleur: "#AA00CC" }, // paars
-  rioolOnderOverOfOnderdruk: { label: "Riool (druk)",         kleur: "#AA00CC" }, // paars
-  warmte:                    { label: "Warmte",               kleur: "#FF6600" }, // oranje
-  overig:                    { label: "Overig",               kleur: "#888888" }, // grijs
+  laagspanning:              { label: "Laagspanning (LS)",   kleur: "#7B00AA" },
+  middenspanning:            { label: "Middenspanning (MS)", kleur: "#00CCFF" },
+  hoogspanning:              { label: "Hoogspanning (HS)",   kleur: "#FF4400" },
+  gasLageDruk:               { label: "Gas lage druk (LD)", kleur: "#FFFF00" },
+  gasHogeDruk:               { label: "Gas hoge druk (HD)", kleur: "#FF0000" },
+  water:                     { label: "Water",               kleur: "#000080" },
+  datatransport:             { label: "Data / Telecom",      kleur: "#00CC00" },
+  rioolVrijverval:           { label: "Riool (vrijverval)",  kleur: "#AA00CC" },
+  rioolOnderOverOfOnderdruk: { label: "Riool (druk)",        kleur: "#AA00CC" },
+  warmte:                    { label: "Warmte",              kleur: "#FF6600" },
+  overig:                    { label: "Overig",              kleur: "#888888" },
 };
 
-// ─── Achtergrond- en overlaylagen ────────────────────────────────
-// BRT via WMTS (snelle tiles, werkt nu origin correct is ingesteld)
-// Luchtfoto via WMS (PDOK luchtfoto heeft geen betrouwbare WMTS voor deze CRS)
-const WMTS_BRT = { minZoom: 0, maxNativeZoom: 13, maxZoom: 22, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" };
+const TYPE_KLEUR = { LS:"#7B00AA",MS:"#00CCFF",Gas:"#FFFF00",Water:"#000080",Data:"#00CC00",KLIC:"#FF0000" };
 
 const ACHTERGROND = [
-  {
-    id: "brt_standaard",
-    label: "BRT Standaard",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_BRT },
-  },
-  {
-    id: "brt_grijs",
-    label: "BRT Grijs",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_BRT },
-  },
-  {
-    id: "brt_pastel",
-    label: "BRT Pastel",
-    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { ...WMTS_BRT },
-  },
-  {
-    id: "luchtfoto",
-    label: "Luchtfoto",
-    wms: true,
-    url: "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
-    layers: "Actueel_ortho25",
-    opties: { format: "image/jpeg", transparent: false, maxZoom: 22, attribution: "© PDOK, Beeldmateriaal NL" },
-  },
+  { id:"brt_standaard", label:"BRT Standaard", url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png", opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"brt_grijs",     label:"BRT Grijs",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",     opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"brt_pastel",    label:"BRT Pastel",    url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",    opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"luchtfoto",     label:"Luchtfoto",     wms:true, url:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", layers:"Actueel_ortho25", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© PDOK, Beeldmateriaal NL"} },
 ];
 
 const OVERLAYS = [
-  {
-    id: "kadaster",
-    label: "Kadastrale percelen",
-    url: "https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",
-    layers: "Perceel",
-    kleur: "#8B4513",
-  },
-  {
-    id: "bag_panden",
-    label: "BAG Panden",
-    url: "https://service.pdok.nl/lv/bag/wms/v2_0",
-    layers: "pand",
-    kleur: "#dc2626",
-  },
-  {
-    id: "bag_adressen",
-    label: "BAG Adressen",
-    url: "https://service.pdok.nl/lv/bag/wms/v2_0",
-    layers: "ligplaats,standplaats,verblijfsobject",
-    kleur: "#2563eb",
-  },
-  {
-    id: "bgt",
-    label: "BGT (oppervlakten)",
-    url: "https://service.pdok.nl/lv/bgt/wms/v1_0",
-    layers: "wegdeel,waterdeel,ondersteunendwegdeel,begroeidterreindeel",
-    kleur: "#16a34a",
-  },
+  { id:"kadaster",   label:"Kadastrale percelen",    url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",   layers:"Perceel",                                              kleur:"#8B4513" },
+  { id:"bag_panden", label:"BAG Panden",             url:"https://service.pdok.nl/lv/bag/wms/v2_0",                      layers:"pand",                                                 kleur:"#dc2626" },
+  { id:"bag_adres",  label:"BAG Adressen",           url:"https://service.pdok.nl/lv/bag/wms/v2_0",                      layers:"ligplaats,standplaats,verblijfsobject",                 kleur:"#2563eb" },
+  { id:"bgt",        label:"BGT (oppervlakten)",     url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                      layers:"wegdeel,waterdeel,ondersteunendwegdeel,begroeidterreindeel", kleur:"#16a34a" },
 ];
 
-const TYPE_KLEUR = {
-  LS: "#f59e0b", MS: "#f97316", Gas: "#eab308",
-  Water: "#3b82f6", Data: "#8b5cf6", KLIC: "#6b7280",
-};
-
-function standaardInst(type)  { return { zichtbaar: true, kleur: TYPE_KLEUR[type] ?? "#3b82f6", dikte: 2, helderheid: 0.85 }; }
-function standaardThemaInst(t){ return { zichtbaar: true, kleur: THEMA[t]?.kleur ?? "#6b7280", dikte: 2, helderheid: 0.85 }; }
-
-// ─── CDN: Leaflet + proj4 + proj4leaflet ─────────────────────────
-async function laadKaartBibliotheken() {
-  if (typeof window === "undefined") return null;
-
-  // 1. Leaflet CSS
+// ─── CDN loaders ─────────────────────────────────────────────────
+async function laadLeaflet() {
+  if (typeof window==="undefined") return null;
+  if (window.L?.version) return window.L;
   if (!document.querySelector('link[href*="leaflet"]')) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
+    const l=document.createElement("link"); l.rel="stylesheet";
+    l.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(l);
   }
-
-  // 2. Leaflet JS
-  if (!window.L?.version) {
-    await new Promise((ok, err) => {
-      const s = document.createElement("script");
-      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      s.onload = ok; s.onerror = err;
-      document.head.appendChild(s);
-    });
-  }
-
-  // 3. proj4
-  if (!window.proj4) {
-    await new Promise((ok, err) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";
-      s.onload = ok; s.onerror = err;
-      document.head.appendChild(s);
-    });
-  }
-
-  // 4. proj4leaflet
-  if (!window.L?.Proj) {
-    await new Promise((ok, err) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js";
-      s.onload = ok; s.onerror = err;
-      document.head.appendChild(s);
-    });
-  }
-
+  await new Promise((ok,err)=>{if(window.L?.version)return ok();const s=document.createElement("script");s.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";s.onload=ok;s.onerror=err;document.head.appendChild(s);});
   return window.L;
 }
-
-// ─── CDN: JSZip ──────────────────────────────────────────────────
+async function laadProj4() {
+  if (!window.proj4) await new Promise((ok,err)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";s.onload=ok;s.onerror=err;document.head.appendChild(s);});
+  if (!window.L?.Proj) await new Promise((ok,err)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js";s.onload=ok;s.onerror=err;document.head.appendChild(s);});
+}
 async function laadJSZip() {
   if (window.JSZip) return window.JSZip;
-  await new Promise((ok, err) => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-    s.onload = ok; s.onerror = err;
-    document.head.appendChild(s);
-  });
+  await new Promise((ok,err)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";s.onload=ok;s.onerror=err;document.head.appendChild(s);});
   return window.JSZip;
 }
 
-// ─── RD New CRS definitie (EPSG:28992) ───────────────────────────
-// Coördinaten blijven in meters — geen conversie nodig
+// ─── RD CRS ──────────────────────────────────────────────────────
 function maakRdCrs(L) {
-  return new L.Proj.CRS(
-    "EPSG:28992",
-    "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 " +
-    "+x_0=155000 +y_0=463000 +ellps=bessel " +
-    "+towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 " +
-    "+units=m +no_defs",
+  return new L.Proj.CRS("EPSG:28992",
+    "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs",
     {
-      // Standaard PDOK zoom-niveaus voor EPSG:28992
-      // 14 PDOK-niveaus (0-13) + 9 extra voor dieper inzoomen (14-22)
-      // Extra niveaus halveren de resolutie telkens — tiles worden opgeschaald
-      resolutions: [
-        3440.640, 1720.320, 860.160, 430.080, 215.040,  // 0-4
-        107.520,   53.760,   26.880,  13.440,   6.720,  // 5-9
-          3.360,    1.680,    0.840,   0.420,   0.210,  // 10-14
-          0.105,   0.0525,  0.02625, 0.013125, 0.00656, // 15-19
-          0.00328, 0.00164, 0.00082,                    // 20-22
-      ],
-      // TopLeftCorner van PDOK WMTS GetCapabilities voor EPSG:28992
-      // FOUT was: 22598.080 (onderste Y), CORRECT is: 903401.920 (bovenste Y)
-      origin: [-285401.920, 903401.920],
-      bounds: L.bounds(
-        [-285401.920, 22598.080],
-        [595401.920, 903401.920]
-      ),
+      resolutions:[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125,0.00656,0.00328,0.00164,0.00082],
+      origin:[-285401.920,903401.920],
+      bounds:L.bounds([-285401.920,22598.080],[595401.920,903401.920]),
     }
   );
 }
-
-// ─── RD New → WGS84 voor vectordata display ──────────────────────
-// proj4leaflet projiceert de kaart, maar L.geoJSON verwacht WGS84 coördinaten.
-// Nadat proj4leaflet geladen is, gebruiken we proj4 voor de omrekening.
-function rdNaarWgs84(x, y) {
-  // Fallback wiskundige benadering als proj4 nog niet geladen is
-  if (typeof window !== "undefined" && window.proj4) {
-    try {
-      const wgs = proj4("EPSG:28992", "EPSG:4326", [x, y]);
-      return [wgs[0], wgs[1]]; // [lng, lat]
-    } catch {}
-  }
-  // Benadering (nauwkeurig tot ~1m)
-  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y];
-  const dX = (x - 155000) / 100000, dY = (y - 463000) / 100000;
-  const sumN = 3235.65389*dY + -32.58297*dX*dX + -0.24750*dY*dY
-    + -0.84978*dX*dX*dY + -0.06550*dY*dY*dY;
-  const sumE = 5260.52916*dX + 105.94684*dX*dY + 2.45656*dX*dY*dY
-    + -0.81885*dX*dX*dX;
-  return [5.38720621 + sumE / 3600, 52.15517440 + sumN / 3600];
+const rdNaarLatLng = (L)=>([x,y])=>{
+  if(typeof window!=="undefined"&&window.proj4){try{const w=proj4("EPSG:28992","EPSG:4326",[x,y]);return L.latLng(w[1],w[0]);}catch{}}
+  const dX=(x-155000)/100000,dY=(y-463000)/100000;
+  const sumN=3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY;
+  const sumE=5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX;
+  return L.latLng(52.15517440+sumN/3600,5.38720621+sumE/3600);
+};
+function rdNaarWgs84(x,y) {
+  if(typeof window!=="undefined"&&window.proj4){try{const w=proj4("EPSG:28992","EPSG:4326",[x,y]);return[w[0],w[1]];}catch{}}
+  const dX=(x-155000)/100000,dY=(y-463000)/100000;
+  const sumN=3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY;
+  const sumE=5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX;
+  return[5.38720621+sumE/3600,52.15517440+sumN/3600];
 }
 
-// coordsToLatLng: RD [easting, northing] → L.latLng(wgs84_lat, wgs84_lng)
-const rdCoordsNaarLatLng = (L) => ([x, y]) => {
-  const [lng, lat] = rdNaarWgs84(x, y);
-  return L.latLng(lat, lng);
-};
+// ─── Waarde humanizer ────────────────────────────────────────────
+function humanize(val){
+  if(!val||val==="[]"||val==="") return "—";
+  const v=String(val);
+  const MAP={functional:"Functioneel",inUse:"In gebruik",disused:"Buiten gebruik",underground:"Ondergronds",aboveground:"Bovengronds",underground_aboveground:"Ondergronds/Bovengronds",distribution:"Distributie",transmission:"Transport",service:"Aansluiting",potable:"Drinkwater",nonPotable:"Niet-drinkbaar",waste:"Afvalwater",tot100cm:"Tot 100 cm",tot50cm:"Tot 50 cm",tot20cm:"Tot 20 cm",nauwkeurig:"Nauwkeurig"};
+  const key=v.split("/").pop().split("#").pop().split(":").pop();
+  return MAP[key]??key;
+}
+function formatDate(val){if(!val)return"—";try{return new Date(val).toLocaleDateString("nl-NL");}catch{return val;}}
 
-// ─── IMKL XML parser ─────────────────────────────────────────────
-// Coördinaten blijven in RD New [easting, northing] — geen conversie
-function imklNaarGeoJson(xmlTekst, onVoortgang) {
+// ─── IMKL volledige parser ────────────────────────────────────────
+function parseImkl(xmlTekst, onVoortgang) {
   const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
+  const tag = el => el.tag?.split?.("}")?.pop?.() ?? el.tagName?.split?.(":")?.[1] ?? el.tagName;
 
-  // 1. Netwerk-ID → thema
-  const netThema = {};
-  doc.querySelectorAll("Utiliteitsnet").forEach(net => {
-    const id = net.getAttributeNS("http://www.opengis.net/gml/3.2", "id") ||
-               net.getAttribute("gml:id") || "";
-    const href = net.querySelector("thema")
-      ?.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "";
-    if (id) netThema[id] = href.split("/").pop() || "overig";
+  function getAttr(el, name) {
+    return el.getAttribute(name) || el.getAttribute(`gml:${name}`) || el.getAttributeNS?.("http://www.opengis.net/gml/3.2", name.replace("gml:","")) || "";
+  }
+  function getXlink(el) { return el.getAttributeNS?.("http://www.w3.org/1999/xlink","href")||el.getAttribute("xlink:href")||""; }
+  function childText(el, tagName) {
+    const c = el.querySelector(tagName); return c?.textContent?.trim() || "";
+  }
+  function childXlink(el, tagName) {
+    const c = el.querySelector(tagName); return c ? getXlink(c) : "";
+  }
+
+  // 1. Netbeheerder lookup: bronhoudercode → naam
+  const netbeheerder = {}; // bronhoudercode → naam
+  doc.querySelectorAll("Beheerder").forEach(b => {
+    const code = childText(b,"bronhoudercode");
+    const website = childText(b,"websiteKlic");
+    let naam = code;
+    if(website.includes("liander")) naam="Liander N.V.";
+    else if(website.includes("vitens")) naam="Vitens";
+    else if(website.includes("ziggo")) naam="Ziggo";
+    else if(website.includes("kpn")||code==="KL1051") naam="KPN";
+    else if(code.startsWith("GM")) naam=`Gemeente ${code}`;
+    else if(code.startsWith("WS")) naam=`Waterschap ${code}`;
+    netbeheerder[code] = naam;
   });
-  onVoortgang?.("Netwerken gelezen…");
 
-  // 2. UtilityLink geometrieën → groepeer per thema
+  // 2. Netwerk → thema + bronhoudercode
+  const netInfo = {}; // netId → { thema, code }
+  doc.querySelectorAll("Utiliteitsnet").forEach(net => {
+    const id = getAttr(net,"id");
+    const themaHref = childXlink(net,"thema");
+    const thema = themaHref.split("/").pop();
+    const code = id.split(".")[1]?.replace?.("imkl-","") ?? "";
+    const broncode = code.match(/^[A-Z]{2}\d+|^[A-Z]{2}\d+/)?.[0] ?? code.substring(0,5);
+    netInfo[id] = { thema, broncode };
+  });
+
+  // 3. Documenten: ExtraDetailinfo + Bijlage
+  const documenten = [];
+  doc.querySelectorAll("ExtraDetailinfo").forEach(d => {
+    const netRef = childXlink(d,"inNetwork").replace(/^#/,"");
+    const info = netInfo[netRef] || {};
+    const pad = childText(d,"bestandLocatie");
+    const typeHref = childXlink(d,"extraInfoType") || childText(d,"extraInfoType");
+    const docType = typeHref.split("/").pop() || "document";
+    if(pad) documenten.push({ pad, type: docType, thema: info.thema||"onbekend", broncode: info.broncode||"", naam: pad.split("/").pop() });
+  });
+  doc.querySelectorAll("Bijlage").forEach(b => {
+    const pad = childText(b,"bestandLocatie");
+    const typeHref = childXlink(b,"bijlageType") || childText(b,"bijlageType");
+    const docType = typeHref.split("/").pop() || "bijlage";
+    const id = childText(b,"bestandIdentificator");
+    const code = id.split(".")[1]?.replace("imkl-","")?.substring(0,5) ?? "";
+    if(pad) documenten.push({ pad, type: docType, thema:"algemeen", broncode:code, naam:pad.split("/").pop() });
+  });
+
+  // 4. Appurtenance (knooppunten/kleppen als punten)
+  const appurtenances = [];
+  doc.querySelectorAll("Appurtenance").forEach(app => {
+    const netRef = childXlink(app,"inNetwork").replace(/^#/,"");
+    const info = netInfo[netRef] || {};
+    const appType = humanize(childXlink(app,"appurtenanceType"));
+    const geomEl = app.querySelector("geometry Point pos, geometry Point coordinates, Geometry Point pos");
+    if(!geomEl) return;
+    const coords = geomEl.textContent.trim().split(/\s+/).map(Number);
+    if(coords.length<2||isNaN(coords[0])) return;
+    appurtenances.push({
+      coords: [coords[0],coords[1]],
+      properties: { featuretype:"Appurtenance", appurtenanceType:appType, thema:info.thema||"overig", broncode:info.broncode||"", netbeheerderNaam:netbeheerder[info.broncode]||info.broncode||"" }
+    });
+  });
+  onVoortgang?.("Appurtenances gelezen…");
+
+  // 5. Leidingen
   const themalagen = {};
+  const LEIDING_TYPES = ["Elektriciteitskabel","Waterleiding","OlieGasChemicalienPijpleiding","Rioolleiding","Telecommunicatiekabel","Mantelbuis","Kabelbed","Duct","Overig"];
   const links = doc.querySelectorAll("UtilityLink");
-  let teller = 0;
+  let teller=0;
 
   links.forEach(link => {
     teller++;
-    if (teller % 100 === 0) onVoortgang?.(`${teller} / ${links.length} leidingen…`);
-
-    const netHref = (link.querySelector("inNetwork")
-      ?.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "").replace(/^#/, "");
-    const thema = netThema[netHref] ||
-                  netThema["nl.imkl-" + netHref] ||
-                  "overig";
-
+    if(teller%100===0) onVoortgang?.(`${teller}/${links.length} leidingen…`);
+    const linkId = getAttr(link,"id");
+    const netRef = childXlink(link,"inNetwork").replace(/^#/,"");
+    const info = netInfo[netRef] || {};
+    const thema = info.thema || "overig";
     const posListEl = link.querySelector("posList");
-    if (!posListEl) return;
-
+    if(!posListEl) return;
     const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
-    // posList bevat X Y paren in RD New (meters) — direct gebruiken
-    const coords = [];
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      coords.push([nums[i], nums[i + 1]]); // [easting, northing] in RD
-    }
-    if (coords.length < 2) return;
+    const coords=[];
+    for(let i=0;i+1<nums.length;i+=2) coords.push([nums[i],nums[i+1]]);
+    if(coords.length<2) return;
 
-    if (!themalagen[thema]) themalagen[thema] = [];
-    themalagen[thema].push({
-      type: "Feature",
-      geometry: { type: "LineString", coordinates: coords },
-      properties: { thema },
-    });
+    // Zoek de bijhorende leiding voor eigenschappen
+    const leidingProps = linkId2props(doc,linkId,netRef,info,netbeheerder,thema);
+
+    if(!themalagen[thema]) themalagen[thema]=[];
+    themalagen[thema].push({ type:"Feature", geometry:{type:"LineString",coordinates:coords}, properties:leidingProps });
   });
 
-  onVoortgang?.("GeoJSON bouwen…");
-
-  const result = {};
-  for (const [thema, features] of Object.entries(themalagen)) {
-    result[thema] = { type: "FeatureCollection", features };
-  }
-  return result;
+  const lagen={};
+  for(const[thema,features]of Object.entries(themalagen)) lagen[thema]={type:"FeatureCollection",features};
+  return { lagen, documenten, appurtenances };
 }
 
-// ─── DXF parser — coördinaten blijven in RD ──────────────────────
-function dxfNaarGeoJson(tekst) {
-  try {
-    const features = [];
-    const regels = tekst.split(/\r?\n/);
-    let i = 0;
-    while (i < regels.length) {
-      if (regels[i].trim() !== "0") { i++; continue; }
-      const type = regels[i + 1]?.trim();
-      let einde = i + 2;
-      while (einde < regels.length && regels[einde].trim() !== "0") einde++;
-      const blok = regels.slice(i, einde);
-      const getW = c => { for (let k=0;k<blok.length-1;k++) if(blok[k].trim()===String(c)) return parseFloat(blok[k+1].trim())||0; return 0; };
-      try {
-        if (type === "LINE") {
-          // [X, Y] = [easting, northing] in RD
-          features.push({ type:"Feature", geometry:{type:"LineString",
-            coordinates:[[getW(10),getW(20)],[getW(11),getW(21)]]}, properties:{} });
-        } else if (type === "LWPOLYLINE" || type === "POLYLINE") {
-          const coords = [];
-          for (let k=0;k<blok.length-3;k++) {
-            if (blok[k].trim()==="10" && blok[k+2]?.trim()==="20") {
-              const x=parseFloat(blok[k+1].trim()), y=parseFloat(blok[k+3].trim());
-              if (!isNaN(x)&&!isNaN(y)) coords.push([x, y]);
-            }
-          }
-          if (coords.length>=2) features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});
-        } else if (type === "POINT") {
-          features.push({type:"Feature",geometry:{type:"Point",coordinates:[getW(10),getW(20)]},properties:{}});
-        }
-      } catch {}
-      i = einde;
-    }
-    return { type:"FeatureCollection", features };
-  } catch { return null; }
-}
-
-// ─── GML parser — RD coördinaten bewaren ─────────────────────────
-function gmlNaarGeoJson(tekst) {
-  try {
-    const doc = new DOMParser().parseFromString(tekst, "text/xml");
-    const features = [];
-    doc.querySelectorAll("LineString, gml\\:LineString").forEach(el => {
-      const raw = (el.querySelector("posList, gml\\:posList") || el.querySelector("coordinates"))?.textContent?.trim();
-      if (!raw) return;
-      const nums = raw.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
-      const coords = [];
-      for (let i=0;i<nums.length-1;i+=2) coords.push([nums[i], nums[i+1]]); // [X, Y] RD
-      if (coords.length>=2) features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});
+function linkId2props(doc,linkId,netRef,netInfo,netbeheerder,thema){
+  // Zoek leiding die dit link gebruikt
+  const TYPES=["Elektriciteitskabel","Waterleiding","OlieGasChemicalienPijpleiding","Rioolleiding","Telecommunicatiekabel","Mantelbuis","Kabelbed","Overig"];
+  let props = { featuretype:"Leiding", thema, broncode:netInfo.broncode||"", netbeheerderNaam:netbeheerder[netInfo.broncode]||netInfo.broncode||"" };
+  for(const t of TYPES){
+    const found = [...doc.querySelectorAll(t)].find(el=>{
+      const linkHref = el.querySelector("link")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href")||el.querySelector("link")?.getAttribute?.("xlink:href")||"";
+      return linkHref.includes(linkId.split(".").pop());
     });
-    return { type:"FeatureCollection", features };
-  } catch { return null; }
+    if(found){
+      props.featuretype = t;
+      const xlink = el => el.getAttributeNS?.("http://www.w3.org/1999/xlink","href")||el.getAttribute?.("xlink:href")||el.textContent?.trim()||"";
+      found.querySelectorAll("*").forEach(child=>{
+        const n=child.tagName?.split?.(":")?.[1]??child.tagName;
+        if(!n||n===t) return;
+        const v=child.children?.length>0?"":child.textContent?.trim();
+        const h=xlink(child);
+        if(v||h) props[n]=h?humanize(h):v;
+      });
+      break;
+    }
+  }
+  return props;
 }
 
-// ════════════════════════════════════════════════════════════════
-//  OntwerpKaart component
+// ─── Standaard instellingen ───────────────────────────────────────
+function standaardInst(type){return{zichtbaar:true,kleur:TYPE_KLEUR[type]??"#3b82f6",dikte:2,helderheid:0.85};}
+function standaardThemaInst(t){return{zichtbaar:true,kleur:THEMA[t]?.kleur??"#6b7280",dikte:2,helderheid:0.85};}
+
 // ════════════════════════════════════════════════════════════════
 export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
-  const mapElRef = useRef(null);
-  const kaartRef = useRef(null);
-  const LRef     = useRef(null);
-  const lagenRef = useRef({});
+  const mapElRef  = useRef(null);
+  const kaartRef  = useRef(null);
+  const LRef      = useRef(null);
+  const lagenRef  = useRef({});
+  const basisLaagRef = useRef(null);
+  const overlayRefs  = useRef({});
+  const featureKlikRef = useRef(null);
 
-  const bestanden = (() => { try { return JSON.parse(project.bestanden_meta || "[]"); } catch { return []; } })();
-  const opgeslagenInst = (() => { try { return JSON.parse(project.laag_instellingen || "{}"); } catch { return {}; } })();
-
-  const initInst = {};
-  for (const b of bestanden) initInst[b.id] = opgeslagenInst[b.id] ?? standaardInst(b.type);
-  // KLIC sub-lagen: herstel opgeslagen instellingen maar gebruik ALTIJD de THEMA-kleur
-  // als de gebruiker de kleur niet handmatig heeft aangepast (herkend via standaard check)
-  for (const [k, v] of Object.entries(opgeslagenInst)) {
-    if (k.startsWith("klic_")) {
-      const thema = k.replace("klic_", "");
-      // Gebruik opgeslagen waarden maar reset kleur naar THEMA standaard
-      initInst[k] = { ...standaardThemaInst(thema), ...v, kleur: THEMA[thema]?.kleur ?? v.kleur };
-    }
+  const bestanden = (()=>{try{return JSON.parse(project.bestanden_meta||"[]");}catch{return[];}})();
+  const opgeslagenInst=(()=>{try{return JSON.parse(project.laag_instellingen||"{}");}catch{return{};}})();
+  const initInst={};
+  for(const b of bestanden) initInst[b.id]=opgeslagenInst[b.id]??standaardInst(b.type);
+  for(const[k,v]of Object.entries(opgeslagenInst)){
+    if(k.startsWith("klic_")){const t=k.replace("klic_","");initInst[k]={...standaardThemaInst(t),...v,kleur:THEMA[t]?.kleur??v.kleur};}
   }
 
-  const [instellingen,  setInstellingen]  = useState(initInst);
-  const [klicLagen,     setKlicLagen]     = useState({});
-  const [bestandStatus, setBestandStatus] = useState({});
-  const [opslaanActief, setOpslaanActief] = useState(false);
-  const [ingeslagen,    setIngeslagen]    = useState(false);
-  const [foutmelding,   setFoutmelding]   = useState(null);
-  const [rdCursor,      setRdCursor]      = useState(null);
-  const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond ?? "brt_standaard");
-  const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays ?? []);
-  const [vergrendeld,        setVergrendeld]        = useState({}); // { lagId: true/false } — false = open
-  const [resetConfirm,       setResetConfirm]       = useState(null); // lagId of null
-  const basisLaagRef  = useRef(null);
-  const overlayRefs   = useRef({});
+  const [instellingen,   setInstellingen]   = useState(initInst);
+  const [klicLagen,      setKlicLagen]       = useState({});
+  const [documenten,     setDocumenten]      = useState([]); // [{naam,type,thema,broncode,blobUrl}]
+  const [bestandStatus,  setBestandStatus]   = useState({});
+  const [opslaanActief,  setOpslaanActief]   = useState(false);
+  const [ingeslagen,     setIngeslagen]       = useState(false);
+  const [foutmelding,    setFoutmelding]      = useState(null);
+  const [rdCursor,       setRdCursor]         = useState(null);
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond??"brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays??[]);
+  const [vergrendeld,        setVergrendeld]         = useState({});
+  const [resetConfirm,       setResetConfirm]        = useState(null);
+  const [geselecteerdFeature,setGeselecteerdFeature] = useState(null);
+  const [actieveTab,         setActieveTab]           = useState("lagen"); // "lagen" | "docs"
+  const [zipData,            setZipData]              = useState(null); // JSZip instance voor blob-extractie
+
+  featureKlikRef.current = setGeselecteerdFeature;
 
   // ── Kaart init ────────────────────────────────────────────────
-  useEffect(() => {
-    let actief = true;
-    (async () => {
-      if (typeof window === "undefined" || !mapElRef.current || kaartRef.current) return;
-
-      const L = await laadKaartBibliotheken();
-      if (!L || !actief || !mapElRef.current) return;
-      LRef.current = L;
-
+  useEffect(()=>{
+    let actief=true;
+    (async()=>{
+      if(typeof window==="undefined"||!mapElRef.current||kaartRef.current)return;
+      const L=await laadLeaflet();
+      if(!L||!actief||!mapElRef.current)return;
+      await laadProj4();
+      LRef.current=L;
       delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
+      L.Icon.Default.mergeOptions({iconRetinaUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",iconUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",shadowUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"});
+      const rdCrs=maakRdCrs(L);
+      const pos=opgeslagenInst.__kaartPositie;
+      const kaart=L.map(mapElRef.current,{crs:rdCrs,zoomControl:true,preferCanvas:true,maxZoom:22}).setView(pos?.lat?[pos.lat,pos.lng]:[52.156,5.387],pos?.zoom??8);
+      kaartRef.current=kaart;
 
-      // RD New CRS
-      const rdCrs = maakRdCrs(L);
+      // Cursor RD coords
+      kaart.on("mousemove",e=>{try{if(window.proj4){const rd=proj4("EPSG:4326","EPSG:28992",[e.latlng.lng,e.latlng.lat]);setRdCursor({x:Math.round(rd[0]),y:Math.round(rd[1])});}}catch{}});
+      kaart.on("mouseout",()=>setRdCursor(null));
+      // Deselect on map click (not on feature)
+      kaart.on("click",()=>featureKlikRef.current?.(null));
 
-      // setView altijd in WGS84 (ook met RD CRS — proj4leaflet vereiste)
-      const pos = opgeslagenInst.__kaartPositie;
-      const startCenter = pos?.lat ? [pos.lat, pos.lng] : [52.156, 5.387]; // Nederland
-      const startZoom   = pos?.zoom ?? 8;
-
-      const kaart = L.map(mapElRef.current, {
-        crs: rdCrs,
-        zoomControl: true,
-        preferCanvas: true,
-        maxZoom: 22,  // Verder inzoomen dan PDOK native (13) via tile-upscaling
-      }).setView(startCenter, startZoom);
-
-      kaartRef.current = kaart;
-
-      // Achtergrondlaag toevoegen
-      function voegAchtergrondToe(id) {
-        if (basisLaagRef.current) {
-          kaart.removeLayer(basisLaagRef.current);
-          basisLaagRef.current = null;
-        }
-        const config = ACHTERGROND.find(a => a.id === id) ?? ACHTERGROND[0];
-        // Luchtfoto via WMS, rest via WMTS — zIndex 1 zodat overlays (200) altijd bovenop komen
-        const laag = config.wms
-          ? L.tileLayer.wms(config.url, { layers: config.layers, ...config.opties, zIndex: 1 })
-          : L.tileLayer(config.url, { ...config.opties, zIndex: 1 });
-        laag.addTo(kaart);
-        basisLaagRef.current = laag;
+      // Achtergrond functions
+      function voegAchtergrondToe(id){
+        if(basisLaagRef.current){kaart.removeLayer(basisLaagRef.current);basisLaagRef.current=null;}
+        const c=ACHTERGROND.find(a=>a.id===id)??ACHTERGROND[0];
+        const laag=c.wms?L.tileLayer.wms(c.url,{layers:c.layers,...c.opties,zIndex:1}):L.tileLayer(c.url,{...c.opties,zIndex:1});
+        laag.addTo(kaart);basisLaagRef.current=laag;
       }
-
-      function voegOverlayToe(id) {
-        if (overlayRefs.current[id]) return;
-        const config = OVERLAYS.find(o => o.id === id);
-        if (!config) return;
-        const laag = L.tileLayer.wms(config.url, {
-          layers: config.layers,
-          format: "image/png",
-          transparent: true,
-          opacity: 0.8,
-          attribution: "© PDOK",
-          zIndex: 200,  // Altijd boven de achtergrond
-        });
-        laag.addTo(kaart);
-        overlayRefs.current[id] = laag;
+      function voegOverlayToe(id){
+        if(overlayRefs.current[id])return;
+        const c=OVERLAYS.find(o=>o.id===id);if(!c)return;
+        const laag=L.tileLayer.wms(c.url,{layers:c.layers,format:"image/png",transparent:true,opacity:0.8,attribution:"© PDOK",zIndex:200});
+        laag.addTo(kaart);overlayRefs.current[id]=laag;
       }
-
-      function verwijderOverlay(id) {
-        if (overlayRefs.current[id]) {
-          kaart.removeLayer(overlayRefs.current[id]);
-          delete overlayRefs.current[id];
-        }
-      }
-
-      // Sla functies op in ref zodat state-updates ze kunnen aanroepen
-      kaart._voegAchtergrondToe = voegAchtergrondToe;
-      kaart._voegOverlayToe     = voegOverlayToe;
-      kaart._verwijderOverlay   = verwijderOverlay;
-
-      // Laad initiële achtergrond en overlays
-      voegAchtergrondToe(opgeslagenInst.__achtergrond ?? "brt_standaard");
-      for (const id of (opgeslagenInst.__overlays ?? [])) voegOverlayToe(id);
-
-      // Live RD-coördinaten tonen via proj4 (WGS84 → EPSG:28992)
-      kaart.on("mousemove", e => {
-        try {
-          const rd = proj4("EPSG:4326", "EPSG:28992", [e.latlng.lng, e.latlng.lat]);
-          setRdCursor({ x: Math.round(rd[0]), y: Math.round(rd[1]) });
-        } catch {}
-      });
-      kaart.on("mouseout", () => setRdCursor(null));
+      function verwijderOverlay(id){if(overlayRefs.current[id]){kaart.removeLayer(overlayRefs.current[id]);delete overlayRefs.current[id];}}
+      kaart._voegAchtergrondToe=voegAchtergrondToe;
+      kaart._voegOverlayToe=voegOverlayToe;
+      kaart._verwijderOverlay=verwijderOverlay;
+      voegAchtergrondToe(opgeslagenInst.__achtergrond??"brt_standaard");
+      for(const id of(opgeslagenInst.__overlays??[])) voegOverlayToe(id);
 
       // Laad bestanden
-      const instSnapshot = { ...initInst };
-      let eersteGeladen = false;
-
-      for (const bestand of bestanden) {
-        const ext = bestand.naam.split(".").pop().toLowerCase();
-        const inst = instSnapshot[bestand.id] ?? standaardInst(bestand.type);
-
-        if (ext === "zip") {
-          await laadKlicBestand(bestand, inst, instSnapshot);
-        } else {
-          const laag = await laadEnkelBestand(bestand, inst);
-          if (laag) {
-            if (inst.zichtbaar) laag.addTo(kaart);
-            lagenRef.current[bestand.id] = laag;
-            if (!eersteGeladen) {
-              try { kaart.fitBounds(laag.getBounds().pad(0.1)); eersteGeladen = true; } catch {}
-            }
-          }
+      const instSnap={...initInst};
+      let eersteGeladen=false;
+      for(const bestand of bestanden){
+        const ext=bestand.naam.split(".").pop().toLowerCase();
+        const inst=instSnap[bestand.id]??standaardInst(bestand.type);
+        if(ext==="zip"){await laadKlicBestand(bestand,inst,instSnap);}
+        else{
+          const laag=await laadEnkelBestand(bestand,inst);
+          if(laag){if(inst.zichtbaar)laag.addTo(kaart);lagenRef.current[bestand.id]=laag;if(!eersteGeladen){try{kaart.fitBounds(laag.getBounds().pad(0.1));eersteGeladen=true;}catch{}}}
         }
       }
     })();
+    return()=>{actief=false;if(kaartRef.current){kaartRef.current.remove();kaartRef.current=null;}};
+  },[]);
 
-    return () => {
-      actief = false;
-      if (kaartRef.current) { kaartRef.current.remove(); kaartRef.current = null; }
-    };
-  }, []);
-
-  // ── KLIC ZIP laden ────────────────────────────────────────────
-  async function laadKlicBestand(bestand, inst, instSnapshot) {
-    if (!bestand.url) return;
-    setBestandStatus(s => ({ ...s, [bestand.id]: "ZIP ophalen…" }));
-    try {
-      const res = await fetch(bestand.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-
-      setBestandStatus(s => ({ ...s, [bestand.id]: "ZIP uitpakken…" }));
-      const JSZip = await laadJSZip();
-      const zip   = await JSZip.loadAsync(blob);
-
-      const xmlNaam = Object.keys(zip.files).find(n =>
-        n.includes("GI_gebiedsinformatie") && n.endsWith(".xml")
-      );
-      if (!xmlNaam) throw new Error("Geen IMKL XML in ZIP");
-
-      setBestandStatus(s => ({ ...s, [bestand.id]: "IMKL parsen…" }));
-      const xmlTekst = await zip.files[xmlNaam].async("string");
-
-      const lagen = imklNaarGeoJson(xmlTekst, msg =>
-        setBestandStatus(s => ({ ...s, [bestand.id]: msg }))
-      );
+  // ── KLIC ZIP laden + parsen ───────────────────────────────────
+  async function laadKlicBestand(bestand,inst,instSnap){
+    if(!bestand.url)return;
+    setBestandStatus(s=>({...s,[bestand.id]:"ZIP ophalen…"}));
+    try{
+      const res=await fetch(bestand.url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      const blob=await res.blob();
+      setBestandStatus(s=>({...s,[bestand.id]:"Uitpakken…"}));
+      const JSZip=await laadJSZip();
+      const zip=await JSZip.loadAsync(blob);
+      setZipData(zip);
+      const xmlNaam=Object.keys(zip.files).find(n=>n.includes("GI_gebiedsinformatie")&&n.endsWith(".xml"));
+      if(!xmlNaam)throw new Error("Geen IMKL XML in ZIP");
+      setBestandStatus(s=>({...s,[bestand.id]:"IMKL parsen…"}));
+      const xmlTekst=await zip.files[xmlNaam].async("string");
+      const{lagen,documenten:docs,appurtenances}=parseImkl(xmlTekst,msg=>setBestandStatus(s=>({...s,[bestand.id]:msg})));
 
       setKlicLagen(lagen);
 
-      const L    = LRef.current;
-      const kaart = kaartRef.current;
-      if (!L || !kaart) return;
-
-      const nieuweInst = { ...instellingen };
-      let eersteGeladen = false;
-
-      for (const [thema, geoJson] of Object.entries(lagen)) {
-        const lagId = `klic_${thema}`;
-        const inst2 = instSnapshot[lagId] ?? standaardThemaInst(thema);
-        nieuweInst[lagId] = inst2;
-
-        // coordsToLatLng: RD [easting, northing] → L.latLng(northing, easting)
-        const laag = L.geoJSON(geoJson, {
-          coordsToLatLng: rdCoordsNaarLatLng(L),
-          style: () => ({ color: inst2.kleur, weight: inst2.dikte, opacity: inst2.helderheid, fillOpacity: inst2.helderheid * 0.2 }),
-        });
-
-        if (inst2.zichtbaar) laag.addTo(kaart);
-        lagenRef.current[lagId] = laag;
-
-        if (!eersteGeladen) {
-          try { kaart.fitBounds(laag.getBounds().pad(0.05)); eersteGeladen = true; } catch {}
+      // Documenten extracten als blob URLs
+      const docList=[];
+      for(const doc of docs){
+        const zipPad=Object.keys(zip.files).find(p=>p.includes(doc.pad.split("/").pop()));
+        if(zipPad&&!zip.files[zipPad].dir){
+          try{
+            const data=await zip.files[zipPad].async("uint8array");
+            const blobUrl=URL.createObjectURL(new Blob([data],{type:"application/pdf"}));
+            docList.push({...doc,blobUrl,grootte:data.length});
+          }catch{}
         }
       }
+      // Voeg ook leveringsbrief toe
+      const liPad=Object.keys(zip.files).find(p=>p.includes("LI_")&&p.endsWith(".pdf"));
+      if(liPad){try{const data=await zip.files[liPad].async("uint8array");const blobUrl=URL.createObjectURL(new Blob([data],{type:"application/pdf"}));docList.unshift({naam:liPad.split("/").pop(),type:"leveringsbrief",thema:"algemeen",broncode:"",blobUrl,grootte:data.length});}catch{}}
+      setDocumenten(docList);
 
-      setInstellingen(nieuweInst);
-
-      const totaal = Object.values(lagen).reduce((s, g) => s + g.features.length, 0);
-      setBestandStatus(s => ({ ...s, [bestand.id]: `✓ ${totaal} objecten · ${Object.keys(lagen).length} lagen` }));
-    } catch (err) {
-      console.error("KLIC:", err);
-      setBestandStatus(s => ({ ...s, [bestand.id]: `✗ ${err.message}` }));
-    }
-  }
-
-  // ── Enkel bestand laden ───────────────────────────────────────
-  async function laadEnkelBestand(bestand, inst) {
-    if (!bestand.url) return null;
-    setBestandStatus(s => ({ ...s, [bestand.id]: "Laden…" }));
-    try {
-      const res = await fetch(bestand.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const ext = bestand.naam.split(".").pop().toLowerCase();
-      let geoJson = null;
-
-      if (ext === "dxf")                       geoJson = dxfNaarGeoJson(await res.text());
-      else if (ext === "gml" || ext === "xml")  geoJson = gmlNaarGeoJson(await res.text());
-      else if (ext === "geojson" || ext === "json") geoJson = await res.json();
-
-      if (!geoJson?.features?.length) {
-        setBestandStatus(s => ({ ...s, [bestand.id]: "Geen geometrieën" }));
-        return null;
+      // Render lagen op kaart
+      const L=LRef.current;const kaart=kaartRef.current;if(!L||!kaart)return;
+      const nieuweInst={...instellingen};
+      let eersteGeladen=false;
+      for(const[thema,geoJson]of Object.entries(lagen)){
+        const lagId=`klic_${thema}`;
+        const inst2=instSnap[lagId]??standaardThemaInst(thema);
+        nieuweInst[lagId]=inst2;
+        const laag=L.geoJSON(geoJson,{
+          coordsToLatLng:rdNaarLatLng(L),
+          style:()=>({color:inst2.kleur,weight:inst2.dikte,opacity:inst2.helderheid,fillOpacity:inst2.helderheid*0.2}),
+          onEachFeature:(feature,layer)=>{
+            layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.(feature.properties);});
+            layer.on("mouseover",()=>{layer.setStyle({weight:(inst2.dikte+2),opacity:1});});
+            layer.on("mouseout",()=>{layer.setStyle({weight:inst2.dikte,opacity:inst2.helderheid});});
+          }
+        });
+        if(inst2.zichtbaar)laag.addTo(kaart);
+        lagenRef.current[lagId]=laag;
+        if(!eersteGeladen){try{kaart.fitBounds(laag.getBounds().pad(0.05));eersteGeladen=true;}catch{}}
       }
 
-      const L = LRef.current;
-      if (!L) return null;
-
-      const laag = L.geoJSON(geoJson, {
-        coordsToLatLng: rdCoordsNaarLatLng(L),
-        style: () => ({ color: inst.kleur, weight: inst.dikte, opacity: inst.helderheid, fillOpacity: inst.helderheid * 0.2 }),
-        pointToLayer: (_, ll) => L.circleMarker(ll, { radius: 4, color: inst.kleur, weight: 1, fillOpacity: 0.7 }),
+      // Appurtenances als markers
+      appurtenances.forEach(app=>{
+        try{
+          const ll=rdNaarLatLng(L)(app.coords);
+          const kleur=THEMA[app.properties.thema]?.kleur??"#888";
+          const marker=L.circleMarker(ll,{radius:4,color:kleur,fillColor:kleur,fillOpacity:0.9,weight:1.5,zIndex:250});
+          marker.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.(app.properties);});
+          marker.addTo(kaart);
+        }catch{}
       });
 
-      setBestandStatus(s => ({ ...s, [bestand.id]: `✓ ${geoJson.features.length} objecten` }));
+      setInstellingen(nieuweInst);
+      const totaal=Object.values(lagen).reduce((s,g)=>s+g.features.length,0);
+      setBestandStatus(s=>({...s,[bestand.id]:`✓ ${totaal} objecten · ${Object.keys(lagen).length} lagen`}));
+    }catch(err){console.error("KLIC:",err);setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));}
+  }
+
+  // ── Enkel DXF/GML bestand ────────────────────────────────────
+  async function laadEnkelBestand(bestand,inst){
+    if(!bestand.url)return null;
+    setBestandStatus(s=>({...s,[bestand.id]:"Laden…"}));
+    try{
+      const res=await fetch(bestand.url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      const ext=bestand.naam.split(".").pop().toLowerCase();
+      let geoJson=null;
+      if(ext==="dxf") geoJson=parseDxf(await res.text());
+      else if(ext==="gml"||ext==="xml") geoJson=parseGml(await res.text());
+      else if(ext==="geojson"||ext==="json") geoJson=await res.json();
+      if(!geoJson?.features?.length){setBestandStatus(s=>({...s,[bestand.id]:"Geen geometrieën"}));return null;}
+      const L=LRef.current;if(!L)return null;
+      const laag=L.geoJSON(geoJson,{
+        coordsToLatLng:rdNaarLatLng(L),
+        style:()=>({color:inst.kleur,weight:inst.dikte,opacity:inst.helderheid,fillOpacity:inst.helderheid*0.2}),
+        onEachFeature:(feature,layer)=>{layer.on("click",(e)=>{L.DomEvent.stopPropagation(e);featureKlikRef.current?.({...feature.properties,featuretype:bestand.type,naam:bestand.naam});});}
+      });
+      setBestandStatus(s=>({...s,[bestand.id]:`✓ ${geoJson.features.length} objecten`}));
       return laag;
-    } catch (err) {
-      setBestandStatus(s => ({ ...s, [bestand.id]: `✗ ${err.message}` }));
-      return null;
-    }
+    }catch(err){setBestandStatus(s=>({...s,[bestand.id]:`✗ ${err.message}`}));return null;}
   }
 
-  // ── Achtergrond wisselen ─────────────────────────────────────
-  function wisselAchtergrond(id) {
-    setActieveAchtergrond(id);
-    kaartRef.current?._voegAchtergrondToe?.(id);
-  }
+  function parseDxf(tekst){
+    try{const features=[];const regels=tekst.split(/\r?\n/);let i=0;
+    while(i<regels.length){if(regels[i].trim()!=="0"){i++;continue;}const type=regels[i+1]?.trim();let einde=i+2;while(einde<regels.length&&regels[einde].trim()!=="0")einde++;
+    const blok=regels.slice(i,einde);const getW=c=>{for(let k=0;k<blok.length-1;k++)if(blok[k].trim()===String(c))return parseFloat(blok[k+1].trim())||0;return 0;};
+    try{if(type==="LINE")features.push({type:"Feature",geometry:{type:"LineString",coordinates:[[getW(10),getW(20)],[getW(11),getW(21)]]},properties:{}});
+    else if(type==="LWPOLYLINE"||type==="POLYLINE"){const coords=[];for(let k=0;k<blok.length-3;k++)if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20"){const x=parseFloat(blok[k+1].trim()),y=parseFloat(blok[k+3].trim());if(!isNaN(x)&&!isNaN(y))coords.push([x,y]);}if(coords.length>=2)features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});}}catch{}
+    i=einde;}return{type:"FeatureCollection",features};}catch{return null;}}
 
-  function toggleOverlay(id) {
-    setActieveOverlays(prev => {
-      const actief = prev.includes(id);
-      if (actief) {
-        kaartRef.current?._verwijderOverlay?.(id);
-        return prev.filter(o => o !== id);
-      } else {
-        kaartRef.current?._voegOverlayToe?.(id);
-        return [...prev, id];
-      }
-    });
-  }
+  function parseGml(tekst){
+    try{const doc=new DOMParser().parseFromString(tekst,"text/xml");const features=[];
+    doc.querySelectorAll("LineString, gml\\:LineString").forEach(el=>{const raw=(el.querySelector("posList, gml\\:posList")||el.querySelector("coordinates"))?.textContent?.trim();if(!raw)return;const nums=raw.split(/[\s,]+/).map(Number).filter(n=>!isNaN(n));const coords=[];for(let i=0;i<nums.length-1;i+=2)coords.push([nums[i],nums[i+1]]);if(coords.length>=2)features.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},properties:{}});});
+    return{type:"FeatureCollection",features};}catch{return null;}}
 
-  // ── Live laagstijl wijzigen ───────────────────────────────────
-  function wijzig(lagId, sleutel, waarde) {
-    setInstellingen(prev => {
-      const isKlic = lagId.startsWith("klic_");
-      const huidig = prev[lagId] ?? (isKlic ? standaardThemaInst(lagId.replace("klic_", "")) : standaardInst(""));
-      const nieuw = { ...prev, [lagId]: { ...huidig, [sleutel]: waarde } };
-      const kaart = kaartRef.current;
-      const laag  = lagenRef.current[lagId];
-      if (kaart && laag) {
-        if (sleutel === "zichtbaar") {
-          if (waarde) { if (!kaart.hasLayer(laag)) kaart.addLayer(laag); }
-          else        { if ( kaart.hasLayer(laag)) kaart.removeLayer(laag); }
-        } else {
-          const i = nieuw[lagId];
-          laag.setStyle({ color: i.kleur, weight: i.dikte, opacity: i.helderheid, fillOpacity: i.helderheid * 0.2 });
-        }
+  // ── Laag instelling wijzigen ──────────────────────────────────
+  function wijzig(lagId,sleutel,waarde){
+    setInstellingen(prev=>{
+      const isK=lagId.startsWith("klic_");
+      const huidig=prev[lagId]??(isK?standaardThemaInst(lagId.replace("klic_","")):{});
+      const nieuw={...prev,[lagId]:{...huidig,[sleutel]:waarde}};
+      const kaart=kaartRef.current;const laag=lagenRef.current[lagId];
+      if(kaart&&laag){
+        if(sleutel==="zichtbaar"){if(waarde){if(!kaart.hasLayer(laag))kaart.addLayer(laag);}else{if(kaart.hasLayer(laag))kaart.removeLayer(laag);}}
+        else{const i=nieuw[lagId];laag.setStyle({color:i.kleur,weight:i.dikte,opacity:i.helderheid,fillOpacity:i.helderheid*0.2});}
       }
       return nieuw;
     });
   }
 
-  // ── Opslaan (positie in RD New) ───────────────────────────────
-  async function handleOpslaan() {
-    setOpslaanActief(true);
-    setFoutmelding(null);
-    try {
-      const teOpslaan = { ...instellingen };
-      if (kaartRef.current) {
-        const c = kaartRef.current.getCenter();
-        // Sla op als WGS84 (proj4leaflet setView verwacht WGS84)
-        teOpslaan.__kaartPositie = {
-          lat:  c.lat,
-          lng:  c.lng,
-          zoom: kaartRef.current.getZoom(),
-        };
-        teOpslaan.__achtergrond = actieveAchtergrond;
-        teOpslaan.__overlays    = actieveOverlays;
-      }
-      await updateProject(projectId, { laag_instellingen: JSON.stringify(teOpslaan) });
-      onOpgeslagen?.();
-      setIngeslagen(true);
-      setTimeout(() => setIngeslagen(false), 2500);
-    } catch (err) {
-      console.error("Opslaan:", err);
-      setFoutmelding(err?.message ?? "Onbekende fout");
-      setTimeout(() => setFoutmelding(null), 6000);
-    } finally {
-      setOpslaanActief(false);
-    }
-  }
+  function wisselAchtergrond(id){setActieveAchtergrond(id);kaartRef.current?._voegAchtergrondToe?.(id);}
+  function toggleOverlay(id){setActieveOverlays(prev=>{const aan=prev.includes(id);if(aan){kaartRef.current?._verwijderOverlay?.(id);return prev.filter(o=>o!==id);}else{kaartRef.current?._voegOverlayToe?.(id);return[...prev,id];}});}
 
-  // ── Slot icoon ───────────────────────────────────────────────
-  // vergrendeld[lagId] === true  → OPEN  (controls zichtbaar)
-  // vergrendeld[lagId] !== true  → DICHT (controls verborgen, standaard)
-  function SlotIcoon({ lagId }) {
-    const isOpen = vergrendeld[lagId] === true;
-    return (
-      <button
-        onClick={() => setVergrendeld(v => ({ ...v, [lagId]: !isOpen }))}
-        title={isOpen ? "Vergrendelen" : "Bewerken"}
-        className={`w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 ${
-          isOpen ? "text-orange-500 hover:text-orange-700" : "text-gray-300 hover:text-gray-500 hover:bg-gray-100"
-        }`}
-      >
-        {isOpen ? (
-          // Slot open (bewerkbaar)
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-          </svg>
-        ) : (
-          // Slot dicht
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-        )}
-      </button>
-    );
-  }
-
-  // ── Reset knop ───────────────────────────────────────────────
-  function ResetKnop({ lagId }) {
-    return (
-      <button
-        onClick={() => setResetConfirm(lagId)}
-        title="Terugzetten naar standaard"
-        className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 flex-shrink-0 transition-colors"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-          <path d="M3 3v5h5"/>
-        </svg>
-      </button>
-    );
-  }
-
-  // ── Reset uitvoeren (geen full-screen modal, inline bevestiging) ─
-  function voerResetUit(lagId) {
-    const isKlic   = lagId.startsWith("klic_");
-    const thema    = lagId.replace("klic_", "");
-    const standaard = isKlic
-      ? standaardThemaInst(thema)
-      : standaardInst(bestanden.find(b => b.id === lagId)?.type ?? "");
-
-    // 1. React state bijwerken
-    setInstellingen(prev => ({ ...prev, [lagId]: { ...(prev[lagId] ?? standaard), ...standaard } }));
-
-    // 2. Leaflet laag direct stylen (buiten setState callback!)
-    const laag = lagenRef.current[lagId];
-    if (laag) {
-      laag.setStyle({
-        color:       standaard.kleur,
-        weight:      standaard.dikte,
-        opacity:     standaard.helderheid,
-        fillOpacity: standaard.helderheid * 0.2,
-      });
-    }
-
+  function voerResetUit(lagId){
+    const isK=lagId.startsWith("klic_");const thema=lagId.replace("klic_","");
+    const std=isK?standaardThemaInst(thema):standaardInst(bestanden.find(b=>b.id===lagId)?.type??"");
+    setInstellingen(prev=>({...prev,[lagId]:{...(prev[lagId]??std),...std}}));
+    const laag=lagenRef.current[lagId];if(laag)laag.setStyle({color:std.kleur,weight:std.dikte,opacity:std.helderheid,fillOpacity:std.helderheid*0.2});
     setResetConfirm(null);
   }
 
-  // ── Inline bevestigingsbalkje (geen donkere overlay over de kaart) ─
-  function ResetBevestiging({ lagId }) {
-    if (resetConfirm !== lagId) return null;
-    const isKlic = lagId.startsWith("klic_");
-    const thema  = lagId.replace("klic_", "");
-    const std    = isKlic ? standaardThemaInst(thema) : standaardInst(bestanden.find(b => b.id === lagId)?.type ?? "");
-    return (
-      <div className="mt-1.5 flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
-        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: std.kleur }} />
-        <span className="text-xs text-orange-700 flex-1">Terugzetten naar standaard?</span>
-        <button onClick={() => setResetConfirm(null)}
-          className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-white transition-colors">
-          Nee
-        </button>
-        <button onClick={() => voerResetUit(lagId)}
-          className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded transition-colors font-medium">
-          Ja
-        </button>
-      </div>
-    );
+  async function handleOpslaan(){
+    setOpslaanActief(true);setFoutmelding(null);
+    try{
+      const t={...instellingen};
+      if(kaartRef.current){const c=kaartRef.current.getCenter();t.__kaartPositie={lat:c.lat,lng:c.lng,zoom:kaartRef.current.getZoom()};}
+      t.__achtergrond=actieveAchtergrond;t.__overlays=actieveOverlays;
+      await updateProject(projectId,{laag_instellingen:JSON.stringify(t)});
+      onOpgeslagen?.();setIngeslagen(true);setTimeout(()=>setIngeslagen(false),2500);
+    }catch(err){console.error(err);setFoutmelding(err?.message??"Onbekende fout");setTimeout(()=>setFoutmelding(null),6000);}
+    finally{setOpslaanActief(false);}
   }
 
-  // ── Toggle schakelaar ─────────────────────────────────────────
-  function Toggle({ lagId, inst }) {
-    return (
-      <button
-        onClick={() => wijzig(lagId, "zichtbaar", !inst.zichtbaar)}
-        className={`relative inline-flex flex-shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${
-          inst.zichtbaar ? "bg-orange-500" : "bg-gray-200"
-        }`}
-        style={{ width: 36, height: 20 }}
-      >
-        <span
-          className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ${
-            inst.zichtbaar ? "translate-x-4" : "translate-x-0.5"
-          }`}
-          style={{ marginTop: 2 }}
-        />
-      </button>
-    );
+  // ── Sub-components ────────────────────────────────────────────
+  function Toggle({lagId,inst}){return(<button onClick={()=>wijzig(lagId,"zichtbaar",!inst.zichtbaar)} className={`relative inline-flex flex-shrink-0 rounded-full transition-colors ${inst.zichtbaar?"bg-orange-500":"bg-gray-200"}`} style={{width:36,height:20}}><span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform ${inst.zichtbaar?"translate-x-4":"translate-x-0.5"}`} style={{marginTop:2}}/></button>);}
+
+  function SlotIcoon({lagId}){const isOpen=vergrendeld[lagId]===true;return(<button onClick={()=>setVergrendeld(v=>({...v,[lagId]:!isOpen}))} title={isOpen?"Vergrendelen":"Bewerken"} className={`w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 ${isOpen?"text-orange-500 hover:text-orange-700":"text-gray-300 hover:text-gray-500 hover:bg-gray-100"}`}>{isOpen?(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>):(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>)}</button>);}
+
+  function ResetKnop({lagId}){return(<button onClick={()=>setResetConfirm(lagId)} title="Terugzetten naar standaard" className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 flex-shrink-0 transition-colors"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>);}
+
+  function ResetBevestiging({lagId}){
+    if(resetConfirm!==lagId)return null;
+    const isK=lagId.startsWith("klic_");const thema=lagId.replace("klic_","");
+    const std=isK?standaardThemaInst(thema):standaardInst(bestanden.find(b=>b.id===lagId)?.type??"");
+    return(<div className="mt-1.5 flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:std.kleur}}/><span className="text-xs text-orange-700 flex-1">Terugzetten naar standaard?</span><button onClick={()=>setResetConfirm(null)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-white transition-colors">Nee</button><button onClick={()=>voerResetUit(lagId)} className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded transition-colors font-medium">Ja</button></div>);
   }
 
-  // ── Slider controls (zichtbaar als slot open) ─────────────────
-  function LaagControls({ lagId, inst }) {
-    if (vergrendeld[lagId] !== true) return null; // controls alleen zichtbaar als slot open
-    return (
-      <div className={`mt-2 space-y-2 px-2 py-2 bg-gray-50 rounded-lg ${!inst.zichtbaar ? "opacity-40 pointer-events-none" : ""}`}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Kleur</span>
-          <input type="color" value={inst.kleur} onChange={e => wijzig(lagId, "kleur", e.target.value)}
-            className="w-7 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0" />
-          <span className="text-xs text-gray-400 font-mono">{inst.kleur}</span>
+  function LaagControls({lagId,inst}){
+    if(vergrendeld[lagId]!==true)return null;
+    return(<div className={`mt-2 space-y-2 px-2 py-2 bg-gray-50 rounded-lg ${!inst.zichtbaar?"opacity-40 pointer-events-none":""}`}>
+      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Kleur</span><input type="color" value={inst.kleur} onChange={e=>wijzig(lagId,"kleur",e.target.value)} className="w-7 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0"/><span className="text-xs text-gray-400 font-mono">{inst.kleur}</span></div>
+      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Dikte</span><input type="range" min="0.5" max="8" step="0.5" value={inst.dikte} onChange={e=>wijzig(lagId,"dikte",Number(e.target.value))} className="flex-1 accent-orange-500 h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{inst.dikte}px</span></div>
+      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Helderheid</span><input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid} onChange={e=>wijzig(lagId,"helderheid",Number(e.target.value))} className="flex-1 accent-orange-500 h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{Math.round(inst.helderheid*100)}%</span></div>
+    </div>);
+  }
+
+  // ── Feature detail panel ──────────────────────────────────────
+  function FeatureDetail(){
+    if(!geselecteerdFeature)return null;
+    const f=geselecteerdFeature;
+    const kleur=THEMA[f.thema]?.kleur??"#888";
+    const themaLabel=THEMA[f.thema]?.label??f.thema??"—";
+    const VELD_LABELS={featuretype:"Featuretype",thema:"Thema",netbeheerderNaam:"Netbeheerder",broncode:"Bronhoudercode",currentStatus:"Huidige status",validFrom:"Aanlegdatum",verticalPosition:"Verticale positie",operatingVoltage:"Bedrijfsspanning",nominalVoltage:"Nominale spanning",pipeDiameter:"Diameter",waterType:"Watertype",label:"Label",utilityDeliveryType:"Leveringsnetwerk",warningType:"Waarschuwing",geoNauwkeurigheidXY:"Geo. nauwkeurigheid",appurtenanceType:"Type appendage"};
+    const SKIP=new Set(["broncode","inNetwork","link","beginLifespanVersion","inspireId"]);
+    const velden=Object.entries(f).filter(([k,v])=>!SKIP.has(k)&&v&&v!=="—"&&v!=="[]");
+    return(
+      <div className="border-t border-gray-100 bg-white flex-shrink-0" style={{maxHeight:240,overflowY:"auto"}}>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 sticky top-0 bg-white">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:kleur}}/>
+            <span className="text-xs font-semibold text-gray-800">{f.featuretype||"Leiding"}</span>
+            <span className="text-xs text-gray-400">{themaLabel}</span>
+          </div>
+          <button onClick={()=>setGeselecteerdFeature(null)} className="text-gray-400 hover:text-gray-600 text-sm">×</button>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Dikte</span>
-          <input type="range" min="0.5" max="8" step="0.5" value={inst.dikte}
-            onChange={e => wijzig(lagId, "dikte", Number(e.target.value))}
-            className="flex-1 accent-orange-500 h-1 min-w-0" />
-          <span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{inst.dikte}px</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Helderheid</span>
-          <input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid}
-            onChange={e => wijzig(lagId, "helderheid", Number(e.target.value))}
-            className="flex-1 accent-orange-500 h-1 min-w-0" />
-          <span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{Math.round(inst.helderheid * 100)}%</span>
+        <div className="divide-y divide-gray-50">
+          {velden.map(([k,v])=>(
+            <div key={k} className="flex items-start justify-between gap-4 px-4 py-1.5">
+              <span className="text-xs text-gray-400 flex-shrink-0 w-36">{VELD_LABELS[k]??k}</span>
+              <span className="text-xs text-gray-800 text-right break-all">{String(v).includes("V")&&k.includes("oltage")?`${v} V`:String(v).includes("mm")&&k==="pipeDiameter"?`${v} mm`:v}</span>
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
-  const gewoneLagen   = bestanden.filter(b => !b.naam.toLowerCase().endsWith(".zip"));
-  const klicBestanden = bestanden.filter(b => b.naam.toLowerCase().endsWith(".zip"));
-  const klicThemas    = Object.keys(klicLagen).length > 0
-    ? Object.keys(klicLagen)
-    : Object.keys(instellingen).filter(k => k.startsWith("klic_")).map(k => k.replace("klic_", ""));
+  // ── Documenten panel ─────────────────────────────────────────
+  function DocumentenLijst(){
+    if(documenten.length===0)return(<div className="p-6 text-center space-y-2"><div className="text-2xl">📄</div><p className="text-xs text-gray-400">Geen documenten gevonden.<br/>Upload een KLIC ZIP in stap 2.</p></div>);
+    const DOC_TYPE_LABELS={profielschets:"Profielschets",leveringsbrief:"Leveringsbrief",algemeen:"Algemeen",boring:"Boring",waterkruisingen:"Waterkruisingen",bijlage:"Bijlage"};
+    const gegroepeerd={};
+    for(const doc of documenten){const k=doc.broncode||"algemeen";if(!gegroepeerd[k])gegroepeerd[k]=[];gegroepeerd[k].push(doc);}
+    return(
+      <div className="divide-y divide-gray-100">
+        {Object.entries(gegroepeerd).map(([code,docs])=>(
+          <div key={code}>
+            <div className="px-4 py-2 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600">{code||"Algemeen"}</span>
+            </div>
+            {docs.map((doc,i)=>(
+              <a key={i} href={doc.blobUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition-colors group">
+                <div className="w-7 h-7 rounded bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-gray-700 group-hover:text-blue-600 truncate">{DOC_TYPE_LABELS[doc.type]||doc.type}</div>
+                  <div className="text-xs text-gray-400 truncate">{doc.naam}</div>
+                </div>
+                <div className="text-xs text-gray-300 flex-shrink-0">{doc.grootte?(doc.grootte/1024).toFixed(0)+" KB":""}</div>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
-  return (
-    <div className="flex gap-4" style={{ height: "calc(100vh - 168px)", minHeight: 480 }}>
+  const gewoneLagen   = bestanden.filter(b=>!b.naam.toLowerCase().endsWith(".zip"));
+  const klicBestanden = bestanden.filter(b=>b.naam.toLowerCase().endsWith(".zip"));
+  const klicThemas    = Object.keys(klicLagen).length>0?Object.keys(klicLagen):Object.keys(instellingen).filter(k=>k.startsWith("klic_")).map(k=>k.replace("klic_",""));
 
-      {/* ── Lagenpaneel ──────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{ width: 296 }}>
+  const kaartHoogte = geselecteerdFeature ? "calc(100vh - 168px - 240px)" : "calc(100vh - 168px)";
+
+  return(
+    <div className="flex gap-4 min-h-0" style={{height:"calc(100vh - 168px)"}}>
+
+      {/* ── Lagenpaneel ─────────────────────────────────────── */}
+      <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{width:296}}>
+
+        {/* Header + opslaan */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-sm font-semibold text-gray-800">Lagen</span>
-          <button onClick={handleOpslaan} disabled={opslaanActief}
-            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
-              ingeslagen ? "bg-green-500 text-white" : "bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"
-            }`}>
-            {ingeslagen ? "✓ Opgeslagen" : opslaanActief ? "Opslaan…" : "📍 Positie & lagen opslaan"}
+          <div className="flex gap-1">
+            {["lagen","docs"].map(t=>(<button key={t} onClick={()=>setActieveTab(t)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${actieveTab===t?"bg-gray-100 text-gray-800":"text-gray-400 hover:text-gray-600"}`}>{t==="lagen"?"Lagen":"Documenten"}{t==="docs"&&documenten.length>0?` (${documenten.length})`:""}</button>))}
+          </div>
+          <button onClick={handleOpslaan} disabled={opslaanActief} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${ingeslagen?"bg-green-500 text-white":"bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"}`}>
+            {ingeslagen?"✓ Opgeslagen":opslaanActief?"Opslaan…":"📍 Opslaan"}
           </button>
         </div>
 
+        {/* Inhoud tab */}
         <div className="flex-1 overflow-y-auto">
-          {/* ── Achtergrondkaart ── */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
-            <div className="space-y-1">
-              {ACHTERGROND.map(a => (
-                <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
-                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${
-                    actieveAchtergrond === a.id ? "bg-orange-50 text-orange-700" : "text-gray-600 hover:bg-gray-50"
-                  }`}>
-                  <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond === a.id ? "border-orange-500 bg-orange-500" : "border-gray-300"}`} />
-                  <span className="text-xs font-medium">{a.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Overlay lagen (WMS) ── */}
-          <div className="px-4 py-3 border-b border-gray-200">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
-            <div className="space-y-1">
-              {OVERLAYS.map(o => {
-                const aan = actieveOverlays.includes(o.id);
-                return (
-                  <button key={o.id} onClick={() => toggleOverlay(o.id)}
-                    className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${
-                      aan ? "bg-blue-50" : "hover:bg-gray-50"
-                    }`}>
-                    <div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200"
-                      style={{ background: aan ? o.kleur : "transparent" }} />
-                    <span className={`text-xs font-medium ${aan ? "text-blue-700" : "text-gray-600"}`}>{o.label}</span>
-                    {aan && <span className="ml-auto text-xs text-blue-400">aan</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {bestanden.length === 0 ? (
-            <div className="p-6 text-center space-y-2">
-              <div className="text-2xl">📂</div>
-              <p className="text-sm text-gray-600 font-medium">Geen bestanden</p>
-              <p className="text-xs text-gray-400">Upload ontwerpen in stap 2.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {/* Gewone DXF/GML bestanden */}
-              {gewoneLagen.map(b => {
-                const inst = instellingen[b.id] ?? standaardInst(b.type);
-                return (
-                  <div key={b.id} className="px-4 py-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: inst.kleur }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div>
-                        <div className="text-xs text-gray-400">{b.type}</div>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <ResetKnop lagId={b.id} />
-                        <SlotIcoon lagId={b.id} />
-                        <Toggle lagId={b.id} inst={inst} />
-                      </div>
-                    </div>
-                    {bestandStatus[b.id] && (
-                      <div className={`text-xs ${bestandStatus[b.id].startsWith("✓") ? "text-green-600" : bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-gray-400"}`}>
-                        {bestandStatus[b.id]}
-                      </div>
-                    )}
-                    <ResetBevestiging lagId={b.id} />
-                    <LaagControls lagId={b.id} inst={inst} />
-                  </div>
-                );
-              })}
-
-              {/* KLIC ZIP → sub-lagen per thema */}
-              {klicBestanden.map(b => (
-                <div key={b.id}>
-                  <div className="px-4 py-2 bg-gray-50">
-                    <div className="flex items-center gap-2">
-                      <span>🗂️</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold text-gray-700 truncate">{b.naam}</div>
-                        <div className="text-xs text-gray-400">KLIC-melding · IMKL</div>
-                      </div>
-                    </div>
-                    {bestandStatus[b.id] && (
-                      <div className={`text-xs mt-1 ml-6 ${
-                        bestandStatus[b.id].startsWith("✓") ? "text-green-600" :
-                        bestandStatus[b.id].startsWith("✗") ? "text-red-500" : "text-orange-500"
-                      }`}>{bestandStatus[b.id]}</div>
-                    )}
-                  </div>
-
-                  {klicThemas.length > 0 ? klicThemas.map(thema => {
-                    const lagId = `klic_${thema}`;
-                    const inst  = instellingen[lagId] ?? standaardThemaInst(thema);
-                    const config = THEMA[thema] ?? { label: thema };
-                    const n = klicLagen[thema]?.features?.length;
-                    return (
-                      <div key={lagId} className="px-4 py-2 space-y-1.5 border-t border-gray-50">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ml-3" style={{ background: inst.kleur }} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-gray-700">{config.label}</div>
-                            {n && <div className="text-xs text-gray-400">{n} objecten</div>}
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <ResetKnop lagId={lagId} />
-                            <SlotIcoon lagId={lagId} />
-                            <Toggle lagId={lagId} inst={inst} />
-                          </div>
-                        </div>
-                        <ResetBevestiging lagId={lagId} />
-                        <LaagControls lagId={lagId} inst={inst} />
-                      </div>
-                    );
-                  }) : (
-                    <div className="px-4 py-3 text-xs text-gray-400 italic pl-8">
-                      {bestandStatus[b.id] ? "Laden…" : "Geen lagen geladen"}
-                    </div>
-                  )}
+          {actieveTab==="docs"?(
+            <DocumentenLijst/>
+          ):(
+            <>
+              {/* Achtergrond */}
+              <div className="px-4 py-3 border-b border-gray-100">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
+                <div className="space-y-1">
+                  {ACHTERGROND.map(a=>(<button key={a.id} onClick={()=>wisselAchtergrond(a.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-orange-50 text-orange-700":"text-gray-600 hover:bg-gray-50"}`}><div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-orange-500 bg-orange-500":"border-gray-300"}`}/><span className="text-xs font-medium">{a.label}</span></button>))}
                 </div>
-              ))}
-            </div>
+              </div>
+
+              {/* Overlays */}
+              <div className="px-4 py-3 border-b border-gray-200">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
+                <div className="space-y-1">
+                  {OVERLAYS.map(o=>{const aan=actieveOverlays.includes(o.id);return(<button key={o.id} onClick={()=>toggleOverlay(o.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-blue-50":"hover:bg-gray-50"}`}><div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200" style={{background:aan?o.kleur:"transparent"}}/><span className={`text-xs font-medium ${aan?"text-blue-700":"text-gray-600"}`}>{o.label}</span>{aan&&<span className="ml-auto text-xs text-blue-400">aan</span>}</button>);})}
+                </div>
+              </div>
+
+              {/* Gewone DXF/GML lagen */}
+              {gewoneLagen.length>0&&(<div className="divide-y divide-gray-100">
+                {gewoneLagen.map(b=>{const inst=instellingen[b.id]??standaardInst(b.type);return(<div key={b.id} className="px-4 py-3 space-y-1">
+                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:inst.kleur}}/><div className="flex-1 min-w-0"><div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div><div className="text-xs text-gray-400">{bestandStatus[b.id]||b.type}</div></div><div className="flex items-center gap-1 flex-shrink-0"><ResetKnop lagId={b.id}/><SlotIcoon lagId={b.id}/><Toggle lagId={b.id} inst={inst}/></div></div>
+                  <ResetBevestiging lagId={b.id}/>
+                  <LaagControls lagId={b.id} inst={inst}/>
+                </div>);})}
+              </div>)}
+
+              {/* KLIC lagen */}
+              {klicBestanden.map(b=>(<div key={b.id}>
+                <div className="px-4 py-2 bg-gray-50">
+                  <div className="flex items-center gap-2"><span>🗂️</span><div className="flex-1 min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{b.naam}</div><div className="text-xs text-gray-400">KLIC-melding · IMKL</div></div></div>
+                  {bestandStatus[b.id]&&<div className={`text-xs mt-1 ml-6 ${bestandStatus[b.id].startsWith("✓")?"text-green-600":bestandStatus[b.id].startsWith("✗")?"text-red-500":"text-orange-500"}`}>{bestandStatus[b.id]}</div>}
+                </div>
+                {klicThemas.length>0?klicThemas.map(thema=>{const lagId=`klic_${thema}`;const inst=instellingen[lagId]??standaardThemaInst(thema);const config=THEMA[thema]??{label:thema};const n=klicLagen[thema]?.features?.length;
+                return(<div key={lagId} className="px-4 py-2 space-y-1 border-t border-gray-50">
+                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ml-3" style={{background:inst.kleur}}/><div className="flex-1 min-w-0"><div className="text-xs font-medium text-gray-700">{config.label}</div>{n&&<div className="text-xs text-gray-400">{n} objecten</div>}</div><div className="flex items-center gap-1 flex-shrink-0"><ResetKnop lagId={lagId}/><SlotIcoon lagId={lagId}/><Toggle lagId={lagId} inst={inst}/></div></div>
+                  <ResetBevestiging lagId={lagId}/>
+                  <LaagControls lagId={lagId} inst={inst}/>
+                </div>);}):(<div className="px-4 py-3 text-xs text-gray-400 italic pl-8">{bestandStatus[b.id]?"Laden…":"Geen lagen geladen"}</div>)}
+              </div>))}
+
+              {bestanden.length===0&&(<div className="p-6 text-center space-y-2"><div className="text-2xl">📂</div><p className="text-sm text-gray-600 font-medium">Geen bestanden</p><p className="text-xs text-gray-400">Upload ontwerpen in stap 2.</p></div>)}
+            </>
           )}
         </div>
 
-        {/* Footer: RD cursor + foutmelding */}
+        {/* Footer */}
         <div className="border-t border-gray-100 px-4 py-2 space-y-1">
-          {rdCursor && (
-            <div className="text-xs font-mono text-gray-500 bg-gray-50 rounded px-2 py-1">
-              RD X: {rdCursor.x.toLocaleString("nl-NL")} · Y: {rdCursor.y.toLocaleString("nl-NL")}
-            </div>
-          )}
-          {foutmelding && <p className="text-xs text-red-500 font-medium">✗ {foutmelding}</p>}
-          <p className="text-xs text-gray-400">Kaart in RD New (EPSG:28992) · instellingen gelden ook in stap 4 t/m 8.</p>
+          {rdCursor&&<div className="text-xs font-mono text-gray-500 bg-gray-50 rounded px-2 py-1">RD X: {rdCursor.x.toLocaleString("nl-NL")} · Y: {rdCursor.y.toLocaleString("nl-NL")}</div>}
+          {foutmelding&&<p className="text-xs text-red-500 font-medium">✗ {foutmelding}</p>}
+          <p className="text-xs text-gray-400">EPSG:28992 · instellingen gelden ook in stap 4 t/m 8.</p>
         </div>
       </div>
 
-      {/* ── Kaart ────────────────────────────────────────────── */}
-      <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div ref={mapElRef} className="w-full h-full" />
+      {/* ── Kaart + feature detail ───────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div ref={mapElRef} className="flex-1 min-h-0" style={{minHeight:300}}/>
+        <FeatureDetail/>
       </div>
     </div>
   );
