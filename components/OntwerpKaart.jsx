@@ -18,6 +18,62 @@ const THEMA = {
   overig:                    { label: "Overig",               kleur: "#6b7280" },
 };
 
+// ─── Achtergrond- en overlaylagen (PDOK EPSG:28992) ─────────────
+const ACHTERGROND = [
+  {
+    id: "brt_standaard",
+    label: "BRT Standaard",
+    type: "wmts",
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" },
+  },
+  {
+    id: "brt_grijs",
+    label: "BRT Grijs",
+    type: "wmts",
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" },
+  },
+  {
+    id: "luchtfoto",
+    label: "Luchtfoto",
+    type: "wmts",
+    url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:28992/{z}/{x}/{y}.jpeg",
+    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK, Beeldmateriaal NL" },
+  },
+];
+
+const OVERLAYS = [
+  {
+    id: "kadaster",
+    label: "Kadastrale percelen",
+    url: "https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",
+    layers: "Perceel",
+    kleur: "#8B4513",
+  },
+  {
+    id: "bag_panden",
+    label: "BAG Panden",
+    url: "https://service.pdok.nl/lv/bag/wms/v2_0",
+    layers: "pand",
+    kleur: "#dc2626",
+  },
+  {
+    id: "bag_adressen",
+    label: "BAG Adressen",
+    url: "https://service.pdok.nl/lv/bag/wms/v2_0",
+    layers: "ligplaats,standplaats,verblijfsobject",
+    kleur: "#2563eb",
+  },
+  {
+    id: "openstreetmap",
+    label: "OpenStreetMap (WMS)",
+    url: "https://ows.terrestris.de/osm/service",
+    layers: "OSM-WMS",
+    kleur: "#16a34a",
+  },
+];
+
 const TYPE_KLEUR = {
   LS: "#f59e0b", MS: "#f97316", Gas: "#eab308",
   Water: "#3b82f6", Data: "#8b5cf6", KLIC: "#6b7280",
@@ -270,7 +326,11 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [opslaanActief, setOpslaanActief] = useState(false);
   const [ingeslagen,    setIngeslagen]    = useState(false);
   const [foutmelding,   setFoutmelding]   = useState(null);
-  const [rdCursor,      setRdCursor]      = useState(null); // Live RD-coördinaten onder cursor
+  const [rdCursor,      setRdCursor]      = useState(null);
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond ?? "brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays ?? []);
+  const basisLaagRef  = useRef(null);
+  const overlayRefs   = useRef({});
 
   // ── Kaart init ────────────────────────────────────────────────
   useEffect(() => {
@@ -305,16 +365,48 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
       kaartRef.current = kaart;
 
-      // PDOK BRT in native RD New projectie — geen conversie
-      L.tileLayer(
-        "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
-        {
-          minZoom: 0,
-          maxZoom: 13,
-          tileSize: 256,
-          attribution: "© PDOK BRT, © Kadaster",
+      // Achtergrondlaag toevoegen
+      function voegAchtergrondToe(id) {
+        if (basisLaagRef.current) {
+          kaart.removeLayer(basisLaagRef.current);
+          basisLaagRef.current = null;
         }
-      ).addTo(kaart);
+        const config = ACHTERGROND.find(a => a.id === id) ?? ACHTERGROND[0];
+        const laag = L.tileLayer(config.url, config.opties);
+        laag.addTo(kaart);
+        basisLaagRef.current = laag;
+      }
+
+      function voegOverlayToe(id) {
+        if (overlayRefs.current[id]) return;
+        const config = OVERLAYS.find(o => o.id === id);
+        if (!config) return;
+        const laag = L.tileLayer.wms(config.url, {
+          layers: config.layers,
+          format: "image/png",
+          transparent: true,
+          opacity: 0.75,
+          attribution: "© PDOK",
+        });
+        laag.addTo(kaart);
+        overlayRefs.current[id] = laag;
+      }
+
+      function verwijderOverlay(id) {
+        if (overlayRefs.current[id]) {
+          kaart.removeLayer(overlayRefs.current[id]);
+          delete overlayRefs.current[id];
+        }
+      }
+
+      // Sla functies op in ref zodat state-updates ze kunnen aanroepen
+      kaart._voegAchtergrondToe = voegAchtergrondToe;
+      kaart._voegOverlayToe     = voegOverlayToe;
+      kaart._verwijderOverlay   = verwijderOverlay;
+
+      // Laad initiële achtergrond en overlays
+      voegAchtergrondToe(opgeslagenInst.__achtergrond ?? "brt_standaard");
+      for (const id of (opgeslagenInst.__overlays ?? [])) voegOverlayToe(id);
 
       // Live RD-coördinaten tonen via proj4 (WGS84 → EPSG:28992)
       kaart.on("mousemove", e => {
@@ -453,6 +545,25 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     }
   }
 
+  // ── Achtergrond wisselen ─────────────────────────────────────
+  function wisselAchtergrond(id) {
+    setActieveAchtergrond(id);
+    kaartRef.current?._voegAchtergrondToe?.(id);
+  }
+
+  function toggleOverlay(id) {
+    setActieveOverlays(prev => {
+      const actief = prev.includes(id);
+      if (actief) {
+        kaartRef.current?._verwijderOverlay?.(id);
+        return prev.filter(o => o !== id);
+      } else {
+        kaartRef.current?._voegOverlayToe?.(id);
+        return [...prev, id];
+      }
+    });
+  }
+
   // ── Live laagstijl wijzigen ───────────────────────────────────
   function wijzig(lagId, sleutel, waarde) {
     setInstellingen(prev => {
@@ -488,6 +599,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           lng:  c.lng,
           zoom: kaartRef.current.getZoom(),
         };
+        teOpslaan.__achtergrond = actieveAchtergrond;
+        teOpslaan.__overlays    = actieveOverlays;
       }
       await updateProject(projectId, { laag_instellingen: JSON.stringify(teOpslaan) });
       onOpgeslagen?.();
@@ -562,6 +675,43 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          {/* ── Achtergrondkaart ── */}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
+            <div className="space-y-1">
+              {ACHTERGROND.map(a => (
+                <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
+                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${
+                    actieveAchtergrond === a.id ? "bg-orange-50 text-orange-700" : "text-gray-600 hover:bg-gray-50"
+                  }`}>
+                  <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond === a.id ? "border-orange-500 bg-orange-500" : "border-gray-300"}`} />
+                  <span className="text-xs font-medium">{a.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Overlay lagen (WMS) ── */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
+            <div className="space-y-1">
+              {OVERLAYS.map(o => {
+                const aan = actieveOverlays.includes(o.id);
+                return (
+                  <button key={o.id} onClick={() => toggleOverlay(o.id)}
+                    className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${
+                      aan ? "bg-blue-50" : "hover:bg-gray-50"
+                    }`}>
+                    <div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200"
+                      style={{ background: aan ? o.kleur : "transparent" }} />
+                    <span className={`text-xs font-medium ${aan ? "text-blue-700" : "text-gray-600"}`}>{o.label}</span>
+                    {aan && <span className="ml-auto text-xs text-blue-400">aan</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {bestanden.length === 0 ? (
             <div className="p-6 text-center space-y-2">
               <div className="text-2xl">📂</div>
