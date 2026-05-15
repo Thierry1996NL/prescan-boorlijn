@@ -750,6 +750,18 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const L = window.L;
     if (!mapRef.current || leafletMapRef.current) return;
 
+    // Laad proj4 voor nauwkeurige RD New → WGS84 conversie
+    if (!window.proj4) {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";
+      s.onload = () => {
+        // Herlaad KLIC achtergrond met proj4 na laden
+        const s3 = (() => { try { return JSON.parse(project?.laag_instellingen || "{}"); } catch { return {}; } })();
+        laadKlicAchtergrond(leafletMapRef.current, project, s3).catch(() => {});
+      };
+      document.head.appendChild(s);
+    }
+
     // Lees opgeslagen instellingen stap 3
     const s3 = (() => { try { return JSON.parse(project?.laag_instellingen || "{}"); } catch { return {}; } })();
     const startPos = s3.__kaartPositie;
@@ -818,21 +830,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     }
 
     // KLIC achtergrond laden (sessionStorage cache → snel)
-    setTimeout(() => laadKlicAchtergrond(kaart, project, s3), 600);
+    setTimeout(() => laadKlicAchtergrond(kaart, project, s3).catch(() => {}), 600);
 
     // Kaart klik handler
     kaart.on("click", async (e) => {
-      const { lat, lng } = e.latlng;
-      const mode = modeRef.current;
+      try {
+        const { lat, lng } = e.latlng;
+        const mode = modeRef.current;
 
-      if (mode === "tekenen") {
-        setControlePunten(prev => {
-          const nieuw = [...prev, [lat, lng]];
-          tekenPolyline(kaart, nieuw);
-          hertekenAlleMarkers(kaart, nieuw);
-          return nieuw;
-        });
-      }
+        if (mode === "tekenen") {
+          setControlePunten(prev => {
+            try {
+              const nieuw = [...prev, [lat, lng]];
+              tekenPolyline(kaart, nieuw);
+              hertekenAlleMarkers(kaart, nieuw);
+              return nieuw;
+            } catch (err) { console.error("Tekenen:", err); return prev; }
+          });
+        }
 
       // Analyse: dispatch DOM event (geen closure issue)
       if (mode === "analyse") {
@@ -876,7 +891,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         }
         return;
       }
-
+      } catch (clickErr) { console.error("Klik handler fout:", clickErr); }
     });
   }
 
@@ -1286,12 +1301,15 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
 
   async function opslaanTrace() {
     if (controlePunten.length < 2) return;
-    const geojson = { type: "LineString", coordinates: controlePunten.map(([lat, lng]) => [lng, lat]) };
     const kaart = leafletMapRef.current;
     const L = window.L;
-    wisControlepunten();
-    if (traceLaagRef.current && kaart) kaart.removeLayer(traceLaagRef.current);
-    traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+    if (!kaart || !L) { console.error("Kaart niet beschikbaar"); return; }
+    const geojson = { type: "LineString", coordinates: controlePunten.map(([lat, lng]) => [lng, lat]) };
+    try {
+      wisControlepunten();
+      if (traceLaagRef.current) kaart.removeLayer(traceLaagRef.current);
+      traceLaagRef.current = L.geoJSON(geojson, { style: { color: "#2563eb", weight: 4, opacity: 1 } }).addTo(kaart);
+    } catch (mapErr) { console.warn("Kaart update:", mapErr); }
 
     // Herbereken positie van alle analysepunten op de nieuwe boorlijn
     if (analysePunten.length > 0) {
@@ -1302,9 +1320,15 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       }).sort((a, b) => a.positieM - b.positieM));
     }
 
-    await onTraceOpgeslagen(geojson);
+    try {
+      await onTraceOpgeslagen(geojson);
+    } catch (err) {
+      console.error("Opslaan mislukt:", err);
+      return; // stop zodat de gebruiker het opnieuw kan proberen
+    }
     setOpgeslagen(true);
     setModus("niets");
+    modeRef.current = "niets";
     setTimeout(() => setOpgeslagen(false), 3000);
   }
 

@@ -74,30 +74,31 @@ export default function ProjectDetailPagina() {
   }
 
   // ── Boorlijn opslaan/verwijderen vanuit MapTrace ─────────────
+  // Geen JSON.stringify — Supabase accepteert objecten direct voor JSONB kolommen
   async function handleTraceOpgeslagen(data) {
     try {
       if (!data) {
-        // Verwijderen: wis boorlijn + analyse + diepte
+        // Verwijderen
         await updateProject(id, {
           boortrace_geojson: null,
           diepte_punten:     null,
           analyse_punten:    null,
         });
+        await laadProject(); // herlaad na verwijderen
       } else if (data._alleenDiepte) {
-        // Alleen dieptepunten opslaan (auto-save)
-        await updateProject(id, { diepte_punten: JSON.stringify(data.diepte_punten) });
+        // Auto-save dieptepunten — geen laadProject (te frequent, veroorzaakt re-renders)
+        await updateProject(id, { diepte_punten: data.diepte_punten });
       } else if (data._alleenAnalyse) {
-        // Alleen analysepunten opslaan (auto-save)
-        await updateProject(id, { analyse_punten: JSON.stringify(data.analyse_punten) });
+        // Auto-save analysepunten — geen laadProject
+        await updateProject(id, { analyse_punten: data.analyse_punten });
       } else {
-        // Volledige boorlijn GeoJSON opslaan
-        await updateProject(id, {
-          boortrace_geojson: JSON.stringify(data),
-        });
+        // Boorlijn opslaan — geojson object direct meegeven (geen stringify)
+        await updateProject(id, { boortrace_geojson: data });
+        await laadProject(); // herlaad zodat bestaandTrace bijgewerkt is
       }
-      await laadProject();
     } catch (err) {
       console.error("handleTraceOpgeslagen fout:", err);
+      throw err; // doorgooi zodat de aanroeper de fout ziet
     }
   }
 
