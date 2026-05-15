@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 
 
-// ─── KLIC ACHTERGROND (stap 3 → stap 4) ─────────────────────────
-const KLIC_THEMA_KLEUR = {
-  laagspanning:"#7B00AA",middenspanning:"#00CCFF",hoogspanning:"#FF4400",
-  gasLageDruk:"#FFFF00",gasHogeDruk:"#FF0000",water:"#000080",
-  datatransport:"#00CC00",rioolVrijverval:"#AA00CC",rioolOnderOverOfOnderdruk:"#AA00CC",
-  warmte:"#FF6600",overig:"#888888",mantelbuis:"#4B5563",kabelbed:"#111827",duct:"#374151",
+// ─── Achtergrond varianten (zelfde als stap 3) ───────────────────
+const ACHTERGROND_STAP3 = {
+  brt_standaard: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
+  brt_grijs:     "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png",
+  brt_pastel:    "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:3857/{z}/{x}/{y}.png",
+  luchtfoto:     null, // WMS — apart afgehandeld
 };
 
-
-// Liang-Barsky lijnclipping
-function liangBarskyKlic(x1,y1,x2,y2,xMin,xMax,yMin,yMax){
+// ─── Clipping hulpfuncties (filterbox uit stap 3) ────────────────
+function liangBarskyMT(x1,y1,x2,y2,xMin,xMax,yMin,yMax){
   const dx=x2-x1,dy=y2-y1;
   const p=[-dx,dx,-dy,dy],q=[x1-xMin,xMax-x1,y1-yMin,yMax-y1];
   let t0=0,t1=1;
@@ -23,132 +22,39 @@ function liangBarskyKlic(x1,y1,x2,y2,xMin,xMax,yMin,yMax){
   }
   return t0>t1?null:[x1+t0*dx,y1+t0*dy,x1+t1*dx,y1+t1*dy];
 }
-
-function clipLijnsegmenten(coords, box){
-  // coords = [[lat,lng], ...], box = {lat1,lat2,lng1,lng2}
+function clipSegmentenMT(coords,box){
   const{lat1:yMin,lat2:yMax,lng1:xMin,lng2:xMax}=box;
-  const segmenten=[];let huidig=null;
+  const segs=[];let cur=null;
   for(let i=0;i<coords.length-1;i++){
     const[y1,x1]=coords[i],[y2,x2]=coords[i+1];
-    const c=liangBarskyKlic(x1,y1,x2,y2,xMin,xMax,yMin,yMax);
-    if(!c){if(huidig){segmenten.push(huidig);huidig=null;}continue;}
+    const c=liangBarskyMT(x1,y1,x2,y2,xMin,xMax,yMin,yMax);
+    if(!c){if(cur){segs.push(cur);cur=null;}continue;}
     const[cx1,cy1,cx2,cy2]=c;
-    if(!huidig){huidig=[[cy1,cx1],[cy2,cx2]];}
-    else{
-      const last=huidig[huidig.length-1];
-      if(Math.abs(last[0]-cy1)<1e-9&&Math.abs(last[1]-cx1)<1e-9)huidig.push([cy2,cx2]);
-      else{segmenten.push(huidig);huidig=[[cy1,cx1],[cy2,cx2]];}
-    }
+    if(!cur){cur=[[cy1,cx1],[cy2,cx2]];}
+    else{const l=cur[cur.length-1];if(Math.abs(l[0]-cy1)<1e-9&&Math.abs(l[1]-cx1)<1e-9)cur.push([cy2,cx2]);else{segs.push(cur);cur=[[cy1,cx1],[cy2,cx2]];}}
   }
-  if(huidig)segmenten.push(huidig);
-  return segmenten;
+  if(cur)segs.push(cur);
+  return segs;
 }
 
-function rdNaarWgs84Klic(x, y) {
-  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return [x, y];
-  if (typeof window !== "undefined" && window.proj4) {
-    try { const w = proj4("EPSG:28992","EPSG:4326",[x,y]); return [w[0],w[1]]; } catch {}
-  }
-  const dX=(x-155000)/100000, dY=(y-463000)/100000;
+// ─── RD New → WGS84 voor KLIC achtergrond ────────────────────────
+function rdNaarWgs84MT(x,y){
+  if(Math.abs(x)<=180&&Math.abs(y)<=90)return[x,y];
+  if(typeof window!=="undefined"&&window.proj4){try{const w=proj4("EPSG:28992","EPSG:4326",[x,y]);return[w[0],w[1]];}catch{}}
+  const dX=(x-155000)/100000,dY=(y-463000)/100000;
   const sumN=3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY;
   const sumE=5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX;
   return[5.38720621+sumE/3600,52.15517440+sumN/3600];
 }
 
-async function laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef) {
-  if (!kaart || typeof window === "undefined") return;
-  (klicLagenRef.current || []).forEach(l => { try { kaart.removeLayer(l); } catch {} });
-  klicLagenRef.current = [];
-  const bestanden = (() => { try { return JSON.parse(project?.bestanden_meta || "[]"); } catch { return []; } })();
-  const inst = (() => { try { return JSON.parse(project?.laag_instellingen || "{}"); } catch { return {}; } })();
-  const kaartBox = inst.__kaartBox ?? null;
-  if (bestanden.length === 0) return;
-
-  // Laad JSZip als nodig
-  if (!window.JSZip) {
-    await new Promise((ok, err) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-      s.onload = ok; s.onerror = err;
-      document.head.appendChild(s);
-    });
-  }
-
-  for (const b of bestanden) {
-    if (!b.url) continue;
-    const ext = b.naam.split(".").pop().toLowerCase();
-    try {
-      const res = await fetch(b.url); if (!res.ok) continue;
-
-      if (ext === "zip") {
-        const blob = await res.blob();
-        const zip = await window.JSZip.loadAsync(blob);
-        const xmlNaam = Object.keys(zip.files).find(n => n.includes("GI_gebiedsinformatie") && n.endsWith(".xml"));
-        if (!xmlNaam) continue;
-        const xmlTekst = await zip.files[xmlNaam].async("string");
-        const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
-        const netThema = {};
-        doc.querySelectorAll("Utiliteitsnet").forEach(net => {
-          const id = net.getAttributeNS?.("http://www.opengis.net/gml/3.2","id") || net.getAttribute("gml:id") || "";
-          const href = net.querySelector("thema")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "";
-          if (id) netThema[id] = href.split("/").pop() || "overig";
-        });
-        doc.querySelectorAll("UtilityLink").forEach(link => {
-          const netHref = (link.querySelector("inNetwork")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "").replace(/^#/,"");
-          const thema = netThema[netHref] || "overig";
-          const lagId = `klic_${thema}`;
-          const li = inst[lagId]; if (li?.zichtbaar === false) return;
-          const kleur = li?.kleur ?? KLIC_THEMA_KLEUR[thema] ?? "#888";
-          const dikte = li?.dikte ?? 2;
-          const helderheid = li?.helderheid ?? 0.7;
-          const posListEl = link.querySelector("posList"); if (!posListEl) return;
-          const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
-          const coords = [];
-          for (let i = 0; i+1 < nums.length; i+=2) {
-            const [lng, lat] = rdNaarWgs84Klic(nums[i], nums[i+1]);
-            coords.push([lat, lng]);
-          }
-          if (coords.length < 2) return;
-          // Clip naar filterbox (Liang-Barsky)
-          const teRenderen = kaartBox ? clipLijnsegmenten(coords, kaartBox) : [coords];
-          teRenderen.forEach(seg => {
-            if (seg.length < 2) return;
-            const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
-            laag.addTo(kaart);
-            klicLagenRef.current.push(laag);
-          });
-        });
-
-      } else if (ext === "dxf") {
-        const li = inst[b.id]; if (li?.zichtbaar === false) continue;
-        const kleur = li?.kleur ?? "#888"; const dikte = li?.dikte ?? 2; const helderheid = li?.helderheid ?? 0.7;
-        const tekst = await res.text();
-        const regels = tekst.split(/\r?\n/); let i = 0;
-        while (i < regels.length) {
-          if (regels[i].trim() !== "0") { i++; continue; }
-          const type = regels[i+1]?.trim(); let einde = i+2;
-          while (einde < regels.length && regels[einde].trim() !== "0") einde++;
-          const blok = regels.slice(i, einde);
-          const getW = c => { for (let k=0;k<blok.length-1;k++) if(blok[k].trim()===String(c)) return parseFloat(blok[k+1].trim())||0; return 0; };
-          if (type === "LINE" || type === "LWPOLYLINE") {
-            const pts = type === "LINE" ? [[getW(10),getW(20)],[getW(11),getW(21)]] : [];
-            if (type === "LWPOLYLINE") for (let k=0;k<blok.length-3;k++) if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20") pts.push([parseFloat(blok[k+1].trim()),parseFloat(blok[k+3].trim())]);
-            if (pts.length >= 2) {
-              const coords = pts.map(([x,y]) => { const [lng,lat] = rdNaarWgs84Klic(x,y); return [lat,lng]; });
-              const teRenderenDxf = kaartBox ? clipLijnsegmenten(coords, kaartBox) : [coords];
-              teRenderenDxf.forEach(seg => {
-                if (seg.length < 2) return;
-                const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.8, interactive:false, zIndexOffset:-1000 });
-                laag.addTo(kaart); klicLagenRef.current.push(laag);
-              });
-            }
-          }
-          i = einde;
-        }
-      }
-    } catch (err) { console.warn("KLIC achtergrond:", b.naam, err.message); }
-  }
-}
+// NEN-1775 kleuren (backup als laag_instellingen leeg is)
+const KLIC_KLEUR_MT={
+  laagspanning:"#7B00AA",middenspanning:"#00CCFF",hoogspanning:"#FF4400",
+  gasLageDruk:"#FFFF00",gasHogeDruk:"#FF0000",water:"#000080",
+  datatransport:"#00CC00",rioolVrijverval:"#AA00CC",rioolOnderOverOfOnderdruk:"#AA00CC",
+  warmte:"#FF6600",overig:"#888888",mantelbuis:"#4B5563",kabelbed:"#111827",duct:"#374151",
+};
+const KLIC_DASH_MT={mantelbuis:"10 5",kabelbed:"12 4",duct:"8 4"};
 
 // ─── PDOK LAGEN ───────────────────────────────────────────────
 const LAGEN = [
@@ -571,7 +477,6 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const traceLaagRef = useRef(null);
   const modeRef = useRef("niets");
   const dieptepuntMarkersRef = useRef([]); // kaartmarkers voor dieptepunten
-  const klicLagenRef = useRef([]); // KLIC achtergrond lagen (stap 3 → stap 4)
 
   const [actieveLagen, setActieveLagen] = useState(Object.fromEntries(LAGEN.map(l => [l.id, l.standaardAan])));
   const [modus, setModus] = useState("niets");
@@ -587,6 +492,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [diepteModus, setDiepteModus] = useState(false);
   const opstellingRef = useRef({ boorMachine: null, bentonietTank: null });
   const opstellingKlikRef = useRef(null);
+  const klicLagenMTRef = useRef([]);   // KLIC achtergrondlagen
+  const filterboxRectRef = useRef(null); // grijze filterbox rechthoek
 
   // Laad opgeslagen dieptepunten uit project
   const [dieptePunten, setDieptePunten] = useState(() => {
@@ -722,12 +629,163 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     return () => { if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null; } };
   }, []);
 
+
+  // ── KLIC achtergrond laden (uit stap 3 cache + instellingen) ─────
+  async function laadKlicAchtergrond(kaart, project, s3inst) {
+    if (!kaart || typeof window === "undefined") return;
+    // Verwijder oude lagen
+    klicLagenMTRef.current.forEach(l => { try { kaart.removeLayer(l); } catch {} });
+    klicLagenMTRef.current = [];
+
+    const bestanden = (() => { try { return JSON.parse(project?.bestanden_meta || "[]"); } catch { return []; } })();
+    const kaartBox  = s3inst.__kaartBox ?? null;
+    if (bestanden.length === 0) return;
+
+    for (const b of bestanden) {
+      if (!b.url) continue;
+      const ext = b.naam.split(".").pop().toLowerCase();
+      try {
+        // Probeer eerst sessionStorage cache (zet door stap 3)
+        const cacheKey = `klic_parsed_${b.id}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached && ext === "zip") {
+          const { lagen } = JSON.parse(cached);
+          for (const [thema, geoJson] of Object.entries(lagen ?? {})) {
+            const lagId = `klic_${thema}`;
+            const li    = s3inst[lagId];
+            if (li?.zichtbaar === false) continue;
+            const kleur     = li?.kleur  ?? KLIC_KLEUR_MT[thema]  ?? "#888";
+            const dikte     = li?.dikte  ?? 2;
+            const helderheid= li?.helderheid ?? 0.7;
+            const dashArray = KLIC_DASH_MT[thema] ?? null;
+            for (const feature of (geoJson?.features ?? [])) {
+              const rdCoords = feature.geometry?.coordinates ?? [];
+              const coords   = rdCoords.map(([x,y]) => { const [lng,lat] = rdNaarWgs84MT(x,y); return [lat,lng]; });
+              if (coords.length < 2) continue;
+              const segs = kaartBox ? clipSegmentenMT(coords, kaartBox) : [coords];
+              segs.forEach(seg => {
+                if (seg.length < 2) return;
+                const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.85, interactive:false, zIndexOffset:-500, ...(dashArray ? {dashArray} : {}) });
+                laag.addTo(kaart);
+                klicLagenMTRef.current.push(laag);
+              });
+            }
+          }
+          continue; // cache gebruikt, geen ZIP nodig
+        }
+
+        // Geen cache → ZIP downloaden
+        const res = await fetch(b.url); if (!res.ok) continue;
+        if (ext === "zip") {
+          if (!window.JSZip) await new Promise((ok,err)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";s.onload=ok;s.onerror=err;document.head.appendChild(s);});
+          const zip = await window.JSZip.loadAsync(await res.blob());
+          const xmlNaam = Object.keys(zip.files).find(n => n.includes("GI_gebiedsinformatie") && n.endsWith(".xml"));
+          if (!xmlNaam) continue;
+          const xmlTekst = await zip.files[xmlNaam].async("string");
+          const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
+          const netThema = {};
+          doc.querySelectorAll("Utiliteitsnet").forEach(net => {
+            const id = net.getAttributeNS?.("http://www.opengis.net/gml/3.2","id") || net.getAttribute("gml:id") || "";
+            const href = net.querySelector("thema")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "";
+            if (id) netThema[id] = href.split("/").pop() || "overig";
+          });
+          doc.querySelectorAll("UtilityLink").forEach(link => {
+            const netHref = (link.querySelector("inNetwork")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "").replace(/^#/,"");
+            const thema = netThema[netHref] || "overig";
+            const lagId = `klic_${thema}`;
+            const li    = s3inst[lagId];
+            if (li?.zichtbaar === false) return;
+            const kleur      = li?.kleur ?? KLIC_KLEUR_MT[thema] ?? "#888";
+            const dikte      = li?.dikte ?? 2;
+            const helderheid = li?.helderheid ?? 0.7;
+            const dashArray  = KLIC_DASH_MT[thema] ?? null;
+            const posListEl  = link.querySelector("posList"); if (!posListEl) return;
+            const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
+            const coords = [];
+            for (let i = 0; i+1 < nums.length; i+=2) {
+              const [lng,lat] = rdNaarWgs84MT(nums[i], nums[i+1]);
+              coords.push([lat, lng]);
+            }
+            if (coords.length < 2) return;
+            const segs = kaartBox ? clipSegmentenMT(coords, kaartBox) : [coords];
+            segs.forEach(seg => {
+              if (seg.length < 2) return;
+              const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.85, interactive:false, zIndexOffset:-500, ...(dashArray ? {dashArray} : {}) });
+              laag.addTo(kaart);
+              klicLagenMTRef.current.push(laag);
+            });
+          });
+        } else if (ext === "dxf") {
+          const li = s3inst[b.id]; if (li?.zichtbaar === false) continue;
+          const kleur = li?.kleur ?? "#888"; const dikte = li?.dikte ?? 2; const helderheid = li?.helderheid ?? 0.7;
+          const tekst = await res.text();
+          const regels = tekst.split("\n"); let i = 0;
+          while (i < regels.length) {
+            if (regels[i].trim() !== "0") { i++; continue; }
+            const type = regels[i+1]?.trim(); let einde = i+2;
+            while (einde < regels.length && regels[einde].trim() !== "0") einde++;
+            const blok = regels.slice(i, einde);
+            const getW = c => { for (let k=0;k<blok.length-1;k++) if(blok[k].trim()===String(c)) return parseFloat(blok[k+1].trim())||0; return 0; };
+            if (type === "LINE" || type === "LWPOLYLINE") {
+              const pts = type === "LINE" ? [[getW(10),getW(20)],[getW(11),getW(21)]] : [];
+              if (type === "LWPOLYLINE") for (let k=0;k<blok.length-3;k++) if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20") pts.push([parseFloat(blok[k+1].trim()),parseFloat(blok[k+3].trim())]);
+              if (pts.length >= 2) {
+                const coords = pts.map(([x,y]) => { const [lng,lat] = rdNaarWgs84MT(x,y); return [lat,lng]; });
+                const segs = kaartBox ? clipSegmentenMT(coords, kaartBox) : [coords];
+                segs.forEach(seg => {
+                  if (seg.length < 2) return;
+                  const laag = window.L.polyline(seg, { color:kleur, weight:dikte, opacity:helderheid*0.85, interactive:false, zIndexOffset:-500 });
+                  laag.addTo(kaart); klicLagenMTRef.current.push(laag);
+                });
+              }
+            }
+            i = einde;
+          }
+        }
+      } catch(err) { console.warn("KLIC achtergrond stap4:", b.naam, err.message); }
+    }
+  }
+
   function initKaart() {
     const L = window.L;
     if (!mapRef.current || leafletMapRef.current) return;
-    const kaart = L.map(mapRef.current, { center: [52.15, 5.38], zoom: 8, maxZoom: 22 });
+
+    // Lees opgeslagen instellingen stap 3
+    const s3 = (() => { try { return JSON.parse(project?.laag_instellingen || "{}"); } catch { return {}; } })();
+    const startPos = s3.__kaartPositie;
+    const achtergrond = s3.__achtergrond ?? "brt_standaard";
+    const overlays = s3.__overlays ?? [];
+    const kaartBox = s3.__kaartBox ?? null;
+
+    const center = startPos ? [startPos.lat, startPos.lng] : [52.15, 5.38];
+    const zoom   = startPos?.zoom ?? 13;
+
+    const kaart = L.map(mapRef.current, { center, zoom, maxZoom: 22 });
     leafletMapRef.current = kaart;
-    L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png", { attribution: "© PDOK BRT", maxZoom: 22 }).addTo(kaart);
+
+    // Achtergrond (zelfde variant als stap 3)
+    if (achtergrond === "luchtfoto") {
+      L.tileLayer.wms("https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", {
+        layers: "Actueel_ortho25", format: "image/jpeg", transparent: false, maxZoom: 22, attribution: "© PDOK",
+      }).addTo(kaart);
+    } else {
+      const url = ACHTERGROND_STAP3[achtergrond] ?? ACHTERGROND_STAP3.brt_standaard;
+      L.tileLayer(url, { attribution: "© PDOK BRT", maxZoom: 22 }).addTo(kaart);
+    }
+
+    // PDOK overlays uit stap 3 (kadaster, BAG, BGT)
+    const OVERLAY_WMS = {
+      kadaster:   { url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",   layers:"Perceel" },
+      bag_panden: { url:"https://service.pdok.nl/lv/bag/wms/v2_0",                     layers:"pand" },
+      bag_adres:  { url:"https://service.pdok.nl/lv/bag/wms/v2_0",                     layers:"ligplaats,standplaats,verblijfsobject" },
+      bgt:        { url:"https://service.pdok.nl/lv/bgt/wms/v1_0",                     layers:"wegdeel,waterdeel,ondersteunendwegdeel,begroeidterreindeel" },
+    };
+    overlays.forEach(id => {
+      const c = OVERLAY_WMS[id]; if (!c) return;
+      L.tileLayer.wms(c.url, { layers:c.layers, format:"image/png", transparent:true, opacity:0.7, zIndex:200, attribution:"© PDOK" }).addTo(kaart);
+    });
+
+    // Eigen PDOK lagen (buisleidingen, spoor, etc.)
     LAGEN.forEach(laag => {
       const l = laag.type === "wmts"
         ? L.tileLayer(laag.url, { maxZoom: 19, opacity: 0.9, attribution: "© PDOK" })
@@ -735,6 +793,14 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       laagRefs.current[laag.id] = l;
       if (laag.standaardAan) l.addTo(kaart);
     });
+
+    // Filterbox herstellen
+    if (kaartBox) {
+      filterboxRectRef.current = L.rectangle(
+        [[kaartBox.lat1, kaartBox.lng1],[kaartBox.lat2, kaartBox.lng2]],
+        { color:"#6b7280", weight:2, fillColor:"transparent", fillOpacity:0, dashArray:null, interactive:false }
+      ).addTo(kaart);
+    }
 
     // Laad bestaand tracé
     if (project?.boortrace_geojson) {
@@ -751,10 +817,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       } catch (e) {}
     }
 
-    // KLIC lagen als achtergrond laden (uit stap 3 opgeslagen instellingen)
-    setTimeout(() => {
-      laadKlicAchtergrondOpKaart(kaart, project, klicLagenRef).catch(() => {});
-    }, 800);
+    // KLIC achtergrond laden (sessionStorage cache → snel)
+    setTimeout(() => laadKlicAchtergrond(kaart, project, s3), 600);
 
     // Kaart klik handler
     kaart.on("click", async (e) => {
@@ -1352,14 +1416,16 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         )}
 
         {/* Kaart */}
-        <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 420 }} />
-
-        {/* KLIC achtergrond status */}
-        {project?.bestanden_meta && project.bestanden_meta !== "[]" && (
-          <div className="text-xs text-gray-400 px-1">
-            🗂 KLIC-ondergrond actief — lagen uit stap 3 worden als achtergrond getoond
-          </div>
-        )}
+        <div className="relative">
+          <div ref={mapRef} className="rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: 480 }} />
+          {project?.bestanden_meta && project.bestanden_meta !== "[]" && (
+            <div className="absolute bottom-2 left-2 z-[400] flex items-center gap-1.5 bg-white/90 rounded-lg px-2.5 py-1.5 shadow text-xs text-gray-600 pointer-events-none border border-gray-200">
+              <span>🗂</span>
+              <span>KLIC-ondergrond actief</span>
+              {(() => { try { const s3 = JSON.parse(project.laag_instellingen || "{}"); return s3.__kaartBox ? <span className="text-gray-400">· filterbox</span> : null; } catch { return null; } })()}
+            </div>
+          )}
+        </div>
 
         {/* Dwarsprofiel */}
         <Dwarsprofiel
