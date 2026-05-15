@@ -1185,24 +1185,20 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     controlepuntMarkersRef.current.push(marker);
   }
 
-  async function startTekenen() {
-    // Verwijder bestaande boorlijn uit DB (er is er altijd maar één per project)
-    if (project?.boortrace_geojson) {
-      await onTraceOpgeslagen(null);
-    }
+  function startTekenen() {
+    // Wis alles lokaal — opslaan overschrijft automatisch de bestaande boorlijn
     wisControlepunten();
     wisAnalysePunten();
     setControlePunten([]);
-    setDieptePunten([
-      { id: "start", positieM: 0, diepte: -1.5, vast: true },
-      { id: "eind", positieM: null, diepte: -1.5, vast: true },
-    ]);
     setModus("tekenen");
+    modeRef.current = "tekenen"; // direct instellen, niet wachten op useEffect
     const kaart = leafletMapRef.current;
     if (kaart) {
       if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+      if (eventPolylineRef.current) { kaart.removeLayer(eventPolylineRef.current); eventPolylineRef.current = null; }
       dieptepuntMarkersRef.current.forEach(m => kaart.removeLayer(m));
       dieptepuntMarkersRef.current = [];
+      if (hoverMarkerRef.current && kaart.hasLayer(hoverMarkerRef.current)) kaart.removeLayer(hoverMarkerRef.current);
     }
   }
 
@@ -1213,7 +1209,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     const pts = bestaandTrace;
     setControlePunten(pts);
     setModus("bewerken");
+    modeRef.current = "bewerken"; // direct, niet wachten op useEffect
     if (traceLaagRef.current) { kaart.removeLayer(traceLaagRef.current); traceLaagRef.current = null; }
+    if (eventPolylineRef.current) { kaart.removeLayer(eventPolylineRef.current); eventPolylineRef.current = null; }
     tekenPolyline(kaart, pts);
     hertekenAlleMarkers(kaart, pts);
   }
@@ -1257,11 +1255,24 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     setAnalysePunten([]);
   }
 
+  async function verwijderTrace() {
+    setVerwijderBezig(true);
+    try {
+      await onTraceOpgeslagen(null);
+      wisAlles();
+    } catch(err) {
+      console.error("Verwijderen mislukt:", err);
+    } finally {
+      setVerwijderBezig(false);
+    }
+  }
+
   function wisAlles() {
     wisControlepunten();
     wisAnalysePunten();
     setControlePunten([]);
     setModus("niets");
+    modeRef.current = "niets";
     setDieptePunten([
       { id: "start", positieM: 0, diepte: -1.5, vast: true },
       { id: "eind", positieM: null, diepte: -1.5, vast: true },
@@ -1308,10 +1319,12 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     });
   }
 
-  // Update cursor op basis van modus
+  // Update cursor + modeRef op basis van modus
+  // modeRef.current is cruciaal voor Leaflet event handlers (stale closure workaround)
   useEffect(() => {
+    modeRef.current = modus;
     if (!leafletMapRef.current) return;
-    const cursors = { tekenen: "crosshair", bewerken: "default", analyse: "cell", niets: "" };
+    const cursors = { tekenen: "crosshair", bewerken: "default", analyse: "cell", niets: "", boor_machine: "crosshair", bentoniet_tank: "crosshair" };
     leafletMapRef.current.getContainer().style.cursor = cursors[modus] ?? "";
   }, [modus]);
 
@@ -1352,10 +1365,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
                       ✏️ Nieuwe boorlijn
                     </button>
                     <button
-                      onClick={async () => { setVerwijderBezig(true); await onTraceOpgeslagen(null); wisAlles(); setVerwijderBezig(false); }}
+                      onClick={verwijderTrace}
                       disabled={verwijderBezig}
                       className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded-md hover:bg-red-50 transition-colors disabled:opacity-40">
-                      {verwijderBezig ? "⏳" : "🗑"} {verwijderBezig ? "Verwijderen…" : "Verwijderen"}
+                      {verwijderBezig ? "⏳ Verwijderen…" : "🗑 Verwijderen"}
                     </button>
                   </>
                 ) : (
