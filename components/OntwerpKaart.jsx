@@ -19,27 +19,36 @@ const THEMA = {
 };
 
 // ─── Achtergrond- en overlaylagen (PDOK EPSG:28992) ─────────────
+// maxNativeZoom: 13 = max PDOK-zoomniveau; maxZoom: 22 zoeft Leaflet verder in
+const WMTS_OPTIES = { minZoom: 0, maxNativeZoom: 13, maxZoom: 22, tileSize: 256 };
+
 const ACHTERGROND = [
   {
     id: "brt_standaard",
     label: "BRT Standaard",
-    type: "wmts",
     url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" },
+    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
   },
   {
     id: "brt_grijs",
     label: "BRT Grijs",
-    type: "wmts",
     url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
-    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK BRT, © Kadaster" },
+    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
+  },
+  {
+    id: "brt_pastel",
+    label: "BRT Pastel",
+    url: "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",
+    opties: { ...WMTS_OPTIES, attribution: "© PDOK BRT, © Kadaster" },
   },
   {
     id: "luchtfoto",
     label: "Luchtfoto",
-    type: "wmts",
-    url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_ortho25/EPSG:28992/{z}/{x}/{y}.jpeg",
-    opties: { minZoom: 0, maxZoom: 13, tileSize: 256, attribution: "© PDOK, Beeldmateriaal NL" },
+    // PDOK luchtfoto via WMS — werkt op alle zoomniveaus in EPSG:28992
+    wms: true,
+    url: "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+    layers: "Actueel_ortho25",
+    opties: { format: "image/jpeg", transparent: false, attribution: "© PDOK, Beeldmateriaal NL", maxZoom: 22 },
   },
 ];
 
@@ -66,10 +75,10 @@ const OVERLAYS = [
     kleur: "#2563eb",
   },
   {
-    id: "openstreetmap",
-    label: "OpenStreetMap (WMS)",
-    url: "https://ows.terrestris.de/osm/service",
-    layers: "OSM-WMS",
+    id: "top10nl",
+    label: "Top10NL (topografie)",
+    url: "https://service.pdok.nl/brt/top10nl/wms/v1_0",
+    layers: "top10nlv2_wegdelen,top10nlv2_waterdeelvlak,top10nlv2_terreinvlak",
     kleur: "#16a34a",
   },
 ];
@@ -361,6 +370,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
         crs: rdCrs,
         zoomControl: true,
         preferCanvas: true,
+        maxZoom: 22,  // Verder inzoomen dan PDOK native (13) via tile-upscaling
       }).setView(startCenter, startZoom);
 
       kaartRef.current = kaart;
@@ -372,7 +382,10 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           basisLaagRef.current = null;
         }
         const config = ACHTERGROND.find(a => a.id === id) ?? ACHTERGROND[0];
-        const laag = L.tileLayer(config.url, config.opties);
+        // Luchtfoto via WMS, rest via WMTS
+        const laag = config.wms
+          ? L.tileLayer.wms(config.url, { layers: config.layers, ...config.opties })
+          : L.tileLayer(config.url, config.opties);
         laag.addTo(kaart);
         basisLaagRef.current = laag;
       }
