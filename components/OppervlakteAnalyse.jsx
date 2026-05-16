@@ -25,36 +25,98 @@ function matchBgt(rawType) {
   return OVERIG;
 }
 
-// ─── BGT WFS query ───────────────────────────────────────────────
+// ─── BGT WFS query — per laagtype aparte classificatie ───────────
+function bgtType(feature) {
+  // Feature-id begint met de laagnaam: "wegdeel.123", "waterdeel.456" etc.
+  const id = (feature.id || "").toLowerCase();
+  if (id.startsWith("waterdeel"))           return "waterdeel";
+  if (id.startsWith("spoor"))               return "spoor";
+  if (id.startsWith("wegdeel"))             return "wegdeel";
+  if (id.startsWith("onbegroeidterreindeel")) return "onbegroeid";
+  if (id.startsWith("begroeidterreindeel")) return "begroeid";
+  return "onbekend";
+}
+
+function classificeerFeature(feat) {
+  const type = bgtType(feat);
+  const p    = feat.properties || {};
+
+  switch (type) {
+    case "waterdeel":
+      // typeWater: "sloot","greppel/droge sloot","waterloop","meer, plas, ven of wetland"
+      return BGT_TYPEN["water"];
+
+    case "spoor":
+      return BGT_TYPEN["spoor"];
+
+    case "wegdeel": {
+      // verhardingstype: "gesloten verharding","open verharding","half verhard","onverhard","b.o."
+      const v = (p.verhardingstype || p.bgt_verhardingstype || "").toLowerCase();
+      if (v.includes("gesloten"))       return BGT_TYPEN["gesloten verharding"];
+      if (v.includes("open"))           return BGT_TYPEN["open verharding"];
+      if (v.includes("half"))           return BGT_TYPEN["half verhard"];
+      if (v.includes("onverhard"))      return BGT_TYPEN["onverhard"];
+      // Functie/type als fallback: berm, voetpad, fietspad, inrit → open/onverhard
+      const fv = (p.fysiekVoorkomen || p.bgt_fysiekVoorkomen || "").toLowerCase();
+      if (fv.includes("berm"))          return BGT_TYPEN["onverhard"];
+      if (fv.includes("voetpad")||fv.includes("fietspad")) return BGT_TYPEN["open verharding"];
+      return BGT_TYPEN["gesloten verharding"]; // default wegdeel = asfalt
+    }
+
+    case "onbegroeid": {
+      // fysiekVoorkomen: "gesloten verharding","open verharding","half verhard","onverhard","erf"
+      const fv = (p.fysiekVoorkomen || p.bgt_fysiekVoorkomen || "").toLowerCase();
+      if (fv.includes("gesloten"))      return BGT_TYPEN["gesloten verharding"];
+      if (fv.includes("open"))          return BGT_TYPEN["open verharding"];
+      if (fv.includes("half"))          return BGT_TYPEN["half verhard"];
+      if (fv.includes("onverhard")||fv.includes("zand")||fv.includes("gravel")) return BGT_TYPEN["onverhard"];
+      if (fv.includes("erf"))           return BGT_TYPEN["open verharding"];
+      return BGT_TYPEN["onverhard"];
+    }
+
+    case "begroeid": {
+      // fysiekVoorkomen: "gras- en kruidachtigen","struiken","bos: gemengd bos","moeras","fruitteelt" etc.
+      // Alles = groenvoorziening
+      return BGT_TYPEN["groenvoorziening"];
+    }
+
+    default: {
+      // Onbekend type — probeer property-matching
+      const raw = p.fysiekVoorkomen || p.typeWater || p.verhardingstype || "";
+      return matchBgt(raw);
+    }
+  }
+}
+
 async function haalOppervlakOp(lat, lng) {
   try {
-    const d=0.0001; // ~10m straal
-    const bbox=`${lng-d},${lat-d},${lng+d},${lat+d}`;
-    // Haal meerdere BGT-lagen op, kies de meest specifieke
-    const lagen="bgt:wegdeel,bgt:onbegroeidterreindeel,bgt:begroeidterreindeel,bgt:waterdeel,bgt:spoor";
-    const url=`https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${lagen}&outputFormat=application/json&bbox=${bbox},EPSG:4326&srsName=EPSG:4326`;
-    const ctrl=new AbortController();
-    const timer=setTimeout(()=>ctrl.abort(),10000);
-    const res=await fetch(url,{signal:ctrl.signal});
+    const d = 0.00015; // ~15m straal — groot genoeg voor smalle wegen/sloten
+    const bbox = `${lng-d},${lat-d},${lng+d},${lat+d}`;
+    const lagen = "bgt:wegdeel,bgt:onbegroeidterreindeel,bgt:begroeidterreindeel,bgt:waterdeel,bgt:spoor";
+    const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${lagen}&outputFormat=application/json&bbox=${bbox},EPSG:4326&srsName=EPSG:4326`;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const res = await fetch(url, { signal: ctrl.signal });
     clearTimeout(timer);
-    if(!res.ok)return OVERIG;
-    const data=await res.json();
-    if(!data.features?.length)return OVERIG;
-    // Prioriteer wegdeel boven andere
-    const volgorde=["bgt:wegdeel","bgt:onbegroeidterreindeel","bgt:waterdeel","bgt:spoor","bgt:begroeidterreindeel"];
-    let beste=null;
-    for(const laag of volgorde){
-      beste=data.features.find(f=>(f.id||"").startsWith(laag.replace("bgt:","")));
-      if(beste)break;
+
+    if (!res.ok) return OVERIG;
+    const data = await res.json();
+    if (!data.features?.length) return OVERIG;
+
+    // Prioriteit voor HDD: water en spoor het meest kritisch
+    const prioriteit = ["waterdeel","spoor","wegdeel","onbegroeid","begroeid"];
+    let beste = null;
+    for (const t of prioriteit) {
+      beste = data.features.find(f => bgtType(f) === t);
+      if (beste) break;
     }
-    const feat=beste||data.features[0];
-    const rawType=feat.properties?.fysiekVoorkomen||feat.properties?.bgt_fysiekvoorkomen||feat.properties?.typeWater||"";
-    // Waterdeel heeft geen fysiekVoorkomen — detect via layer id
-    if((!rawType||(rawType===""))&&(feat.id||"").includes("waterdeel")) return BGT_TYPEN["water"];
-    return matchBgt(rawType);
-  }catch(err){
-    if(err.name==="AbortError")return OVERIG;
-    console.warn("BGT query fout:",err.message);
+    if (!beste) beste = data.features[0];
+
+    return classificeerFeature(beste);
+  } catch (err) {
+    if (err.name === "AbortError") return OVERIG;
+    console.warn("BGT fout:", err.message);
     return OVERIG;
   }
 }
