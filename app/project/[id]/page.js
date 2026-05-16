@@ -6,7 +6,8 @@ import { getProjectMetContext, updateProject, supabase } from "@/lib/supabase-qu
 import Sidebar from "@/components/Sidebar";
 import dynamic from "next/dynamic";
 
-const MapTrace      = dynamic(() => import("@/components/MapTrace"),      { ssr: false });
+const MapTrace            = dynamic(() => import("@/components/MapTrace"),            { ssr: false });
+const OppervlakteAnalyse = dynamic(() => import("@/components/OppervlakteAnalyse"), { ssr: false });
 const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr: false });
 
 const STAP_LABELS = {
@@ -454,40 +455,12 @@ export default function ProjectDetailPagina() {
       // ── Stap 5: Oppervlakteanalyse ─────────────────────────────
       case 5:
         return (
-          <div className="space-y-4">
-            <p className="text-sm text-gray-500 max-w-2xl">
-              Oppervlakteanalyse via BGT: welke verhardingstypen kruist de boorlijn?
-            </p>
-            <div className="bg-white border border-gray-200 rounded-xl max-w-2xl divide-y divide-gray-100">
-              <div className="px-5 py-3 border-b border-gray-100">
-                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">BGT oppervlaktypen</h3>
-              </div>
-              {[
-                { type: "Gesloten verharding",  kleur: "bg-gray-400",   risico: "Hoog",   toelichting: "Asfalt / beton — vergunning gemeente, hogere herstelkosten" },
-                { type: "Open verharding",      kleur: "bg-yellow-400", risico: "Middel", toelichting: "Klinkers / tegels — documenteer exact voor herstel" },
-                { type: "Onverhard",            kleur: "bg-amber-200",  risico: "Middel", toelichting: "Grind / zand — kans op verzakking groter" },
-                { type: "Groenvoorziening",     kleur: "bg-green-400",  risico: "Laag",   toelichting: "Grasland / berm — eenvoudigst te herstellen" },
-                { type: "Water",                kleur: "bg-blue-400",   risico: "Hoog",   toelichting: "Sloot / vijver — waterkering en vergunning vereist" },
-              ].map(({ type, kleur, risico, toelichting }) => (
-                <div key={type} className="flex items-start gap-3 px-5 py-3">
-                  <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 ${kleur}`} />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-800">{type}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        risico === "Hoog" ? "bg-red-100 text-red-600" : risico === "Middel" ? "bg-orange-100 text-orange-600" : "bg-green-100 text-green-600"
-                      }`}>{risico}</span>
-                    </div>
-                    <div className="text-xs text-gray-400 mt-0.5">{toelichting}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4 max-w-4xl">
-              <p className="text-xs text-gray-500 mb-3">BGT-laag activeren via kaart (analysepunten tab):</p>
-              <MapTrace projectId={id} project={project} beginTab="analyse" onTraceOpgeslagen={handleTraceOpgeslagen} />
-            </div>
-          </div>
+          <OppervlakteAnalyse
+            project={project}
+            onAnalyseOpgeslagen={async (resultaten) => {
+              await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
+            }}
+          />
         );
 
       // ── Stap 6: Diepteligging ──────────────────────────────────
