@@ -67,11 +67,33 @@ function afstandM([lat1,lng1],[lat2,lng2]) {
 
 // ─── Achtergrond en overlay configuratie ─────────────────────────
 const ACHTERGRONDEN = [
-  { id:"brt_standaard", label:"BRT Standaard", url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png" },
-  { id:"brt_grijs",     label:"BRT Grijs",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png" },
-  { id:"brt_pastel",    label:"BRT Pastel",    url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:3857/{z}/{x}/{y}.png" },
+  { id:"brt_standaard", label:"BRT Standaard", url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png" },
+  { id:"brt_grijs",     label:"BRT Grijs",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png" },
+  { id:"brt_pastel",    label:"BRT Pastel",    url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png" },
   { id:"luchtfoto",     label:"Luchtfoto",     url:null, wms:true },
 ];
+
+// ─── RD New CRS helpers (zelfde als stap 3) ───────────────────────
+function maakRdCrs(L) {
+  return new L.Proj.CRS("EPSG:28992",
+    "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs",
+    {
+      resolutions:[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125,0.00656,0.00328,0.00164,0.00082],
+      origin:[-285401.920,903401.920],
+      bounds:L.bounds([-285401.920,22598.080],[595401.920,903401.920]),
+    }
+  );
+}
+// RD [x,y] → Leaflet LatLng via proj4 (met fallback)
+function rdNaarLatLng(L, x, y) {
+  if (typeof window !== "undefined" && window.proj4) {
+    try { const w = proj4("EPSG:28992","EPSG:4326",[x,y]); return L.latLng(w[1],w[0]); } catch {}
+  }
+  const dX=(x-155000)/100000,dY=(y-463000)/100000;
+  const sumN=3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY;
+  const sumE=5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX;
+  return L.latLng(52.15517440+sumN/3600, 5.38720621+sumE/3600);
+}
 
 const OVERLAYS = [
   { id:"kadaster",   label:"Kadastrale percelen", kleur:"#f59e0b", url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0", layers:"Perceel" },
@@ -99,6 +121,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const basisLaagRef  = useRef(null);  // achtergrond tile layer
   const overlayRefs   = useRef({});    // id → tile layer
 
+  // s3 VÓÓR useState zodat we direct kunnen initialiseren
+  const s3 = (() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
+
   const [controlePunten, setControlePunten] = useState([]);
   const [tekenModus,     setTekenModus]     = useState(false);
   const [opgeslagen,     setOpgeslagen]     = useState(false);
@@ -106,13 +131,11 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const [verwijdert,     setVerwijdert]     = useState(false);
   const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
-  const [legendaOpen,       setLegendaOpen]       = useState(true);
-  const [klicLagen,         setKlicLagen]         = useState([]);
-  const [actieveAchtergrond,setActieveAchtergrond] = useState(null); // init vanuit s3
-  const [actieveOverlays,   setActieveOverlays]   = useState([]);   // init vanuit s3
-
-  // Lees stap-3 instellingen
-  const s3 = (() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
+  const [legendaOpen,    setLegendaOpen]    = useState(true);
+  const [klicLagen,      setKlicLagen]      = useState([]);
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond ?? "brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays    ?? []);
+  const actieveOverlaysRef = useRef(s3.__overlays ?? []);
 
   // Bestaand tracé uit project
   const bestaandTrace = (() => {
@@ -127,9 +150,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   const actievePunten = controlePunten.length >= 2 ? controlePunten : bestaandTrace;
   const heeftTrace    = actievePunten.length >= 2;
 
-  // Houd puntenRef gesynchroniseerd
-  puntenRef.current = actievePunten;
-  tekenRef.current  = tekenModus;
+  // Houd refs gesynchroniseerd
+  puntenRef.current        = actievePunten;
+  tekenRef.current         = tekenModus;
+  actieveOverlaysRef.current = actieveOverlays;
 
   // ── Kaart initialiseren ─────────────────────────────────────────
   useEffect(() => {
@@ -145,22 +169,26 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     }
 
     // Laad proj4 voor nauwkeurige RD→WGS84
-    const laadProj4 = () => new Promise(ok => {
-      if (window.proj4) return ok();
+    const laadScript = (src) => new Promise((ok,err) => {
+      if (document.querySelector(`script[src="${src}"]`)) return ok();
       const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";
-      s.onload = ok; s.onerror = ok;
+      s.src = src; s.onload = ok; s.onerror = err;
       document.head.appendChild(s);
     });
 
-    const laadLeaflet = () => new Promise((ok, err) => {
-      if (window.L) return ok(window.L);
-      const s = document.createElement("script");
-      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      s.onload = () => ok(window.L);
-      s.onerror = err;
-      document.head.appendChild(s);
-    });
+    const laadLeaflet = async () => {
+      if (!document.querySelector('link[href*="leaflet"]')) {
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(css);
+      }
+      await laadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
+      // proj4 vóór proj4leaflet laden
+      await laadScript("https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js");
+      await laadScript("https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js");
+      return window.L;
+    };
 
     const laadJSZip = () => new Promise((ok, err) => {
       if (window.JSZip) return ok(window.JSZip);
@@ -172,7 +200,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     });
 
     (async () => {
-      const [L] = await Promise.all([laadLeaflet(), laadProj4()]);
+      const L = await laadLeaflet();
       if (!actief || !mapRef.current) return;
 
       // Startpositie vanuit stap 3
@@ -180,15 +208,16 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
       const center = pos ? [pos.lat, pos.lng] : [52.156, 5.387];
       const zoom   = pos?.zoom ?? 13;
 
-      const kaart = L.map(mapRef.current, { center, zoom, maxZoom:22, zoomControl:true });
+      // RD New CRS — exact gelijk aan stap 3 (proj4leaflet vereist)
+      let rdCrs;
+      try { rdCrs = maakRdCrs(L); } catch(e) { console.warn("RD CRS:", e.message); }
+      const kaart = L.map(mapRef.current, { ...(rdCrs ? { crs:rdCrs } : {}), center, zoom, maxZoom:22, zoomControl:true });
       kaartRef.current = kaart;
 
-      // Achtergrond vanuit stap 3 (of standaard)
+      // Achtergrond/overlays vanuit state (al geïnitialiseerd vanuit s3)
+      // Gebruik de state-waarden zodat alles consistent is
       const initAchtergrond = s3.__achtergrond ?? "brt_standaard";
       const initOverlays    = s3.__overlays    ?? [];
-      setActieveAchtergrond(initAchtergrond);
-      setActieveOverlays(initOverlays);
-
       // Helper: zet achtergrond laag
       function zetAchtergrond(id) {
         if (basisLaagRef.current) { kaart.removeLayer(basisLaagRef.current); basisLaagRef.current = null; }
@@ -199,7 +228,7 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
         } else {
           const cfg = ACHTERGRONDEN.find(a => a.id === id) ?? ACHTERGRONDEN[0];
           basisLaagRef.current = L.tileLayer(cfg.url,
-            { maxZoom:22, attribution:"© PDOK BRT", zIndex:1 }
+            { maxZoom:22, maxNativeZoom:13, minZoom:0, tileSize:256, attribution:"© PDOK BRT, © Kadaster", zIndex:1 }
           ).addTo(kaart);
         }
       }
@@ -275,15 +304,19 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
   // ── Achtergrond en overlay wisselen ─────────────────────────────
   function wisselAchtergrond(id) {
     setActieveAchtergrond(id);
+    // Direct Leaflet aanroepen — niet in setState callback
     kaartRef.current?._zetAchtergrond?.(id);
   }
 
   function toggleOverlay(id) {
-    setActieveOverlays(prev => {
-      const aan = !prev.includes(id);
-      kaartRef.current?._zetOverlay?.(id, aan);
-      return aan ? [...prev, id] : prev.filter(o => o !== id);
-    });
+    // Gebruik ref voor huidige staat (voorkomt stale closure in setState)
+    const huidig = actieveOverlaysRef.current;
+    const aan    = !huidig.includes(id);
+    const nieuw  = aan ? [...huidig, id] : huidig.filter(o => o !== id);
+    actieveOverlaysRef.current = nieuw;
+    setActieveOverlays(nieuw);
+    // Leaflet BUITEN setState aanroepen
+    kaartRef.current?._zetOverlay?.(id, aan);
   }
 
   // ── Tekenen: lijn en markers ────────────────────────────────────
@@ -448,8 +481,9 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
               const dash = KLIC_DASH[thema] ?? null;
               lagenInfo.push({ label: thema, kleur, aan: true });
               for (const feat of (geoJson?.features ?? [])) {
-                const coords = (feat.geometry?.coordinates ?? []).map(([x,y]) => { const[lng,lat]=rdNaarWgs84(x,y); return[lat,lng]; });
-                if (coords.length < 2) continue;
+                const latlngs = (feat.geometry?.coordinates ?? []).map(([x,y]) => rdNaarLatLng(L,x,y));
+                if (latlngs.length < 2) continue;
+                const coords = latlngs.map(ll => [ll.lat, ll.lng]);
                 const segs = box ? clipLijnen(coords, box) : [coords];
                 segs.forEach(seg => {
                   if (seg.length < 2) return;
@@ -495,7 +529,10 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             const posEl = link.querySelector("posList"); if (!posEl) return;
             const nums = posEl.textContent.trim().split(/\s+/).map(Number);
             const coords = [];
-            for (let i = 0; i+1 < nums.length; i+=2) { const[lng,lat]=rdNaarWgs84(nums[i],nums[i+1]); coords.push([lat,lng]); }
+            for (let i = 0; i+1 < nums.length; i+=2) {
+              const ll = rdNaarLatLng(L, nums[i], nums[i+1]);
+              coords.push([ll.lat, ll.lng]);
+            }
             if (coords.length < 2) return;
             const segs = box ? clipLijnen(coords, box) : [coords];
             segs.forEach(seg => {
@@ -521,7 +558,11 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
             if (type==="LINE"||type==="LWPOLYLINE") {
               const pts = type==="LINE"?[[gW(10),gW(20)],[gW(11),gW(21)]]:[];
               if(type==="LWPOLYLINE") for(let k=0;k<blok.length-3;k++) if(blok[k].trim()==="10"&&blok[k+2]?.trim()==="20") pts.push([parseFloat(blok[k+1].trim()),parseFloat(blok[k+3].trim())]);
-              if(pts.length>=2){const coords=pts.map(([x,y])=>{const[lng,lat]=rdNaarWgs84(x,y);return[lat,lng];});const segs=box?clipLijnen(coords,box):[coords];segs.forEach(seg=>{if(seg.length<2)return;const laag=L.polyline(seg,{color:kleur,weight:dikte,opacity:h*0.85,interactive:false,zIndexOffset:-500});laag.addTo(kaart);lagenRef.current.push(laag);});}
+              if(pts.length>=2){
+                const coords=pts.map(([x,y])=>{const ll=rdNaarLatLng(L,x,y);return[ll.lat,ll.lng];});
+                const segs=box?clipLijnen(coords,box):[coords];
+                segs.forEach(seg=>{if(seg.length<2)return;const laag=L.polyline(seg,{color:kleur,weight:dikte,opacity:h*0.85,interactive:false,zIndexOffset:-500});laag.addTo(kaart);lagenRef.current.push(laag);});
+              }
             }
             i = einde;
           }
