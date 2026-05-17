@@ -260,7 +260,15 @@ const ONDERGROND_LAGEN = [
   },
 ];
 
-// ════════════════════════════════════════════════════════════════
+// ─── Sub-stappen definitie ─────────────────────────────────────────────────
+const SUB_STAPPEN = [
+  { id:"5.1", label:"Oppervlakte",  emoji:"🛣️",  subtitel:"BGT verharding",    ondergrondId:null,       kleur:"#f97316" },
+  { id:"5.2", label:"GeoTOP",       emoji:"🧭",  subtitel:"3D Bodemopbouw",    ondergrondId:"geotop",   kleur:"#a855f7" },
+  { id:"5.3", label:"REGIS II",     emoji:"🧱",  subtitel:"Hydrogeologie",     ondergrondId:"regis",    kleur:"#06b6d4" },
+  { id:"5.4", label:"Bodemkaart",   emoji:"🌍",  subtitel:"1:50.000",          ondergrondId:"bodemkaart",kleur:"#84cc16" },
+  { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",kleur:"#3b82f6" },
+  { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",      kleur:"#f97316" },
+];
 export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
@@ -280,6 +288,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const actOndergrondRef = useRef([]);
   actOndergrondRef.current = actieveOndergrondLagen;
   const [ondergrondSectieOpen, setOndergrondSectieOpen] = useState(true);
+  const [actieveSubStap, setActieveSubStap] = useState("5.1");
 
   const [analysePunten, setAnalysePunten] = useState(() => {
     try { const s=project?.analyse_punten; if(s)return typeof s==="string"?JSON.parse(s):s; } catch {}
@@ -421,6 +430,27 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     const nieuw=aan?[...actOndergrondRef.current,id]:actOndergrondRef.current.filter(o=>o!==id);
     setActieveOndergrondLagen(nieuw);
     kaartRef.current?._zetOndergrondOverlay?.(id,aan);
+  }
+  function wisselSubStap(nieuweStap){
+    // Deactiveer vorige ondergrond-overlay
+    const vorigeStap=SUB_STAPPEN.find(s=>s.id===actieveSubStap);
+    if(vorigeStap?.ondergrondId){
+      const laag=ONDERGROND_LAGEN.find(l=>l.id===vorigeStap.ondergrondId);
+      if(laag?.wmsAvailable){
+        kaartRef.current?._zetOndergrondOverlay?.(vorigeStap.ondergrondId,false);
+        setActieveOndergrondLagen(prev=>prev.filter(id=>id!==vorigeStap.ondergrondId));
+      }
+    }
+    // Activeer nieuwe ondergrond-overlay indien beschikbaar
+    const nieuweStapDef=SUB_STAPPEN.find(s=>s.id===nieuweStap);
+    if(nieuweStapDef?.ondergrondId){
+      const laag=ONDERGROND_LAGEN.find(l=>l.id===nieuweStapDef.ondergrondId);
+      if(laag?.wmsAvailable){
+        kaartRef.current?._zetOndergrondOverlay?.(nieuweStapDef.ondergrondId,true);
+        setActieveOndergrondLagen(prev=>prev.includes(nieuweStapDef.ondergrondId)?prev:[...prev,nieuweStapDef.ondergrondId]);
+      }
+    }
+    setActieveSubStap(nieuweStap);
   }
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
@@ -625,18 +655,58 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   }
 
   // ── Render ───────────────────────────────────────────────────────
+  const actSubStapDef = SUB_STAPPEN.find(s=>s.id===actieveSubStap);
+  const actOndergrondLaag = actSubStapDef?.ondergrondId
+    ? ONDERGROND_LAGEN.find(l=>l.id===actSubStapDef.ondergrondId)
+    : null;
+
   return(
     <div className="space-y-3">
-      <div className="flex gap-4" style={{height:"calc(100vh - 240px)",minHeight:420}}>
+
+      {/* ── Sub-navigatie 5.1 – 5.6 ────────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 flex items-center gap-1 flex-wrap">
+        <span className="text-xs font-semibold text-gray-400 mr-2 flex-shrink-0">Stap 5 — Analyse:</span>
+        {SUB_STAPPEN.map(s=>{
+          const actief=actieveSubStap===s.id;
+          const laag=s.ondergrondId?ONDERGROND_LAGEN.find(l=>l.id===s.ondergrondId):null;
+          const heeftWms=!laag||laag.wmsAvailable;
+          return(
+            <button key={s.id} onClick={()=>wisselSubStap(s.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex-shrink-0 ${
+                actief
+                  ?"text-white shadow-sm"
+                  :"bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              }`}
+              style={actief?{background:s.kleur}:{}}>
+              <span>{s.emoji}</span>
+              <span className="font-bold">{s.id}</span>
+              <span>{s.label}</span>
+              {!heeftWms&&<span className="ml-0.5 opacity-70 text-xs">↗</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-4" style={{height:"calc(100vh - 280px)",minHeight:400}}>
 
         {/* ── Linkerpaneel ───────────────────────────────────── */}
         <div className="w-72 flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-            <span className="text-sm font-semibold text-gray-800">Oppervlakteanalyse</span>
+            <div className="flex items-center gap-2">
+              <span className="text-base leading-none">{actSubStapDef?.emoji}</span>
+              <div>
+                <span className="text-xs font-bold text-gray-400">{actieveSubStap} </span>
+                <span className="text-sm font-semibold text-gray-800">{actSubStapDef?.label}</span>
+                <div className="text-xs text-gray-400">{actSubStapDef?.subtitel}</div>
+              </div>
+            </div>
             <button onClick={()=>setLegendaOpen(o=>!o)} className="text-xs text-gray-400 hover:text-gray-600">{legendaOpen?"▲":"▼"}</button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
+
+            {/* ── 5.1 Oppervlakteanalyse (BGT) ─────────────────── */}
+            {actieveSubStap==="5.1"&&(<>
             {/* Boorlijn status */}
             {boorCoords.length>=2?(
               <div className="px-4 py-3 border-b border-gray-100">
@@ -648,7 +718,6 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
             ):(
               <div className="px-4 py-4 text-center text-sm text-gray-400">Geen boorlijn — teken in stap 4.</div>
             )}
-
             {/* Interval instelling */}
             <div className="px-4 py-3 border-b border-gray-100">
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Steekproef interval</div>
@@ -658,7 +727,6 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
               </div>
               <p className="text-xs text-gray-400 mt-1">~{boorCoords.length>=2?Math.round(totaalM/stapGrootte)+2:"-"} BGT-queries</p>
             </div>
-
             {/* Analyse knop */}
             <div className="px-4 py-3 border-b border-gray-100 space-y-2">
               <button onClick={voerAnalyseUit} disabled={bezig||boorCoords.length<2}
@@ -673,9 +741,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
               </button>
               {bgtDebug&&(
                 <div className="text-xs bg-gray-50 rounded-lg p-2 space-y-1 border border-gray-200 max-h-48 overflow-y-auto">
-                  <div className={`font-semibold ${bgtDebug.features?.length?'text-green-700':'text-red-600'}`}>
-                    {bgtDebug.status}
-                  </div>
+                  <div className={`font-semibold ${bgtDebug.features?.length?'text-green-700':'text-red-600'}`}>{bgtDebug.status}</div>
                   <div className="text-gray-400">lat={bgtDebug.lat} lng={bgtDebug.lng}</div>
                   {bgtDebug.rdX&&<div className="text-gray-400 font-mono">RD X={bgtDebug.rdX} Y={bgtDebug.rdY}</div>}
                   {bgtDebug.error&&<div className="text-red-600 font-medium">Fout: {bgtDebug.error}</div>}
@@ -703,7 +769,6 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 </div>
               )}
             </div>
-
             {/* Geselecteerd punt detail */}
             {geselecteerdPunt!==null&&analysePunten[geselecteerdPunt]&&(()=>{
               const p=analysePunten[geselecteerdPunt];
@@ -721,8 +786,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 </div>
               );
             })()}
-
-            {/* Samenvatting */}
+            {/* Samenvatting BGT */}
             {stats.length>0&&(
               <div className="px-4 py-3 border-b border-gray-100">
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Samenvatting</div>
@@ -741,10 +805,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 </div>
               </div>
             )}
-
             {legendaOpen&&(
               <>
-                {/* Achtergrond */}
                 <div className="px-4 py-3 border-b border-gray-100">
                   <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Achtergrond</div>
                   <div className="space-y-1">
@@ -757,8 +819,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     ))}
                   </div>
                 </div>
-                {/* Overlays */}
-                <div className="px-4 py-3">
+                <div className="px-4 py-3 border-b border-gray-100">
                   <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Overlays</div>
                   <div className="space-y-1">
                     {OVERLAYS.map(o=>{const aan=actieveOverlays.includes(o.id);return(
@@ -770,72 +831,99 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     );})}
                   </div>
                 </div>
-
-                {/* ── Ondergrond lagen ── */}
-                <div className="px-4 py-3 border-t border-gray-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ondergrond</div>
-                    <button onClick={()=>setOndergrondSectieOpen(o=>!o)} className="text-xs text-gray-400 hover:text-gray-600">{ondergrondSectieOpen?"▲":"▼"}</button>
-                  </div>
-                  {ondergrondSectieOpen&&(
-                    <div className="space-y-1">
-                      {ONDERGROND_LAGEN.map(laag=>{
-                        const aan=actieveOndergrondLagen.includes(laag.id);
-                        if(!laag.wmsAvailable){
-                          // Geen WMS op PDOK — toon BROloket-link in plaats van toggle
-                          return(
-                            <div key={laag.id} className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg bg-gray-50 border border-dashed border-gray-200">
-                              <div className="w-2.5 h-2.5 rounded border border-gray-300 flex-shrink-0 bg-gray-200"/>
-                              <span className="text-sm leading-none">{laag.emoji}</span>
-                              <div className="flex-1 min-w-0">
-                                <span className="text-xs font-medium text-gray-400">{laag.label}</span>
-                                <span className="text-xs text-gray-300 ml-1">{laag.subtitel}</span>
-                              </div>
-                              <a href={laag.broUrl} target="_blank" rel="noopener noreferrer"
-                                className="text-xs px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 hover:bg-orange-100 flex-shrink-0 font-medium">BROloket</a>
-                            </div>
-                          );
-                        }
-                        return(
-                          <button key={laag.id} onClick={()=>toggleOndergrondLaag(laag.id)}
-                            className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-purple-50":"hover:bg-gray-50"}`}>
-                            <div className="w-2.5 h-2.5 rounded border border-gray-200 flex-shrink-0" style={{background:aan?laag.kleur:"transparent"}}/>
-                            <span className="text-sm leading-none">{laag.emoji}</span>
-                            <div className="flex-1 min-w-0">
-                              <span className={`text-xs font-medium ${aan?"text-purple-700":"text-gray-600"}`}>{laag.label}</span>
-                              <span className="text-xs text-gray-400 ml-1">{laag.subtitel}</span>
-                            </div>
-                            <span className="text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-                              style={{background:laag.risicoKleur+"22",color:laag.risicoKleur}}>
-                              {laag.risicoLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Actieve lagen — risico context compact */}
-                  {actieveOndergrondLagen.length>0&&(
-                    <div className="mt-2 space-y-1.5">
-                      {actieveOndergrondLagen.map(id=>{
-                        const laag=ONDERGROND_LAGEN.find(l=>l.id===id);
-                        if(!laag)return null;
-                        return(
-                          <div key={id} className="rounded-lg px-2.5 py-2 border border-gray-100 bg-gray-50">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-sm leading-none">{laag.emoji}</span>
-                              <span className="text-xs font-semibold text-gray-700 flex-1">{laag.label}</span>
-                              <span className="text-xs font-medium" style={{color:laag.risicoKleur}}>{laag.risicoLabel}</span>
-                            </div>
-                            <p className="text-xs text-gray-500 leading-snug">{laag.risicoTekst}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
               </>
             )}
+            </>)}
+
+            {/* ── 5.2 GeoTOP / 5.3 REGIS II (geen WMS) ─────────── */}
+            {(actieveSubStap==="5.2"||actieveSubStap==="5.3")&&actOndergrondLaag&&(
+              <div className="p-4 space-y-3">
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+                  <div className="text-2xl mb-1">{actSubStapDef?.emoji}</div>
+                  <div className="text-sm font-bold text-orange-800">{actOndergrondLaag.label}</div>
+                  <div className="text-xs text-orange-600 mt-0.5">{actOndergrondLaag.beschrijving}</div>
+                  <div className="mt-2 text-xs text-orange-700 bg-orange-100 rounded-lg px-2 py-1">
+                    Niet beschikbaar als WMS — enkel download
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">HDD Relevantie</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:actOndergrondLaag.risicoKleur}}/>
+                    <span className="text-xs font-semibold" style={{color:actOndergrondLaag.risicoKleur}}>{actOndergrondLaag.risicoLabel}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-snug">{actOndergrondLaag.risicoTekst}</p>
+                </div>
+                <a href={actOndergrondLaag.broUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors">
+                  📋 Open in BROloket
+                </a>
+                <a href={actOndergrondLaag.pdokUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2 rounded-xl border border-gray-200 text-gray-600 text-xs hover:bg-gray-50 transition-colors">
+                  🗺️ PDOK Viewer
+                </a>
+                <p className="text-xs text-gray-400 text-center leading-snug">
+                  Bekijk het model op BROloket voor de locatie van deze boring.
+                </p>
+              </div>
+            )}
+
+            {/* ── 5.4 / 5.5 / 5.6 (WMS beschikbaar) ────────────── */}
+            {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
+              <div className="p-4 space-y-3">
+                {/* Status kaart */}
+                <div className="rounded-xl border p-3 space-y-1.5" style={{borderColor:actOndergrondLaag.kleur+"44",background:actOndergrondLaag.kleur+"08"}}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg leading-none">{actSubStapDef?.emoji}</span>
+                    <div>
+                      <div className="text-sm font-bold text-gray-800">{actOndergrondLaag.label}</div>
+                      <div className="text-xs text-gray-500">{actOndergrondLaag.beschrijving}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div className="w-2 h-2 rounded-full" style={{background:actOndergrondLaag.risicoKleur}}/>
+                    <span className="text-xs font-semibold" style={{color:actOndergrondLaag.risicoKleur}}>{actOndergrondLaag.risicoLabel}</span>
+                    <span className="text-xs text-gray-500">— {actOndergrondLaag.risicoTekst}</span>
+                  </div>
+                </div>
+                {/* Toggle */}
+                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-3 py-2.5">
+                  <span className="text-xs font-medium text-gray-700">Laag op kaart</span>
+                  <button onClick={()=>toggleOndergrondLaag(actOndergrondLaag.id)}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${actieveOndergrondLagen.includes(actOndergrondLaag.id)?"bg-green-500":"bg-gray-300"}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${actieveOndergrondLagen.includes(actOndergrondLaag.id)?"translate-x-5":"translate-x-0.5"}`}/>
+                  </button>
+                </div>
+                {/* Opacity slider */}
+                <div className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 space-y-1.5">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Doorzichtigheid</span>
+                    <span className="font-mono">{Math.round((actOndergrondLaag.opacity??0.6)*100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded h-1">
+                    <div className="h-1 rounded" style={{width:`${(actOndergrondLaag.opacity??0.6)*100}%`,background:actOndergrondLaag.kleur}}/>
+                  </div>
+                </div>
+                {/* Bron info */}
+                <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 space-y-1">
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bron</div>
+                  <div className="text-xs text-gray-600 font-mono break-all leading-snug">{actOndergrondLaag.url}</div>
+                  <div className="text-xs text-gray-400">Layer: <span className="font-mono text-gray-600">{actOndergrondLaag.layers}</span></div>
+                  <div className="text-xs text-gray-400">Licentie: CC0 · PDOK / BRO</div>
+                </div>
+                {actieveSubStap==="5.5"&&(
+                  <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-2 py-1.5 leading-snug">
+                    💡 Zoom in om peilbuizen te zien. Klik op een punt voor grondwaterstand.
+                  </p>
+                )}
+                {actieveSubStap==="5.6"&&(
+                  <p className="text-xs text-orange-600 bg-orange-50 rounded-lg px-2 py-1.5 leading-snug">
+                    💡 AHN toont maaiveld. Waterdiepte is hierin niet opgenomen.
+                  </p>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
 
@@ -845,11 +933,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         </div>
       </div>
 
-      {/* ── Profiel ─────────────────────────────────────────── */}
-      {analysePunten.length>=2&&(
+      {/* ── Bodempanelen per sub-stap ────────────────────────── */}
+
+      {/* 5.1 BGT Verhardingsprofiel */}
+      {actieveSubStap==="5.1"&&analysePunten.length>=2&&(
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-gray-900">BGT Verhardingsprofiel langs boorlijn</h3>
+            <h3 className="text-sm font-semibold text-gray-900">🛣️ 5.1 BGT Verhardingsprofiel langs boorlijn</h3>
             <div className="flex items-center gap-3 flex-wrap">
               {stats.map(({label,kleur})=>(
                 <div key={label} className="flex items-center gap-1 text-xs text-gray-600">
@@ -865,58 +955,62 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         </div>
       )}
 
-      {/* ── Ondergrond overzichtspaneel ──────────────────────────── */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-900">🔍 Ondergrondanalyse langs boorlijn</h3>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-            {actieveOndergrondLagen.length}/{ONDERGROND_LAGEN.length} lagen actief
-          </span>
+      {/* 5.2 / 5.3 GeoTOP & REGIS info-kaart */}
+      {(actieveSubStap==="5.2"||actieveSubStap==="5.3")&&actOndergrondLaag&&(
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">{actSubStapDef?.emoji}</span>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">{actieveSubStap} {actOndergrondLaag.label} — {actOndergrondLaag.beschrijving}</h3>
+              <p className="text-xs text-gray-500">{actOndergrondLaag.risicoTekst}</p>
+            </div>
+            <span className="ml-auto text-xs px-3 py-1 rounded-full font-semibold" style={{background:actOndergrondLaag.risicoKleur+"18",color:actOndergrondLaag.risicoKleur}}>
+              {actOndergrondLaag.risicoLabel} HDD-risico
+            </span>
+          </div>
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+            <p className="text-sm text-orange-700 font-medium mb-2">
+              {actOndergrondLaag.label} is niet als WMS beschikbaar via PDOK.
+            </p>
+            <p className="text-xs text-orange-600 mb-3">
+              Bekijk het model op BROloket voor een dwarsdoorsnede ter plaatse van dit tracé.
+            </p>
+            <a href={actOndergrondLaag.broUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors">
+              📋 Open BROloket
+            </a>
+          </div>
         </div>
-        <div className="grid grid-cols-5 gap-2">
-          {ONDERGROND_LAGEN.map(laag=>{
-            const aan=actieveOndergrondLagen.includes(laag.id);
-            return(
-              <div key={laag.id}
-                className={`rounded-xl border p-3 flex flex-col gap-1.5 transition-all ${aan?"border-gray-200 shadow-sm bg-white":"border-gray-100 bg-gray-50 opacity-50"}`}>
-                <div className="flex items-start justify-between gap-1">
-                  <div>
-                    <span className="text-base leading-none">{laag.emoji}</span>
-                    <div className="text-xs font-bold text-gray-800 mt-1">{laag.label}</div>
-                    <div className="text-xs text-gray-400">{laag.subtitel}</div>
-                  </div>
-                  <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5"
-                    style={{background:laag.risicoKleur+"18",color:laag.risicoKleur}}>
-                    {laag.risicoLabel}
-                  </span>
-                </div>
-                <div className="w-full h-px" style={{background:laag.kleur+"44"}}/>
-                <p className="text-xs text-gray-500 leading-snug flex-1">{laag.beschrijving}</p>
-                <p className="text-xs leading-snug font-medium" style={{color:laag.risicoKleur+"cc"}}>{laag.risicoTekst}</p>
-                {laag.wmsAvailable?(
-                  <button onClick={()=>toggleOndergrondLaag(laag.id)}
-                    className={`mt-1 w-full text-xs rounded-lg py-1 font-medium transition-colors ${aan
-                      ?"bg-purple-100 text-purple-700 hover:bg-purple-200"
-                      :"border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
-                    {aan?"✓ Actief op kaart":"Activeer laag"}
-                  </button>
-                ):(
-                  <div className="mt-1 space-y-1">
-                    <div className="text-xs text-orange-600 bg-orange-50 rounded px-2 py-1 text-center leading-snug">Geen WMS op PDOK — enkel download</div>
-                    <a href={laag.broUrl} target="_blank" rel="noopener noreferrer"
-                      className="block w-full text-xs rounded-lg py-1 font-medium text-center bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors border border-orange-200">
-                      📋 Open BROloket
-                    </a>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      )}
+
+      {/* 5.4 / 5.5 / 5.6 WMS lagen info */}
+      {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-2xl">{actSubStapDef?.emoji}</span>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">{actieveSubStap} {actOndergrondLaag.label} — WMS overlay op kaart</h3>
+              <p className="text-xs text-gray-500">{actOndergrondLaag.beschrijving} · {actOndergrondLaag.risicoTekst}</p>
+            </div>
+            <span className="ml-auto text-xs px-3 py-1 rounded-full font-semibold flex-shrink-0" style={{background:actOndergrondLaag.risicoKleur+"18",color:actOndergrondLaag.risicoKleur}}>
+              {actOndergrondLaag.risicoLabel}
+            </span>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xl" style={{background:actOndergrondLaag.kleur+"22"}}>
+              {actSubStapDef?.emoji}
+            </div>
+            <div>
+              <span className="font-semibold text-gray-700">WMS actief op kaart</span>
+              <span className="ml-2 font-mono">{actOndergrondLaag.url.replace("https://","")}</span>
+              <br/>Layer: <span className="font-mono text-gray-700">{actOndergrondLaag.layers}</span>
+              {actieveSubStap==="5.6"&&<span className="ml-3 text-orange-600">AHN toont maaiveld — geen waterdiepte</span>}
+              {actieveSubStap==="5.5"&&<span className="ml-3 text-blue-600">Zoom in om peilbuispunten te zien</span>}
+            </div>
+          </div>
         </div>
-        <p className="text-xs text-gray-400 mt-3 text-center">
-          Bodemkaart · GMW · AHN zichtbaar als WMS-overlay · GeoTOP & REGIS II: bekijk via BROloket · brondata: PDOK / BRO
-        </p>
-      </div>
+      )}
+
     </div>
   );
 }
