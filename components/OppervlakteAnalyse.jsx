@@ -200,14 +200,15 @@ const ACHTERGRONDEN=[
   {id:"luchtfoto_hr", label:"Satelliet HR (8cm)",wms:true,
    wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
    wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal HR"},
-  // Esri kaarten via /api/esri-tile proxy:
-  // Converteert PDOK EPSG:28992 tile-coördinaten → WGS84 → WebMercator Esri tile
-  {id:"hybride", label:"Satelliet hybride (Esri)", compound:[
-    {url:"/api/esri-tile?type=hybrid&z={z}&x={x}&y={y}",maxNativeZoom:18,zIndex:1,attribution:"© Esri, Airbus DS, USGS"},
-    {url:"/api/esri-tile?type=labels&z={z}&x={x}&y={y}",maxNativeZoom:18,zIndex:2,attribution:"© Esri"},
+  // Esri kaarten: custom TileLayer converteert EPSG:28992 → WebMercator in de browser
+  // Img-tags hebben geen CORS — Esri public tiles laden direct zonder proxy/auth
+  {id:"hybride",label:"Satelliet hybride (Esri)",compound:[
+    {esri:true,esriUrl:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",zIndex:1,attribution:"© Esri, Airbus DS, USGS"},
+    {esri:true,esriUrl:"https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",zIndex:2,attribution:"© Esri"},
   ]},
-  {id:"topografisch",label:"Topografisch (Esri)",
-   url:"/api/esri-tile?type=topo&z={z}&x={x}&y={y}",maxNativeZoom:18,attribution:"© Esri, HERE, Garmin, © OpenStreetMap contributors"},
+  {id:"topografisch",label:"Topografisch (Esri)",esri:true,
+   esriUrl:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+   attribution:"© Esri, HERE, Garmin, © OpenStreetMap contributors"},
 ];
 const OVERLAYS=[
   {id:"kadaster",label:"Kadastrale percelen",kleur:"#f59e0b",url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",layers:"Perceel"},
@@ -358,6 +359,32 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       const kaart=L.map(mapRef.current,{...(rdCrs?{crs:rdCrs}:{}),center,zoom:pos?.zoom??14,maxZoom:22,zoomControl:true});
       kaartRef.current=kaart;
 
+      // ── Esri tiles: custom TileLayer die EPSG:28992 → WebMercator converteert ──
+      // Esri tiles zijn WebMercator (EPSG:3857). De kaart is EPSG:28992.
+      // Oplossing: voor elke tile berekenen we het WGS84-middelpunt → bijpassende Esri tile.
+      // Img-tags (Leaflet tiles) hoeven geen CORS → Esri public tiles laden direct.
+      const ESRI_RES=[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125];
+      const ESRI_OX=-285401.920, ESRI_OY=903401.920;
+      function maakEsriLaag(esriUrl, opts={}){
+        const EsriLaag=L.TileLayer.extend({
+          getTileUrl(coords){
+            const res=ESRI_RES[coords.z]??ESRI_RES[ESRI_RES.length-1];
+            const rdX=ESRI_OX+(coords.x+0.5)*256*res;
+            const rdY=ESRI_OY-(coords.y+0.5)*256*res;
+            const dX=(rdX-155000)/100000,dY=(rdY-463000)/100000;
+            const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
+            const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
+            const n=Math.pow(2,coords.z);
+            const tx=Math.floor((lng+180)/360*n);
+            const lr=lat*Math.PI/180;
+            const ty=Math.floor((1-Math.log(Math.tan(lr)+1/Math.cos(lr))/Math.PI)/2*n);
+            return esriUrl.replace("{z}",coords.z).replace("{y}",ty).replace("{x}",tx);
+          }
+        });
+        return new EsriLaag("",{maxZoom:22,maxNativeZoom:18,tileSize:256,...opts});
+      }
+      kaart._maakEsriLaag=maakEsriLaag;
+
       // Helpers voor achtergrond/overlays
       function zetAchtergrond(id){
         if(basisLaagRef.current){
@@ -366,14 +393,15 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           basisLaagRef.current=null;
         }
         const c=ACHTERGRONDEN.find(a=>a.id===id)??ACHTERGRONDEN[0];
+        function maakLaag(def,fallbackZ=1){
+          if(def.esri)  return maakEsriLaag(def.esriUrl,{zIndex:def.zIndex??fallbackZ,opacity:def.opacity??1,attribution:def.attribution??""});
+          if(def.wms)   return L.tileLayer.wms(def.wmsUrl,{layers:def.wmsLayers??"0",format:def.wmsFormat??"image/jpeg",transparent:def.transparent??false,opacity:def.opacity??1,maxZoom:22,zIndex:def.zIndex??fallbackZ,attribution:def.attribution??""});
+          return L.tileLayer(def.url,{maxZoom:22,maxNativeZoom:def.maxNativeZoom??13,tileSize:256,opacity:def.opacity??1,zIndex:def.zIndex??fallbackZ,attribution:def.attribution??""});
+        }
         if(c.compound){
-          basisLaagRef.current=c.compound.map(def=>{
-            if(def.wms){
-              return L.tileLayer.wms(def.wmsUrl,{layers:def.wmsLayers??"0",format:def.wmsFormat??"image/jpeg",transparent:def.transparent??false,opacity:def.opacity??1,maxZoom:22,zIndex:def.zIndex??1,attribution:def.attribution??""}).addTo(kaart);
-            } else {
-              return L.tileLayer(def.url,{maxZoom:22,maxNativeZoom:def.maxNativeZoom??13,tileSize:256,opacity:def.opacity??1,zIndex:def.zIndex??1,attribution:def.attribution??""}).addTo(kaart);
-            }
-          });
+          basisLaagRef.current=c.compound.map((def,i)=>maakLaag(def,i+1).addTo(kaart));
+        } else if(c.esri){
+          basisLaagRef.current=maakEsriLaag(c.esriUrl,{zIndex:1,attribution:c.attribution??""}).addTo(kaart);
         } else if(c.wms){
           basisLaagRef.current=L.tileLayer.wms(c.wmsUrl,{layers:c.wmsLayers??"0",format:c.wmsFormat??"image/jpeg",transparent:false,maxZoom:22,attribution:c.attribution??"",zIndex:1}).addTo(kaart);
         } else {
