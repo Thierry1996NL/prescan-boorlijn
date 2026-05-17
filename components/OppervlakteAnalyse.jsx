@@ -296,6 +296,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const [bgtKlikInfo,  setBgtKlikInfo]  = useState(null);
   const [bgtKlikPos,   setBgtKlikPos]   = useState({x:0,y:0});
   const [bgtKlikBezig, setBgtKlikBezig] = useState(false);
+  const [actieveKlikIdx, setActieveKlikIdx] = useState(0);
 
   const [analysePunten, setAnalysePunten] = useState(() => {
     try { const s=project?.analyse_punten; if(s)return typeof s==="string"?JSON.parse(s):s; } catch {}
@@ -369,6 +370,21 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       }
       kaart._zetOndergrondOverlay=zetOndergrondOverlay;
 
+      // ── BGT klik-highlight (GeoJSON polygon op kaart) ────────────
+      let klikHighlightLaag = null;
+      function zetKlikHighlight(feature) {
+        if(klikHighlightLaag){ kaart.removeLayer(klikHighlightLaag); klikHighlightLaag=null; }
+        if(!feature?.geometry) return;
+        klikHighlightLaag = L.geoJSON(feature, {
+          style: {
+            fillColor:"#1a6b8a", fillOpacity:0.35,
+            color:"#0e4d6b", weight:2.5, opacity:1,
+          },
+          pointToLayer:(_f,latlng) => L.circleMarker(latlng,{radius:8,fillColor:"#1a6b8a",fillOpacity:0.7,color:"#0e4d6b",weight:2}),
+        }).addTo(kaart);
+      }
+      kaart._zetKlikHighlight = zetKlikHighlight;
+
       // ── BGT GetFeatureInfo op klik (tab 5.1) ─────────────────────
       kaart.on("click", async (e) => {
         if(actieveSubStapRef.current !== "5.1") return;
@@ -378,14 +394,22 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         setBgtKlikPos({x:cp.x, y:cp.y});
         setBgtKlikInfo(null);
         setBgtKlikBezig(true);
+        setActieveKlikIdx(0);
         try {
           // BGT WFS OGC punt-query via /api/bgt-klik (zelfde endpoint als analyse — geen WMS CORS issues)
           const res = await fetch(`/api/bgt-klik?lat=${lat}&lng=${lng}`);
           if(!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
-          setBgtKlikInfo(data?.features?.length > 0 ? data : {leeg:true, lat, lng});
+          if(data?.features?.length > 0){
+            setBgtKlikInfo(data);
+            kaartRef.current?._zetKlikHighlight?.(data.features[0]);
+          } else {
+            setBgtKlikInfo({leeg:true, lat, lng});
+            kaartRef.current?._zetKlikHighlight?.(null);
+          }
         } catch(err) {
           setBgtKlikInfo({fout: err.message});
+          kaartRef.current?._zetKlikHighlight?.(null);
         }
         setBgtKlikBezig(false);
       });
@@ -972,73 +996,80 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           {bgtKlikBezig&&(
             <div className="absolute z-[500] bg-white rounded-xl shadow-xl border border-gray-200 px-4 py-3 flex items-center gap-2 text-sm text-gray-600"
               style={{left:Math.min(bgtKlikPos.x+12,500), top:Math.max(bgtKlikPos.y-20,10)}}>
-              <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin flex-shrink-0"/>
-              BGT-objectinfo ophalen…
+              <div className="w-4 h-4 border-2 border-gray-200 border-t-[#1a6b8a] rounded-full animate-spin flex-shrink-0"/>
+              BGT ophalen…
             </div>
           )}
-
-          {/* BGT klik-popup */}
-          {bgtKlikInfo&&!bgtKlikBezig&&(()=>{
-            const mapW = mapRef.current?.clientWidth??800;
-            const mapH = mapRef.current?.clientHeight??500;
-            const popW = 300;
-            const left = Math.min(bgtKlikPos.x+14, mapW-popW-8);
-            const top  = Math.max(Math.min(bgtKlikPos.y-16, mapH-280), 8);
-            const feat = bgtKlikInfo.features?.[0];
-            const props = feat?.properties ?? {};
-            const laag  = feat?._bgtLaag ?? feat?.id?.split(".")?.[0] ?? "BGT";
-            const rijen = Object.entries(props)
-              .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie"&&k!=="_bgtLaag")
-              .map(([k,v])=>[k, String(v).length>80?String(v).slice(0,80)+"…":String(v)]);
-            return(
-              <div className="absolute z-[500] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden"
-                style={{left, top, width:popW}}>
-                {/* Header */}
-                <div className="flex items-center justify-between px-3 py-2 bg-gray-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white uppercase tracking-wide">{laag}</span>
-                    {bgtKlikInfo.features?.length>1&&(
-                      <span className="text-xs text-gray-400">+{bgtKlikInfo.features.length-1} meer</span>
-                    )}
-                  </div>
-                  <button onClick={()=>setBgtKlikInfo(null)} className="text-gray-300 hover:text-white text-sm leading-none">✕</button>
-                </div>
-                {/* Fout */}
-                {bgtKlikInfo.fout&&(
-                  <div className="px-3 py-2 text-xs text-red-600 bg-red-50">{bgtKlikInfo.fout}</div>
-                )}
-                {/* Leeg */}
-                {bgtKlikInfo.leeg&&(
-                  <div className="px-3 py-3 text-xs text-gray-500 text-center">Geen BGT-object gevonden op dit punt.</div>
-                )}
-                {/* Feature tabel */}
-                {feat&&(
-                  <div className="overflow-y-auto max-h-60">
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="text-left px-3 py-1.5 font-semibold text-gray-600 w-2/5">Naam</th>
-                          <th className="text-left px-3 py-1.5 font-semibold text-gray-600">Waarde</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rijen.map(([k,v])=>(
-                          <tr key={k} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="px-3 py-1.5 text-gray-400 font-medium align-top">{k}</td>
-                            <td className="px-3 py-1.5 text-gray-800 break-all">{v}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
         </div>
       </div>
 
       {/* ── Bodempanelen per sub-stap ────────────────────────── */}
+
+      {/* BGT Klik-info paneel — PDOK-stijl (zichtbaar zodra feature is aangeklikt) */}
+      {actieveSubStap==="5.1"&&bgtKlikInfo&&!bgtKlikBezig&&(()=>{
+        const feats = bgtKlikInfo.features ?? [];
+        const idx   = Math.min(actieveKlikIdx, Math.max(0, feats.length-1));
+        const feat  = feats[idx];
+        const props = feat?.properties ?? {};
+        const laag  = feat?._bgtLaag ?? "BGT";
+        const rijen = Object.entries(props)
+          .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie")
+          .map(([k,v])=>[k, String(v).length>120?String(v).slice(0,120)+"…":String(v)]);
+        function sluiten(){ setBgtKlikInfo(null); kaartRef.current?._zetKlikHighlight?.(null); }
+        function gaFeature(nieuwIdx){ setActieveKlikIdx(nieuwIdx); kaartRef.current?._zetKlikHighlight?.(feats[nieuwIdx]); }
+        return(
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            {/* Header — donkerblauw als PDOK viewer */}
+            <div className="flex items-center justify-between px-4 py-2.5" style={{background:"#1a3553"}}>
+              <div className="flex items-center gap-3">
+                <span className="text-white font-semibold text-sm">BGT achtergrondvisualisatie</span>
+                {feats.length>0&&(
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:"#2a5073",color:"#93c5fd"}}>
+                    {laag}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Feature navigatie (meerdere objecten op zelfde punt) */}
+                {feats.length>1&&(
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={()=>gaFeature(Math.max(0,idx-1))} disabled={idx===0}
+                      className="w-6 h-6 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 flex items-center justify-center text-xs">‹</button>
+                    <span className="text-white/70 text-xs">{idx+1} / {feats.length}</span>
+                    <button onClick={()=>gaFeature(Math.min(feats.length-1,idx+1))} disabled={idx===feats.length-1}
+                      className="w-6 h-6 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 flex items-center justify-center text-xs">›</button>
+                  </div>
+                )}
+                <button onClick={sluiten} className="text-white/60 hover:text-white text-lg leading-none px-1">×</button>
+              </div>
+            </div>
+            {/* Fout / leeg */}
+            {bgtKlikInfo.fout&&<div className="px-4 py-3 text-sm text-red-600 bg-red-50">{bgtKlikInfo.fout}</div>}
+            {bgtKlikInfo.leeg&&<div className="px-4 py-4 text-sm text-gray-500 text-center">Geen BGT-object gevonden op dit punt.</div>}
+            {/* Properties tabel — zelfde opmaak als PDOK viewer */}
+            {feat&&rijen.length>0&&(
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      <th className="text-left px-4 py-2.5 font-semibold text-gray-700 w-64">Naam</th>
+                      <th className="text-left px-4 py-2.5 font-semibold text-gray-700">Waarde</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rijen.map(([k,v],i)=>(
+                      <tr key={k} className={`border-b border-gray-100 ${i%2===0?"bg-white":"bg-gray-50/50"}`}>
+                        <td className="px-4 py-2.5 text-gray-500 align-top font-medium">{k}</td>
+                        <td className="px-4 py-2.5 text-gray-800 break-all">{v}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* 5.1 BGT Verhardingsprofiel */}
       {actieveSubStap==="5.1"&&analysePunten.length>=2&&(
