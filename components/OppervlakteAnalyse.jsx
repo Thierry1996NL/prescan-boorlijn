@@ -200,18 +200,14 @@ const ACHTERGRONDEN=[
   {id:"luchtfoto_hr", label:"Satelliet HR (8cm)",wms:true,
    wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
    wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal HR"},
-  // Satelliet hybride = PDOK luchtfoto HR (base) + BRT grijs 40% (wegen/labels overlay)
-  // Esri hybrid-tiles zijn WebMercator (EPSG:3857) — incompatibel met EPSG:28992 map
-  {id:"hybride",      label:"Satelliet hybride", compound:[
-    {wms:true, wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
-     wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",transparent:false,opacity:1,zIndex:1,attribution:"© PDOK Beeldmateriaal"},
-    {url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
-     opacity:0.42,maxNativeZoom:13,zIndex:2,attribution:"© PDOK BRT"},
+  // Esri kaarten via /api/esri-tile proxy:
+  // Converteert PDOK EPSG:28992 tile-coördinaten → WGS84 → WebMercator Esri tile
+  {id:"hybride", label:"Satelliet hybride (Esri)", compound:[
+    {url:"/api/esri-tile?type=hybrid&z={z}&x={x}&y={y}",maxNativeZoom:18,zIndex:1,attribution:"© Esri, Airbus DS, USGS"},
+    {url:"/api/esri-tile?type=labels&z={z}&x={x}&y={y}",maxNativeZoom:18,zIndex:2,attribution:"© Esri"},
   ]},
-  // Topografisch = Esri World_Topo_Map WMS (ondersteunt meerdere CRS incl. EPSG:28992)
-  {id:"topografisch", label:"Topografisch (Esri)",wms:true,
-   wmsUrl:"https://server.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapServer/exts/WMSServer",
-   wmsLayers:"0",wmsFormat:"image/jpeg",attribution:"© Esri, HERE, Garmin, © OpenStreetMap contributors"},
+  {id:"topografisch",label:"Topografisch (Esri)",
+   url:"/api/esri-tile?type=topo&z={z}&x={x}&y={y}",maxNativeZoom:18,attribution:"© Esri, HERE, Garmin, © OpenStreetMap contributors"},
 ];
 const OVERLAYS=[
   {id:"kadaster",label:"Kadastrale percelen",kleur:"#f59e0b",url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",layers:"Perceel"},
@@ -381,7 +377,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         } else if(c.wms){
           basisLaagRef.current=L.tileLayer.wms(c.wmsUrl,{layers:c.wmsLayers??"0",format:c.wmsFormat??"image/jpeg",transparent:false,maxZoom:22,attribution:c.attribution??"",zIndex:1}).addTo(kaart);
         } else {
-          basisLaagRef.current=L.tileLayer(c.url,{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT, © Kadaster",zIndex:1}).addTo(kaart);
+          basisLaagRef.current=L.tileLayer(c.url,{maxZoom:22,maxNativeZoom:c.maxNativeZoom??13,tileSize:256,attribution:c.attribution??"© PDOK BRT, © Kadaster",zIndex:1}).addTo(kaart);
         }
       }
       function zetOverlay(id,aan){
