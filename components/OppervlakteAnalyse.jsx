@@ -349,7 +349,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       const data = await res.json();
       const feats = data.features || [];
       setBgtDebug({
-        status: `${feats.length} features gevonden`,
+        status: `${feats.length} features gevonden${data._source?" ("+data._source+")":""}`,
         lat: Math.round(lat*10000)/10000,
         lng: Math.round(lng*10000)/10000,
         url: `/api/bgt?lat=${Math.round(lat*10000)/10000}&lng=${Math.round(lng*10000)/10000}`,
@@ -358,6 +358,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           properties: Object.fromEntries(
             Object.entries(f.properties||{}).filter(([,v])=>v!=null&&v!=="").slice(0,8)
           ),
+          classificatie: classificeerBgt(f)?.label ?? "Overig",
         })),
       });
     } catch(e) {
