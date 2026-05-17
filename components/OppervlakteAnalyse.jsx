@@ -374,23 +374,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         if(actieveSubStapRef.current !== "5.1") return;
         const {lat, lng} = e.latlng;
         const cp = e.containerPoint;
-        const sz = kaart.getSize();
-
-        // Bbox in EPSG:28992 via de kaart-CRS
-        const crs  = kaart.options.crs;
-        const sw   = crs.project(kaart.getBounds().getSouthWest());
-        const ne   = crs.project(kaart.getBounds().getNorthEast());
-        const bbox = `${sw.x},${sw.y},${ne.x},${ne.y}`;
-        const lagen= "wegdeel,onbegroeidterreindeel,begroeidterreindeel,waterdeel,spoor,pand,kunstwerkdeel,overigbouwwerk,scheiding";
-        const url  = `https://service.pdok.nl/lv/bgt/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=${lagen}&QUERY_LAYERS=${lagen}&INFO_FORMAT=application%2Fjson&I=${Math.round(cp.x)}&J=${Math.round(cp.y)}&WIDTH=${Math.round(sz.x)}&HEIGHT=${Math.round(sz.y)}&BBOX=${bbox}&CRS=EPSG:28992&FEATURE_COUNT=5`;
 
         setBgtKlikPos({x:cp.x, y:cp.y});
         setBgtKlikInfo(null);
         setBgtKlikBezig(true);
         try {
-          // Via /api/wms-info proxy (CORS-bypass) — zelfde patroon als /api/bgt
-          const proxyUrl = `/api/wms-info?url=${encodeURIComponent(url)}`;
-          const res = await fetch(proxyUrl);
+          // BGT WFS OGC punt-query via /api/bgt-klik (zelfde endpoint als analyse — geen WMS CORS issues)
+          const res = await fetch(`/api/bgt-klik?lat=${lat}&lng=${lng}`);
           if(!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           setBgtKlikInfo(data?.features?.length > 0 ? data : {leeg:true, lat, lng});
@@ -996,9 +986,9 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
             const top  = Math.max(Math.min(bgtKlikPos.y-16, mapH-280), 8);
             const feat = bgtKlikInfo.features?.[0];
             const props = feat?.properties ?? {};
-            const laag  = feat?.id?.split(".")?.[0] ?? "BGT";
+            const laag  = feat?._bgtLaag ?? feat?.id?.split(".")?.[0] ?? "BGT";
             const rijen = Object.entries(props)
-              .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie")
+              .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie"&&k!=="_bgtLaag")
               .map(([k,v])=>[k, String(v).length>80?String(v).slice(0,80)+"…":String(v)]);
             return(
               <div className="absolute z-[500] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden"
