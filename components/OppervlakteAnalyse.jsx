@@ -354,40 +354,63 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     }
   }
 
-  // Vind het meest relevante BGT-feature voor een punt
-  function classificeerVoorPunt(lat, lng, features) {
-    if(!features.length) return OVERIG;
-    // Bereken afstand van elk feature tot het punt
-    function centroidAfstand(f) {
-      const coords = f.geometry?.coordinates;
-      if(!coords) return Infinity;
-      // Plat alle coordinaten uit
-      const pts = flattenCoords(coords);
-      if(!pts.length) return Infinity;
-      const cLat = pts.reduce((s,p)=>s+p[1],0)/pts.length;
-      const cLng = pts.reduce((s,p)=>s+p[0],0)/pts.length;
-      return Math.sqrt((lat-cLat)**2+(lng-cLng)**2);
+  // ── Point-in-polygon (ray casting) voor GeoJSON ─────────────────
+  function ptInRing(lat, lng, ring) {
+    // ring = [[lng,lat], ...] in GeoJSON-volgorde
+    let inside = false;
+    for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+      const xi=ring[i][0],yi=ring[i][1];
+      const xj=ring[j][0],yj=ring[j][1];
+      if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/(yj-yi)+xi))
+        inside=!inside;
     }
-    // Prioriteit: water > spoor > wegdeel > onbegroeid > begroeid
-    const PRIO = {"waterdeel":0,"spoor":1,"wegdeel":2,"onbegroeid":3,"begroeid":4};
-    const gesorteerd = [...features].sort((a,b)=>{
-      const ta=detecteerViaId(a.id)||detecteerBgtLaag(a.properties||{});
-      const tb=detecteerViaId(b.id)||detecteerBgtLaag(b.properties||{});
-      const pa=PRIO[ta]??5, pb=PRIO[tb]??5;
-      if(pa!==pb) return pa-pb;
-      return centroidAfstand(a)-centroidAfstand(b);
-    });
-    // Pak het dichtstbijzijnde feature van hoogste prioriteit
-    const max_afstand = 0.005; // ~500m
-    const kandidaten = gesorteerd.filter(f=>centroidAfstand(f)<max_afstand);
-    if(!kandidaten.length) return OVERIG;
-    return classificeerBgt(kandidaten[0]);
+    return inside;
   }
 
-  function flattenCoords(coords) {
-    if(!coords) return [];
-    if(typeof coords[0]==="number") return [coords];
-    return coords.flatMap(c=>flattenCoords(c));
+  function ptInGeometry(lat, lng, geom) {
+    if(!geom) return false;
+    const t=geom.type, c=geom.coordinates;
+    if(t==="Polygon")     return ptInRing(lat,lng,c[0]);
+    if(t==="MultiPolygon")return c.some(poly=>ptInRing(lat,lng,poly[0]));
+    return false; // LineString/Point: geen polygon
+  }
+
+  // Vind het meest relevante BGT-feature voor een punt
+  // Eerst: features die het punt BEVATTEN (point-in-polygon)
+  // Dan:   dichtsbijzijnde centroid als fallback
+  function classificeerVoorPunt(lat, lng, features) {
+    if(!features.length) return OVERIG;
+
+    // 1. Welke features bevatten het punt?
+    const bevattend = features.filter(f => ptInGeometry(lat,lng,f.geometry));
+
+    // 2. Als meerdere: kies op laagtype-prioriteit
+    //    Wegdeel/onbegroeid/spoor vóór water/begroeid (specifiekere informatie)
+    const PRIO = {"spoor":0,"wegdeel":1,"onbegroeid":2,"begroeid":3,"waterdeel":4};
+
+    if(bevattend.length > 0) {
+      bevattend.sort((a,b)=>{
+        const ta=detecteerViaId(a.id)||detecteerBgtLaag(a.properties||{});
+        const tb=detecteerViaId(b.id)||detecteerBgtLaag(b.properties||{});
+        return (PRIO[ta]??5)-(PRIO[tb]??5);
+      });
+      return classificeerBgt(bevattend[0]);
+    }
+
+    // 3. Geen enkel polygon bevat het punt — gebruik dichtstbijzijnde centroid
+    function centroidDist(f) {
+      try{
+        const pts=f.geometry?.coordinates?.flat(10)??[];
+        const lngs=pts.filter((_,i)=>i%2===0);
+        const lats=pts.filter((_,i)=>i%2===1);
+        const cLng=lngs.reduce((s,v)=>s+v,0)/lngs.length;
+        const cLat=lats.reduce((s,v)=>s+v,0)/lats.length;
+        return Math.sqrt((lat-cLat)**2+(lng-cLng)**2);
+      }catch{return Infinity;}
+    }
+    const nearest=[...features].sort((a,b)=>centroidDist(a)-centroidDist(b))[0];
+    if(centroidDist(nearest)<0.003) return classificeerBgt(nearest); // < 300m
+    return OVERIG;
   }
 
   // ── BGT directe test (debug) ─────────────────────────────────────
