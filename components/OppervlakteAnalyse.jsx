@@ -194,16 +194,18 @@ const OVERLAYS=[
 ];
 
 // ─── Ondergrond lagen: GeoTOP · REGIS II · Bodemkaart · Grondwater · AHN ────
-// Status na GetCapabilities verificatie (mei 2025):
-//   GeoTOP & REGIS II: GEEN WMS op PDOK — enkel ATOM download. → wmsAvailable:false
-//   Bodemkaart: WMS werkt — layer "soilarea" (bevestigd via GetCapabilities)
-//   Grondwatermonitoringput (GMW): WMS via BRO/NGR — layer "brogmw"
-//   AHN: WMS werkt — layer "dtm_05m" (WMTS endpoint geeft 404)
+// BRO is volledig open en gratis (CC0-licentie), geen login vereist.
+// LET OP: PDOK heeft twee URL-patronen: korte aliassen (bzk/ahn) die redirecten naar
+// canonieke URLs (tno/actueel-hoogtebestand). Gebruik ALTIJD de canonieke URL —
+// Leaflet WMS-tiles volgen redirects op tile-niveau niet betrouwbaar.
+//
+//  GeoTOP & REGIS II: GEEN WMS op PDOK — enkel ATOM download → wmsAvailable:false
+//  Overige drie: canonieke URLs + layer-namen bevestigd via GetCapabilities
 const ONDERGROND_LAGEN = [
   {
     id:"geotop", label:"GeoTOP", subtitel:"3D Bodemopbouw", emoji:"🧭",
     kleur:"#a855f7",
-    wmsAvailable:false,  // PDOK biedt GeoTOP alleen als ATOM-download aan, geen WMS
+    wmsAvailable:false,
     broUrl:"https://www.broloket.nl/",
     pdokUrl:"https://app.pdok.nl/viewer/",
     beschrijving:"3D bodemopbouw (zand/klei/veen) tot ~50 m diepte",
@@ -213,7 +215,7 @@ const ONDERGROND_LAGEN = [
   {
     id:"regis", label:"REGIS II", subtitel:"Hydrogeologie", emoji:"🧱",
     kleur:"#06b6d4",
-    wmsAvailable:false,  // PDOK biedt REGIS II alleen als ATOM-download aan, geen WMS
+    wmsAvailable:false,
     broUrl:"https://www.broloket.nl/",
     pdokUrl:"https://app.pdok.nl/viewer/",
     beschrijving:"Klei/zandlagen met hydraulische eigenschappen (k-waarden)",
@@ -224,8 +226,9 @@ const ONDERGROND_LAGEN = [
     id:"bodemkaart", label:"Bodemkaart", subtitel:"1:50.000", emoji:"🌍",
     kleur:"#84cc16",
     wmsAvailable:true,
-    url:"https://service.pdok.nl/bzk/bro-bodemkaart/wms/v1_0",
-    layers:"soilarea",       // ✓ bevestigd via GetCapabilities (was fout: bodemkaarteenheid)
+    // Canonieke URL (niet de bzk-alias die redirect veroorzaakt)
+    url:"https://service.pdok.nl/tno/bro-bodemkaart/wms/v1_0",
+    layers:"soilarea",       // ✓ bevestigd via GetCapabilities
     type:"wms", opacity:0.55, zIndex:211,
     beschrijving:"Landbodemtypes toplaag: klei · veen · zand",
     risicoLabel:"Middel", risicoKleur:"#f59e0b",
@@ -235,11 +238,11 @@ const ONDERGROND_LAGEN = [
     id:"grondwater", label:"Grondwaterput (GMW)", subtitel:"BRO Peilbuizen", emoji:"💧",
     kleur:"#3b82f6",
     wmsAvailable:true,
-    // BRO Grondwatermonitoringput WMS (nationaalgeoregister)
-    url:"https://geodata.nationaalgeoregister.nl/brogmw/wms",
-    layers:"brogmw",
+    // Nieuwe canonieke URL (oude geodata.nationaalgeoregister.nl/brogmw is per dec 2024 offline)
+    url:"https://service.pdok.nl/tno/bro-grondwatermonitoring-in-samenhang-karakteristieken/wms/v1_0",
+    layers:"grondwatermonitoringput",
     type:"wms", opacity:0.85, zIndex:212,
-    beschrijving:"Peilbuislocaties (BRO GMW) — klik voor grondwaterstanden",
+    beschrijving:"Peilbuislocaties (BRO GMW) — grondwaterstanden & monitoring",
     risicoLabel:"Hoog", risicoKleur:"#dc2626",
     risicoTekst:"Hoge GWS → opbarstrisico boorgang & verminderde boorstabiliteit",
   },
@@ -247,9 +250,9 @@ const ONDERGROND_LAGEN = [
     id:"ahn", label:"AHN", subtitel:"Hoogtemodel", emoji:"🌊",
     kleur:"#f97316",
     wmsAvailable:true,
-    // AHN WMS werkt — WMTS endpoint (/rws/ahn/wmts/v1_0) geeft 404
-    url:"https://service.pdok.nl/rws/ahn/wms/v1_0",
-    layers:"dtm_05m",        // ✓ DTM 0.5m maaiveld
+    // Canonieke URL (niet de ahn-alias die redirect veroorzaakt)
+    url:"https://service.pdok.nl/rws/actueel-hoogtebestand-nederland/wms/v1_0",
+    layers:"dtm_05m",        // ✓ bevestigd via WCS GetCapabilities (CoverageID=dtm_05m)
     type:"wms", opacity:0.50, zIndex:208,
     beschrijving:"Actueel Hoogtebestand Nederland — maaiveld, taluds, oevers (AHN4)",
     risicoLabel:"Middel", risicoKleur:"#f59e0b",
