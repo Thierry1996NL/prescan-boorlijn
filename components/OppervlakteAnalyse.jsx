@@ -247,6 +247,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const [stapGrootte,setStagGrootte]= useState(5);
   const [legendaOpen,setLegendaOpen]= useState(true);
   const [geselecteerdPunt, setGeselecteerdPunt] = useState(null);
+  const [bgtDebug, setBgtDebug] = useState(null); // raw API response for debugging
 
   const boorCoords = (() => {
     try { const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[]; } catch { return []; }
@@ -369,6 +370,37 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     try{await onAnalyseOpgeslagen?.(resultaten);setOpgeslagen(true);setTimeout(()=>setOpgeslagen(false),3000);}catch(e){console.error(e);}
   }
 
+  // ── BGT directe test (debug) ─────────────────────────────────────
+  async function testBgtQuery() {
+    if (boorCoords.length < 1) return;
+    const [lat, lng] = boorCoords[Math.floor(boorCoords.length / 2)]; // middelpunt
+    setBgtDebug({ status: "laden...", lat, lng });
+    try {
+      const d = 0.0002;
+      const bbox = `${lng-d},${lat-d},${lng+d},${lat+d}`;
+      const lagen = "bgt:wegdeel,bgt:onbegroeidterreindeel,bgt:begroeidterreindeel,bgt:waterdeel,bgt:spoor";
+      const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${lagen}&outputFormat=application/json&bbox=${bbox},EPSG:4326&srsName=EPSG:4326`;
+      const res = await fetch(url);
+      if (!res.ok) { setBgtDebug({ status: `HTTP ${res.status} - ${res.statusText}`, lat, lng, url }); return; }
+      const data = await res.json();
+      const feats = data.features || [];
+      setBgtDebug({
+        status: `${feats.length} features gevonden`,
+        lat: Math.round(lat*10000)/10000,
+        lng: Math.round(lng*10000)/10000,
+        url,
+        features: feats.slice(0,3).map(f => ({
+          id: f.id,
+          properties: Object.fromEntries(
+            Object.entries(f.properties||{}).filter(([,v])=>v!=null&&v!=="").slice(0,8)
+          ),
+        })),
+      });
+    } catch(e) {
+      setBgtDebug({ status: `Fout: ${e.message}`, lat, lng });
+    }
+  }
+
   // ── Statistieken ─────────────────────────────────────────────────
   const stats=analysePunten.length>=2?(() => {
     const tot=analysePunten[analysePunten.length-1]?.positieM??0;
@@ -476,6 +508,34 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
               </button>
               {bezig&&(<><div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden"><div className="h-1.5 bg-orange-500 rounded-full transition-all" style={{width:`${voortgang}%`}}/></div><p className="text-xs text-gray-400 text-center">{voortgang}% · {Math.round(voortgang/100*totaalPunten)}/{totaalPunten}</p></>)}
               {opgeslagen&&<p className="text-xs text-green-600 text-center">✓ Opgeslagen</p>}
+              <button onClick={testBgtQuery}
+                className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
+                🔍 Test BGT API (middelpunt)
+              </button>
+              {bgtDebug&&(
+                <div className="text-xs bg-gray-50 rounded-lg p-2 space-y-1 border border-gray-200 max-h-48 overflow-y-auto">
+                  <div className={`font-semibold ${bgtDebug.features?.length?'text-green-700':'text-red-600'}`}>
+                    {bgtDebug.status}
+                  </div>
+                  <div className="text-gray-400">lat={bgtDebug.lat} lng={bgtDebug.lng}</div>
+                  {bgtDebug.features?.length===0&&(
+                    <div className="text-orange-600 font-medium">
+                      ⚠ 0 features — mogelijke oorzaken:<br/>
+                      • BGT-dekking ontbreekt hier<br/>
+                      • Coördinaten buiten NL<br/>
+                      • CORS geblokkeerd
+                    </div>
+                  )}
+                  {bgtDebug.features?.map((f,i)=>(
+                    <div key={i} className="border-t border-gray-200 pt-1">
+                      <div className="text-blue-600 font-mono text-xs">{f.id}</div>
+                      {Object.entries(f.properties).map(([k,v])=>(
+                        <div key={k}><span className="text-gray-400">{k}:</span> <span className="text-gray-700">{String(v)}</span></div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Geselecteerd punt detail */}
