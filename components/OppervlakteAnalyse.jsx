@@ -164,9 +164,19 @@ function genereerPunten(coords,stapM=5){
 }
 
 // ─── RD New CRS ──────────────────────────────────────────────────
+// EPSG:28992 officieel (NSGI/Kadaster):
+//   lat_0 = 52°9'22.178" = 52.15616055555555° (≠ de polynoomwaarde 52.15517440°!)
+//   lon_0 = 5°23'15.5"  =  5.38763888888889° (≠ de polynoomwaarde 5.38720621°)
+// De polynoomwaarden zijn referentiepunten voor de benaderingsformule, GEEN projectieparameters.
+// Gebruik van de verkeerde waarden geeft een systematische offset van ~110m N + ~31m O.
 function maakRdCrs(L){
-  return new L.Proj.CRS("EPSG:28992",
-    "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs",
+  const PROJ4_RD =
+    "+proj=sterea +lat_0=52.15616055555555 +lon_0=5.38763888888889 " +
+    "+k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel " +
+    "+towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs";
+  // Registreer definitie in proj4 zodat alle rdNaarLatLng conversies dezelfde def gebruiken
+  if(typeof window!=="undefined"&&window.proj4) proj4.defs("EPSG:28992", PROJ4_RD);
+  return new L.Proj.CRS("EPSG:28992", PROJ4_RD,
     {resolutions:[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125,0.00656,0.00328,0.00164,0.00082],
      origin:[-285401.920,903401.920],bounds:L.bounds([-285401.920,22598.080],[595401.920,903401.920])}
   );
