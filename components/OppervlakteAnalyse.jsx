@@ -102,46 +102,15 @@ function classificeerBgt(feat) {
 }
 
 // Haal BGT-oppervlak op met robuuste classificatie + debug logging
-let _bgtDebugLogged = false;
-
+// haalOppervlakOp roept de server-side /api/bgt proxy aan (geen CORS-probleem)
 async function haalOppervlakOp(lat, lng) {
   try {
-    const d = 0.0002; // ~20m radius
-    const bbox = `${lng-d},${lat-d},${lng+d},${lat+d}`;
-    const lagen = "bgt:wegdeel,bgt:onbegroeidterreindeel,bgt:begroeidterreindeel,bgt:waterdeel,bgt:spoor";
-    const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${lagen}&outputFormat=application/json&bbox=${bbox},EPSG:4326&srsName=EPSG:4326`;
-
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
-    let res;
-    try {
-      res = await fetch(url, { signal: ctrl.signal });
-    } finally { clearTimeout(timer); }
-
-    if (!res.ok) {
-      console.warn(`BGT HTTP ${res.status} voor ${lat},${lng}`);
-      return OVERIG;
-    }
+    const res = await fetch(`/api/bgt?lat=${lat}&lng=${lng}`);
+    if (!res.ok) return OVERIG;
     const data = await res.json();
-
-    // Debug: log eerste response zodat we het formaat kunnen zien
-    if (!_bgtDebugLogged && data.features?.length) {
-      _bgtDebugLogged = true;
-      const f = data.features[0];
-      console.log("[BGT DEBUG] Eerste feature:", {
-        id: f.id,
-        propertiesKeys: Object.keys(f.properties || {}),
-        propertiesValues: f.properties,
-      });
-    }
-    if (!_bgtDebugLogged && !data.features?.length) {
-      console.warn(`[BGT DEBUG] 0 features voor bbox ${bbox} — mogelijk buiten BGT-dekking`);
-      _bgtDebugLogged = true;
-    }
-
     if (!data.features?.length) return OVERIG;
 
-    // Selecteer meest relevante feature (waterdeel > spoor > wegdeel > onbegroeid > begroeid)
+    // Selecteer meest relevante feature
     const PRIO = ["waterdeel","spoor","wegdeel","onbegroeid","begroeid"];
     let beste = null;
     for (const t of PRIO) {
@@ -152,11 +121,9 @@ async function haalOppervlakOp(lat, lng) {
       if (beste) break;
     }
     if (!beste) beste = data.features[0];
-
     return classificeerBgt(beste);
   } catch (err) {
-    if (err.name === "AbortError") { console.warn("BGT timeout"); return OVERIG; }
-    console.warn("BGT fout:", err.message);
+    console.warn("BGT proxy fout:", err.message);
     return OVERIG;
   }
 }
@@ -373,13 +340,10 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   // ── BGT directe test (debug) ─────────────────────────────────────
   async function testBgtQuery() {
     if (boorCoords.length < 1) return;
-    const [lat, lng] = boorCoords[Math.floor(boorCoords.length / 2)]; // middelpunt
-    setBgtDebug({ status: "laden...", lat, lng });
+    const [lat, lng] = boorCoords[Math.floor(boorCoords.length / 2)];
+    setBgtDebug({ status: "laden via /api/bgt...", lat, lng });
     try {
-      const d = 0.0002;
-      const bbox = `${lng-d},${lat-d},${lng+d},${lat+d}`;
-      const lagen = "bgt:wegdeel,bgt:onbegroeidterreindeel,bgt:begroeidterreindeel,bgt:waterdeel,bgt:spoor";
-      const url = `https://service.pdok.nl/lv/bgt/wfs/v1_0?service=WFS&version=2.0.0&request=GetFeature&typeName=${lagen}&outputFormat=application/json&bbox=${bbox},EPSG:4326&srsName=EPSG:4326`;
+      const url = `/api/bgt?lat=${lat}&lng=${lng}`;
       const res = await fetch(url);
       if (!res.ok) { setBgtDebug({ status: `HTTP ${res.status} - ${res.statusText}`, lat, lng, url }); return; }
       const data = await res.json();
@@ -388,7 +352,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         status: `${feats.length} features gevonden`,
         lat: Math.round(lat*10000)/10000,
         lng: Math.round(lng*10000)/10000,
-        url,
+        url: `/api/bgt?lat=${Math.round(lat*10000)/10000}&lng=${Math.round(lng*10000)/10000}`,
         features: feats.slice(0,3).map(f => ({
           id: f.id,
           properties: Object.fromEntries(
