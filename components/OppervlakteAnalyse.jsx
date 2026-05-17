@@ -198,10 +198,20 @@ const ACHTERGRONDEN=[
    wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
    wmsLayers:"Actueel_ortho25",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal"},
   {id:"luchtfoto_hr", label:"Satelliet HR (8cm)",wms:true,
-   // PDOK orthoHR: 8cm resolutie, gelijk aan professionele satellietbeelden voor NL
-   // Esri World Imagery ondersteunt geen EPSG:28992 (RD New) → grijs scherm
    wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
    wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal HR"},
+  // Satelliet hybride = PDOK luchtfoto HR (base) + BRT grijs 40% (wegen/labels overlay)
+  // Esri hybrid-tiles zijn WebMercator (EPSG:3857) — incompatibel met EPSG:28992 map
+  {id:"hybride",      label:"Satelliet hybride", compound:[
+    {wms:true, wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+     wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",transparent:false,opacity:1,zIndex:1,attribution:"© PDOK Beeldmateriaal"},
+    {url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",
+     opacity:0.42,maxNativeZoom:13,zIndex:2,attribution:"© PDOK BRT"},
+  ]},
+  // Topografisch = Esri World_Topo_Map WMS (ondersteunt meerdere CRS incl. EPSG:28992)
+  {id:"topografisch", label:"Topografisch (Esri)",wms:true,
+   wmsUrl:"https://server.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapServer/exts/WMSServer",
+   wmsLayers:"0",wmsFormat:"image/jpeg",attribution:"© Esri, HERE, Garmin, © OpenStreetMap contributors"},
 ];
 const OVERLAYS=[
   {id:"kadaster",label:"Kadastrale percelen",kleur:"#f59e0b",url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",layers:"Perceel"},
@@ -354,16 +364,23 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
 
       // Helpers voor achtergrond/overlays
       function zetAchtergrond(id){
-        if(basisLaagRef.current){kaart.removeLayer(basisLaagRef.current);basisLaagRef.current=null;}
+        if(basisLaagRef.current){
+          const lagen=Array.isArray(basisLaagRef.current)?basisLaagRef.current:[basisLaagRef.current];
+          lagen.forEach(l=>{try{kaart.removeLayer(l);}catch{}});
+          basisLaagRef.current=null;
+        }
         const c=ACHTERGRONDEN.find(a=>a.id===id)??ACHTERGRONDEN[0];
-        if(c.wms){
-          // WMS-achtergrond (luchtfoto, Esri, enz.) — ondersteunt elke CRS inclusief EPSG:28992
-          basisLaagRef.current=L.tileLayer.wms(c.wmsUrl,{
-            layers:c.wmsLayers??"0",format:c.wmsFormat??"image/jpeg",
-            transparent:false,maxZoom:22,attribution:c.attribution??"",zIndex:1
-          }).addTo(kaart);
+        if(c.compound){
+          basisLaagRef.current=c.compound.map(def=>{
+            if(def.wms){
+              return L.tileLayer.wms(def.wmsUrl,{layers:def.wmsLayers??"0",format:def.wmsFormat??"image/jpeg",transparent:def.transparent??false,opacity:def.opacity??1,maxZoom:22,zIndex:def.zIndex??1,attribution:def.attribution??""}).addTo(kaart);
+            } else {
+              return L.tileLayer(def.url,{maxZoom:22,maxNativeZoom:def.maxNativeZoom??13,tileSize:256,opacity:def.opacity??1,zIndex:def.zIndex??1,attribution:def.attribution??""}).addTo(kaart);
+            }
+          });
+        } else if(c.wms){
+          basisLaagRef.current=L.tileLayer.wms(c.wmsUrl,{layers:c.wmsLayers??"0",format:c.wmsFormat??"image/jpeg",transparent:false,maxZoom:22,attribution:c.attribution??"",zIndex:1}).addTo(kaart);
         } else {
-          // PDOK WMTS tile-laag
           basisLaagRef.current=L.tileLayer(c.url,{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT, © Kadaster",zIndex:1}).addTo(kaart);
         }
       }
