@@ -194,14 +194,14 @@ const ACHTERGRONDEN=[
   {id:"brt_standaard",label:"BRT Standaard",  url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png"},
   {id:"brt_grijs",    label:"BRT Grijs",       url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png"},
   {id:"brt_pastel",   label:"BRT Pastel",      url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png"},
-  {id:"luchtfoto",    label:"Luchtfoto (PDOK)",wms:true,
+  {id:"luchtfoto",    label:"Luchtfoto (25cm)", wms:true,
    wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
    wmsLayers:"Actueel_ortho25",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal"},
-  {id:"esri_sat",     label:"Satelliet (Esri)",wms:true,
-   // Esri World Imagery WMS — ondersteunt EPSG:28992 via de WMS server
-   wmsUrl:"https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/exts/WMSServer",
-   wmsLayers:"0",wmsFormat:"image/jpeg",
-   attribution:"© Esri, Airbus DS, USGS, NGA · Powered by Esri"},
+  {id:"luchtfoto_hr", label:"Satelliet HR (8cm)",wms:true,
+   // PDOK orthoHR: 8cm resolutie, gelijk aan professionele satellietbeelden voor NL
+   // Esri World Imagery ondersteunt geen EPSG:28992 (RD New) → grijs scherm
+   wmsUrl:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+   wmsLayers:"Actueel_orthoHR",wmsFormat:"image/jpeg",attribution:"© PDOK Beeldmateriaal HR"},
 ];
 const OVERLAYS=[
   {id:"kadaster",label:"Kadastrale percelen",kleur:"#f59e0b",url:"https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",layers:"Perceel"},
