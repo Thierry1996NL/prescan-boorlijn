@@ -369,19 +369,26 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         const EsriLaag=L.TileLayer.extend({
           getTileUrl(coords){
             const res=ESRI_RES[coords.z]??ESRI_RES[ESRI_RES.length-1];
+            // RD New middelpunt van de PDOK tile
             const rdX=ESRI_OX+(coords.x+0.5)*256*res;
             const rdY=ESRI_OY-(coords.y+0.5)*256*res;
+            // RD New → WGS84 (polynoom)
             const dX=(rdX-155000)/100000,dY=(rdY-463000)/100000;
             const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
             const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
-            const n=Math.pow(2,coords.z);
+            // Bereken het JUISTE WebMercator zoomniveau op basis van de PDOK resolutie
+            // WebMercator resolutie @ lat 52°N bij zoom z: 96376 / 2^z m/px
+            // PDOK resolutie = 96376 / 2^wmZ → wmZ = log2(96376 / res)
+            const wmZ=Math.min(18,Math.max(0,Math.round(Math.log2(96376/res))));
+            // WGS84 → WebMercator tile-index bij het correcte wmZ
+            const n=Math.pow(2,wmZ);
             const tx=Math.floor((lng+180)/360*n);
             const lr=lat*Math.PI/180;
             const ty=Math.floor((1-Math.log(Math.tan(lr)+1/Math.cos(lr))/Math.PI)/2*n);
-            return esriUrl.replace("{z}",coords.z).replace("{y}",ty).replace("{x}",tx);
+            return esriUrl.replace("{z}",wmZ).replace("{y}",ty).replace("{x}",tx);
           }
         });
-        return new EsriLaag("",{maxZoom:22,maxNativeZoom:18,tileSize:256,...opts});
+        return new EsriLaag("",{maxZoom:22,maxNativeZoom:22,tileSize:256,...opts});
       }
       kaart._maakEsriLaag=maakEsriLaag;
 
