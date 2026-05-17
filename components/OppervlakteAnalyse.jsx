@@ -348,10 +348,15 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       if (!res.ok) { setBgtDebug({ status: `HTTP ${res.status} - ${res.statusText}`, lat, lng, url }); return; }
       const data = await res.json();
       const feats = data.features || [];
+      console.log("[BGT DEBUG volledige response]", data);
       setBgtDebug({
-        status: `${feats.length} features gevonden${data._source?" ("+data._source+")":""}`,
+        status: `${feats.length} features gevonden`,
         lat: Math.round(lat*10000)/10000,
         lng: Math.round(lng*10000)/10000,
+        rdX: data._debug?.rdX,
+        rdY: data._debug?.rdY,
+        error: data.error,
+        rawStart: data._debug?.rawStart,
         url: `/api/bgt?lat=${Math.round(lat*10000)/10000}&lng=${Math.round(lng*10000)/10000}`,
         features: feats.slice(0,3).map(f => ({
           id: f.id,
@@ -483,13 +488,11 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     {bgtDebug.status}
                   </div>
                   <div className="text-gray-400">lat={bgtDebug.lat} lng={bgtDebug.lng}</div>
-                  {bgtDebug.features?.length===0&&(
-                    <div className="text-orange-600 font-medium">
-                      ⚠ 0 features — mogelijke oorzaken:<br/>
-                      • BGT-dekking ontbreekt hier<br/>
-                      • Coördinaten buiten NL<br/>
-                      • CORS geblokkeerd
-                    </div>
+                  {bgtDebug.rdX&&<div className="text-gray-400 font-mono">RD X={bgtDebug.rdX} Y={bgtDebug.rdY}</div>}
+                  {bgtDebug.error&&<div className="text-red-600 font-medium">Fout: {bgtDebug.error}</div>}
+                  {bgtDebug.rawStart&&<div className="text-gray-500 font-mono text-xs break-all">{bgtDebug.rawStart}</div>}
+                  {bgtDebug.features?.length===0&&!bgtDebug.error&&(
+                    <div className="text-orange-600 font-medium">⚠ 0 features — geen BGT-data op dit punt</div>
                   )}
                   {bgtDebug.features?.map((f,i)=>(
                     <div key={i} className="border-t border-gray-200 pt-1">
