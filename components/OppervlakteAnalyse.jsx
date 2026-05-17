@@ -194,14 +194,18 @@ const OVERLAYS=[
 ];
 
 // ─── Ondergrond lagen: GeoTOP · REGIS II · Bodemkaart · Grondwater · AHN ────
-// Layer-namen te verifiëren via: {url}?SERVICE=WMS&REQUEST=GetCapabilities
+// Status na GetCapabilities verificatie (mei 2025):
+//   GeoTOP & REGIS II: GEEN WMS op PDOK — enkel ATOM download. → wmsAvailable:false
+//   Bodemkaart: WMS werkt — layer "soilarea" (bevestigd via GetCapabilities)
+//   Grondwatermonitoringput (GMW): WMS via BRO/NGR — layer "brogmw"
+//   AHN: WMS werkt — layer "dtm_05m" (WMTS endpoint geeft 404)
 const ONDERGROND_LAGEN = [
   {
     id:"geotop", label:"GeoTOP", subtitel:"3D Bodemopbouw", emoji:"🧭",
     kleur:"#a855f7",
-    url:"https://service.pdok.nl/bzk/bro-geotop/wms/v1_0",
-    layers:"voxel_bodemtype",  // check GetCapabilities indien leeg op kaart
-    type:"wms", opacity:0.65, zIndex:209,
+    wmsAvailable:false,  // PDOK biedt GeoTOP alleen als ATOM-download aan, geen WMS
+    broUrl:"https://www.broloket.nl/",
+    pdokUrl:"https://app.pdok.nl/viewer/",
     beschrijving:"3D bodemopbouw (zand/klei/veen) tot ~50 m diepte",
     risicoLabel:"Hoog", risicoKleur:"#dc2626",
     risicoTekst:"Veen- en kleilagen → spoelingverlies & instabiliteit HDD-traject",
@@ -209,9 +213,9 @@ const ONDERGROND_LAGEN = [
   {
     id:"regis", label:"REGIS II", subtitel:"Hydrogeologie", emoji:"🧱",
     kleur:"#06b6d4",
-    url:"https://service.pdok.nl/tno/bro-regis/wms/v1_0",
-    layers:"aquitard_ht_bkl",
-    type:"wms", opacity:0.60, zIndex:210,
+    wmsAvailable:false,  // PDOK biedt REGIS II alleen als ATOM-download aan, geen WMS
+    broUrl:"https://www.broloket.nl/",
+    pdokUrl:"https://app.pdok.nl/viewer/",
     beschrijving:"Klei/zandlagen met hydraulische eigenschappen (k-waarden)",
     risicoLabel:"Hoog", risicoKleur:"#dc2626",
     risicoTekst:"Hoge doorlatendheid → spoelingverlies, boorstabiliteit & drukopbouw",
@@ -219,32 +223,35 @@ const ONDERGROND_LAGEN = [
   {
     id:"bodemkaart", label:"Bodemkaart", subtitel:"1:50.000", emoji:"🌍",
     kleur:"#84cc16",
+    wmsAvailable:true,
     url:"https://service.pdok.nl/bzk/bro-bodemkaart/wms/v1_0",
-    layers:"bodemkaarteenheid",
+    layers:"soilarea",       // ✓ bevestigd via GetCapabilities (was fout: bodemkaarteenheid)
     type:"wms", opacity:0.55, zIndex:211,
     beschrijving:"Landbodemtypes toplaag: klei · veen · zand",
     risicoLabel:"Middel", risicoKleur:"#f59e0b",
     risicoTekst:"Contextueel voor landzijde insteek — minder relevant waterbodems",
   },
   {
-    id:"grondwater", label:"Grondwaterstanden", subtitel:"BRO", emoji:"💧",
+    id:"grondwater", label:"Grondwaterput (GMW)", subtitel:"BRO Peilbuizen", emoji:"💧",
     kleur:"#3b82f6",
-    url:"https://service.pdok.nl/bzk/bro-grondwaterstanden/wms/v1_0",
-    layers:"grondwaterstand",
-    type:"wms", opacity:0.70, zIndex:212,
-    beschrijving:"Peilbuizen, grondwaterdynamiek & seizoensvariatie",
+    wmsAvailable:true,
+    // BRO Grondwatermonitoringput WMS (nationaalgeoregister)
+    url:"https://geodata.nationaalgeoregister.nl/brogmw/wms",
+    layers:"brogmw",
+    type:"wms", opacity:0.85, zIndex:212,
+    beschrijving:"Peilbuislocaties (BRO GMW) — klik voor grondwaterstanden",
     risicoLabel:"Hoog", risicoKleur:"#dc2626",
     risicoTekst:"Hoge GWS → opbarstrisico boorgang & verminderde boorstabiliteit",
   },
   {
     id:"ahn", label:"AHN", subtitel:"Hoogtemodel", emoji:"🌊",
     kleur:"#f97316",
-    url:"https://service.pdok.nl/rws/ahn/wmts/v1_0",
-    // WMTS tileUrl voor EPSG:28992 (RD New) — zelfde CRS als de kaart
-    wmtsUrl:"https://service.pdok.nl/rws/ahn/wmts/v1_0/dtm_05m/EPSG:28992/{z}/{x}/{y}.png",
-    layers:"dtm_05m",
-    type:"wmts", opacity:0.50, zIndex:208,
-    beschrijving:"Actueel Hoogtebestand Nederland — maaiveld, taluds, oevers",
+    wmsAvailable:true,
+    // AHN WMS werkt — WMTS endpoint (/rws/ahn/wmts/v1_0) geeft 404
+    url:"https://service.pdok.nl/rws/ahn/wms/v1_0",
+    layers:"dtm_05m",        // ✓ DTM 0.5m maaiveld
+    type:"wms", opacity:0.50, zIndex:208,
+    beschrijving:"Actueel Hoogtebestand Nederland — maaiveld, taluds, oevers (AHN4)",
     risicoLabel:"Middel", risicoKleur:"#f59e0b",
     risicoTekst:"Hoogteverschil beïnvloedt insteekhelling & vereiste boringsdiepte",
   },
@@ -327,7 +334,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       function zetOndergrondOverlay(id,aan){
         if(aan){
           if(ondergrondOvRef.current[id])return;
-          const laag=ONDERGROND_LAGEN.find(l=>l.id===id);if(!laag)return;
+          const laag=ONDERGROND_LAGEN.find(l=>l.id===id);
+          if(!laag||!laag.wmsAvailable)return;  // geen WMS beschikbaar — skip
           let lyr;
           if(laag.type==="wmts"){
             lyr=L.tileLayer(laag.wmtsUrl,{maxZoom:22,maxNativeZoom:13,tileSize:256,opacity:laag.opacity??0.6,zIndex:laag.zIndex??210,attribution:"© PDOK AHN",crossOrigin:""});
@@ -770,6 +778,21 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     <div className="space-y-1">
                       {ONDERGROND_LAGEN.map(laag=>{
                         const aan=actieveOndergrondLagen.includes(laag.id);
+                        if(!laag.wmsAvailable){
+                          // Geen WMS op PDOK — toon BROloket-link in plaats van toggle
+                          return(
+                            <div key={laag.id} className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg bg-gray-50 border border-dashed border-gray-200">
+                              <div className="w-2.5 h-2.5 rounded border border-gray-300 flex-shrink-0 bg-gray-200"/>
+                              <span className="text-sm leading-none">{laag.emoji}</span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-medium text-gray-400">{laag.label}</span>
+                                <span className="text-xs text-gray-300 ml-1">{laag.subtitel}</span>
+                              </div>
+                              <a href={laag.broUrl} target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 hover:bg-orange-100 flex-shrink-0 font-medium">BROloket</a>
+                            </div>
+                          );
+                        }
                         return(
                           <button key={laag.id} onClick={()=>toggleOndergrondLaag(laag.id)}
                             className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-purple-50":"hover:bg-gray-50"}`}>
@@ -867,18 +890,27 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 <div className="w-full h-px" style={{background:laag.kleur+"44"}}/>
                 <p className="text-xs text-gray-500 leading-snug flex-1">{laag.beschrijving}</p>
                 <p className="text-xs leading-snug font-medium" style={{color:laag.risicoKleur+"cc"}}>{laag.risicoTekst}</p>
-                <button onClick={()=>toggleOndergrondLaag(laag.id)}
-                  className={`mt-1 w-full text-xs rounded-lg py-1 font-medium transition-colors ${aan
-                    ?"bg-purple-100 text-purple-700 hover:bg-purple-200"
-                    :"border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
-                  {aan?"✓ Actief op kaart":"Activeer laag"}
-                </button>
-              </div>
+                {laag.wmsAvailable?(
+                  <button onClick={()=>toggleOndergrondLaag(laag.id)}
+                    className={`mt-1 w-full text-xs rounded-lg py-1 font-medium transition-colors ${aan
+                      ?"bg-purple-100 text-purple-700 hover:bg-purple-200"
+                      :"border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
+                    {aan?"✓ Actief op kaart":"Activeer laag"}
+                  </button>
+                ):(
+                  <div className="mt-1 space-y-1">
+                    <div className="text-xs text-orange-600 bg-orange-50 rounded px-2 py-1 text-center leading-snug">Geen WMS op PDOK — enkel download</div>
+                    <a href={laag.broUrl} target="_blank" rel="noopener noreferrer"
+                      className="block w-full text-xs rounded-lg py-1 font-medium text-center bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors border border-orange-200">
+                      📋 Open BROloket
+                    </a>
+                  </div>
+                )}
             );
           })}
         </div>
         <p className="text-xs text-gray-400 mt-3 text-center">
-          Lagen worden als WMS/WMTS overlay getoond · brondata: PDOK / BRO · klik 'Activeer laag' om op kaart te laden
+          Bodemkaart · GMW · AHN zichtbaar als WMS-overlay · GeoTOP & REGIS II: bekijk via BROloket · brondata: PDOK / BRO
         </p>
       </div>
     </div>
