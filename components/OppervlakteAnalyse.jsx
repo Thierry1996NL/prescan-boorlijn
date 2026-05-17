@@ -27,22 +27,21 @@ function matchBgt(rawType) {
 
 // ─── BGT classificatie op basis van properties (betrouwbaarder dan feature-ID) ──
 // Elke BGT-laag heeft unieke properties → detecteer laagtype hierop
+// Detecteer BGT laagtype op basis van properties
+// Ondersteunt zowel WFS camelCase als OGC API snake_case properties
 function detecteerBgtLaag(p) {
-  // typeWater bestaat ALLEEN in bgt:waterdeel
-  if ("typeWater" in p) return "waterdeel";
-  // transporttype / spoorbreedte → bgt:spoor
-  if ("transporttype" in p || "spoorbreedte" in p) return "spoor";
-  // verhardingstype → bgt:wegdeel
-  if ("verhardingstype" in p) return "wegdeel";
-  // fysiekVoorkomen met verhardingswaarde → bgt:onbegroeidterreindeel
-  if ("fysiekVoorkomen" in p) {
-    const fv = (p.fysiekVoorkomen || "").toLowerCase();
-    if (fv.includes("verhard") || fv.includes("onverhard") || fv.includes("erf") || fv.includes("half"))
+  const has = (...keys) => keys.some(k => k in p);
+  const get = (...keys) => { for(const k of keys) if(p[k]) return String(p[k]); return ""; };
+
+  if (has("typeWater","type_water")) return "waterdeel";
+  if (has("transporttype","transport_type","spoorbreedte")) return "spoor";
+  if (has("verhardingstype","verharding_type")) return "wegdeel";
+  if (has("fysiekVoorkomen","fysiek_voorkomen")) {
+    const fv = get("fysiekVoorkomen","fysiek_voorkomen").toLowerCase();
+    if (fv.includes("verhard")||fv.includes("onverhard")||fv.includes("erf")||fv.includes("half"))
       return "onbegroeid";
-    // Groen-achtige waarden → begroeid
     return "begroeid";
   }
-  // Fallback: probeer via feature-ID (verschillende PDOK-formaten)
   return "onbekend";
 }
 
@@ -70,17 +69,18 @@ function classificeerBgt(feat) {
     case "begroeid":  return BGT_TYPEN["groenvoorziening"];
 
     case "wegdeel": {
-      const v = (p.verhardingstype || "").toLowerCase();
+      // WFS: verhardingstype, OGC: verhardingstype (zelfde gelukkig)
+      const v = (p.verhardingstype||p.verharding_type||"").toLowerCase();
       if (v.includes("gesloten"))  return BGT_TYPEN["gesloten verharding"];
       if (v.includes("open"))      return BGT_TYPEN["open verharding"];
       if (v.includes("half"))      return BGT_TYPEN["half verhard"];
       if (v.includes("onverhard")) return BGT_TYPEN["onverhard"];
-      if (v.includes("b.o.")||v==="") return BGT_TYPEN["gesloten verharding"]; // onbekend → asfalt
-      return BGT_TYPEN["gesloten verharding"];
+      return BGT_TYPEN["gesloten verharding"]; // default: asfaltzand
     }
 
     case "onbegroeid": {
-      const fv = (p.fysiekVoorkomen || "").toLowerCase();
+      // WFS: fysiekVoorkomen, OGC: fysiek_voorkomen
+      const fv = (p.fysiekVoorkomen||p.fysiek_voorkomen||"").toLowerCase();
       if (fv.includes("gesloten"))  return BGT_TYPEN["gesloten verharding"];
       if (fv.includes("open"))      return BGT_TYPEN["open verharding"];
       if (fv.includes("half"))      return BGT_TYPEN["half verhard"];
@@ -90,12 +90,12 @@ function classificeerBgt(feat) {
     }
 
     default: {
-      // Laatste poging: string-matching op alle waarden
-      const alleWaarden = Object.values(p).join(" ").toLowerCase();
-      if (alleWaarden.includes("water")||alleWaarden.includes("sloot")) return BGT_TYPEN["water"];
-      if (alleWaarden.includes("gesloten"))  return BGT_TYPEN["gesloten verharding"];
-      if (alleWaarden.includes("gras")||alleWaarden.includes("begroeid")) return BGT_TYPEN["groenvoorziening"];
-      if (alleWaarden.includes("verhard"))   return BGT_TYPEN["open verharding"];
+      // Fallback: match op alle property-waarden
+      const allVals = Object.values(p).join(" ").toLowerCase();
+      if (allVals.includes("water")||allVals.includes("sloot")||allVals.includes("waterloop")) return BGT_TYPEN["water"];
+      if (allVals.includes("gesloten verharding")) return BGT_TYPEN["gesloten verharding"];
+      if (allVals.includes("groenvoorziening")||allVals.includes("gras")) return BGT_TYPEN["groenvoorziening"];
+      if (allVals.includes("verhard")) return BGT_TYPEN["open verharding"];
       return OVERIG;
     }
   }
@@ -319,22 +319,75 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     kaartRef.current?._zetOverlay?.(id,aan);
   }
 
-  // ── Analyse uitvoeren ────────────────────────────────────────────
+  // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
   async function voerAnalyseUit(){
     if(boorCoords.length<2){alert("Geen boorlijn. Teken eerst in stap 4.");return;}
     setBezig(true);setVoortgang(0);setGeselecteerdPunt(null);
     const punten=genereerPunten(boorCoords,stapGrootte);
     setTotaalPunten(punten.length);
-    const resultaten=[];
-    for(let i=0;i<punten.length;i++){
-      const p=punten[i];
-      const opp=await haalOppervlakOp(p.lat,p.lng);
-      resultaten.push({...p,oppervlak:opp,id:`ap_${i}`});
-      setVoortgang(Math.round((i+1)/punten.length*100));
-      if(i%3===2)await new Promise(r=>setTimeout(r,100));
+
+    try{
+      // Eén bulk-request voor de hele boorlijn bbox
+      const lats=boorCoords.map(c=>c[0]),lngs=boorCoords.map(c=>c[1]);
+      const bulkUrl=`/api/bgt?minLat=${Math.min(...lats)}&maxLat=${Math.max(...lats)}&minLng=${Math.min(...lngs)}&maxLng=${Math.max(...lngs)}&lat=${lats[0]}&lng=${lngs[0]}`;
+      setVoortgang(10);
+      const res=await fetch(bulkUrl);
+      const bulkData=await res.json();
+      setVoortgang(60);
+      const bgtFeatures=bulkData.features??[];
+      console.log(`[BGT bulk] ${bgtFeatures.length} features voor heel tracé (bron: ${bulkData._source})`);
+
+      // Per punt: vind beste BGT-feature via prioriteit en afstand
+      const resultaten=punten.map((p,i)=>{
+        const opp=classificeerVoorPunt(p.lat,p.lng,bgtFeatures);
+        return{...p,oppervlak:opp,id:`ap_${i}`};
+      });
+      setVoortgang(90);
+      setAnalysePunten(resultaten);
+      await onAnalyseOpgeslagen?.(resultaten).catch(console.error);
+      setOpgeslagen(true);setTimeout(()=>setOpgeslagen(false),3000);
+    }catch(err){
+      console.error("Analyse fout:",err);
+      alert("Analyse mislukt: "+err.message);
+    }finally{
+      setBezig(false);setVoortgang(0);
     }
-    setAnalysePunten(resultaten);setBezig(false);
-    try{await onAnalyseOpgeslagen?.(resultaten);setOpgeslagen(true);setTimeout(()=>setOpgeslagen(false),3000);}catch(e){console.error(e);}
+  }
+
+  // Vind het meest relevante BGT-feature voor een punt
+  function classificeerVoorPunt(lat, lng, features) {
+    if(!features.length) return OVERIG;
+    // Bereken afstand van elk feature tot het punt
+    function centroidAfstand(f) {
+      const coords = f.geometry?.coordinates;
+      if(!coords) return Infinity;
+      // Plat alle coordinaten uit
+      const pts = flattenCoords(coords);
+      if(!pts.length) return Infinity;
+      const cLat = pts.reduce((s,p)=>s+p[1],0)/pts.length;
+      const cLng = pts.reduce((s,p)=>s+p[0],0)/pts.length;
+      return Math.sqrt((lat-cLat)**2+(lng-cLng)**2);
+    }
+    // Prioriteit: water > spoor > wegdeel > onbegroeid > begroeid
+    const PRIO = {"waterdeel":0,"spoor":1,"wegdeel":2,"onbegroeid":3,"begroeid":4};
+    const gesorteerd = [...features].sort((a,b)=>{
+      const ta=detecteerViaId(a.id)||detecteerBgtLaag(a.properties||{});
+      const tb=detecteerViaId(b.id)||detecteerBgtLaag(b.properties||{});
+      const pa=PRIO[ta]??5, pb=PRIO[tb]??5;
+      if(pa!==pb) return pa-pb;
+      return centroidAfstand(a)-centroidAfstand(b);
+    });
+    // Pak het dichtstbijzijnde feature van hoogste prioriteit
+    const max_afstand = 0.005; // ~500m
+    const kandidaten = gesorteerd.filter(f=>centroidAfstand(f)<max_afstand);
+    if(!kandidaten.length) return OVERIG;
+    return classificeerBgt(kandidaten[0]);
+  }
+
+  function flattenCoords(coords) {
+    if(!coords) return [];
+    if(typeof coords[0]==="number") return [coords];
+    return coords.flatMap(c=>flattenCoords(c));
   }
 
   // ── BGT directe test (debug) ─────────────────────────────────────
