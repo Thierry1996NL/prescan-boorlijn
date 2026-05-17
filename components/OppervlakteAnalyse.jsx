@@ -388,7 +388,9 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         setBgtKlikInfo(null);
         setBgtKlikBezig(true);
         try {
-          const res = await fetch(url);
+          // Via /api/wms-info proxy (CORS-bypass) — zelfde patroon als /api/bgt
+          const proxyUrl = `/api/wms-info?url=${encodeURIComponent(url)}`;
+          const res = await fetch(proxyUrl);
           if(!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           setBgtKlikInfo(data?.features?.length > 0 ? data : {leeg:true, lat, lng});
