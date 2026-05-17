@@ -412,6 +412,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         rawStart: data._debug?.rawStart,
         tried: data._debug?.tried,
         locatieserver: data._locatieserver?.adres,
+        perCollectie: data._debug?.perCollectie,
         url: `/api/bgt?lat=${Math.round(lat*10000)/10000}&lng=${Math.round(lng*10000)/10000}`,
         features: feats.slice(0,3).map(f => ({
           id: f.id,
@@ -548,6 +549,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                   {bgtDebug.rawStart&&<div className="text-gray-500 font-mono text-xs break-all">{bgtDebug.rawStart}</div>}
                   {bgtDebug.locatieserver&&<div className="text-blue-600">📍 Adres: {bgtDebug.locatieserver}</div>}
                   {bgtDebug.tried&&<div className="text-gray-400 text-xs">Geprobeerd: {bgtDebug.tried.join(", ")}</div>}
+                  {bgtDebug.perCollectie&&(
+                    <div className="text-xs space-y-0.5">
+                      {bgtDebug.perCollectie.map(({col,n})=>(
+                        <div key={col} className={n>0?"text-green-600":"text-gray-300"}>{n>0?"✓":"○"} {col}: {n} features</div>
+                      ))}
+                    </div>
+                  )}
                   {bgtDebug.features?.length===0&&!bgtDebug.error&&(
                     <div className="text-orange-600 font-medium">⚠ 0 features — geen BGT-data gevonden</div>
                   )}
