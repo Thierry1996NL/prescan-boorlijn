@@ -138,22 +138,27 @@ function afstandM([lat1,lng1],[lat2,lng2]){
 // ─── Steekproefpunten langs boorlijn ─────────────────────────────
 function genereerPunten(coords,stapM=5){
   if(!coords||coords.length<2)return[];
+  const stap=Math.max(1,stapM); // minimaal 1m
   const punten=[];
   let cumul=0;
   punten.push({lat:coords[0][0],lng:coords[0][1],positieM:0});
   for(let i=0;i<coords.length-1;i++){
     const segLen=afstandM(coords[i],coords[i+1]);
-    if(segLen<0.01){cumul+=segLen;continue;}
-    let rest=stapM;
+    if(segLen<0.001){cumul+=segLen;continue;}
+    let rest=stap;
     while(rest<segLen){
       const t=rest/segLen;
-      punten.push({lat:coords[i][0]+t*(coords[i+1][0]-coords[i][0]),lng:coords[i][1]+t*(coords[i+1][1]-coords[i][1]),positieM:cumul+rest});
-      rest+=stapM;
+      punten.push({
+        lat:coords[i][0]+t*(coords[i+1][0]-coords[i][0]),
+        lng:coords[i][1]+t*(coords[i+1][1]-coords[i][1]),
+        positieM:cumul+rest
+      });
+      rest+=stap;
     }
     cumul+=segLen;
   }
   const last=coords[coords.length-1];
-  if(punten[punten.length-1].positieM<cumul-0.5)
+  if(punten[punten.length-1].positieM<cumul-0.1)
     punten.push({lat:last[0],lng:last[1],positieM:cumul});
   return punten;
 }
@@ -397,19 +402,25 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       return classificeerBgt(bevattend[0]);
     }
 
-    // 3. Geen enkel polygon bevat het punt — gebruik dichtstbijzijnde centroid
-    function centroidDist(f) {
-      try{
-        const pts=f.geometry?.coordinates?.flat(10)??[];
-        const lngs=pts.filter((_,i)=>i%2===0);
-        const lats=pts.filter((_,i)=>i%2===1);
-        const cLng=lngs.reduce((s,v)=>s+v,0)/lngs.length;
-        const cLat=lats.reduce((s,v)=>s+v,0)/lats.length;
-        return Math.sqrt((lat-cLat)**2+(lng-cLng)**2);
-      }catch{return Infinity;}
+    // 3. Geen enkel polygon bevat het punt exact
+    //    → probeer met minimale marge (±0.00001° ≈ 1m) om rand-gevallen op te vangen
+    const MARGE = 0.00001;
+    const bevattendMarge = features.filter(f =>
+      ptInGeometry(lat + MARGE, lng, f.geometry) ||
+      ptInGeometry(lat - MARGE, lng, f.geometry) ||
+      ptInGeometry(lat, lng + MARGE, f.geometry) ||
+      ptInGeometry(lat, lng - MARGE, f.geometry)
+    );
+    if (bevattendMarge.length > 0) {
+      bevattendMarge.sort((a,b)=>{
+        const ta=detecteerViaId(a.id)||detecteerBgtLaag(a.properties||{});
+        const tb=detecteerViaId(b.id)||detecteerBgtLaag(b.properties||{});
+        return (PRIO[ta]??5)-(PRIO[tb]??5);
+      });
+      return classificeerBgt(bevattendMarge[0]);
     }
-    const nearest=[...features].sort((a,b)=>centroidDist(a)-centroidDist(b))[0];
-    if(centroidDist(nearest)<0.003) return classificeerBgt(nearest); // < 300m
+
+    // Echt geen data voor dit exacte punt
     return OVERIG;
   }
 
@@ -543,7 +554,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
             <div className="px-4 py-3 border-b border-gray-100">
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Steekproef interval</div>
               <div className="flex items-center gap-2">
-                <input type="range" min="2" max="20" step="1" value={stapGrootte} onChange={e=>setStagGrootte(Number(e.target.value))} className="flex-1 accent-orange-500 h-1"/>
+                <input type="range" min="1" max="20" step="1" value={stapGrootte} onChange={e=>setStagGrootte(Number(e.target.value))} className="flex-1 accent-orange-500 h-1"/>
                 <span className="text-xs font-mono text-gray-600 w-12 text-right">elke {stapGrootte}m</span>
               </div>
               <p className="text-xs text-gray-400 mt-1">~{boorCoords.length>=2?Math.round(totaalM/stapGrootte)+2:"-"} BGT-queries</p>
