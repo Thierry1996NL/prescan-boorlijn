@@ -906,6 +906,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     </a>
                   </div>
                 )}
+              </div>
             );
           })}
         </div>
