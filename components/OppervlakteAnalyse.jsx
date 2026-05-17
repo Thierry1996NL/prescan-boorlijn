@@ -193,6 +193,63 @@ const OVERLAYS=[
   {id:"buisleid",label:"Buisleidingen",kleur:"#f97316",url:"https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0",layers:"buisleiding"},
 ];
 
+// ─── Ondergrond lagen: GeoTOP · REGIS II · Bodemkaart · Grondwater · AHN ────
+// Layer-namen te verifiëren via: {url}?SERVICE=WMS&REQUEST=GetCapabilities
+const ONDERGROND_LAGEN = [
+  {
+    id:"geotop", label:"GeoTOP", subtitel:"3D Bodemopbouw", emoji:"🧭",
+    kleur:"#a855f7",
+    url:"https://service.pdok.nl/bzk/bro-geotop/wms/v1_0",
+    layers:"voxel_bodemtype",  // check GetCapabilities indien leeg op kaart
+    type:"wms", opacity:0.65, zIndex:209,
+    beschrijving:"3D bodemopbouw (zand/klei/veen) tot ~50 m diepte",
+    risicoLabel:"Hoog", risicoKleur:"#dc2626",
+    risicoTekst:"Veen- en kleilagen → spoelingverlies & instabiliteit HDD-traject",
+  },
+  {
+    id:"regis", label:"REGIS II", subtitel:"Hydrogeologie", emoji:"🧱",
+    kleur:"#06b6d4",
+    url:"https://service.pdok.nl/tno/bro-regis/wms/v1_0",
+    layers:"aquitard_ht_bkl",
+    type:"wms", opacity:0.60, zIndex:210,
+    beschrijving:"Klei/zandlagen met hydraulische eigenschappen (k-waarden)",
+    risicoLabel:"Hoog", risicoKleur:"#dc2626",
+    risicoTekst:"Hoge doorlatendheid → spoelingverlies, boorstabiliteit & drukopbouw",
+  },
+  {
+    id:"bodemkaart", label:"Bodemkaart", subtitel:"1:50.000", emoji:"🌍",
+    kleur:"#84cc16",
+    url:"https://service.pdok.nl/bzk/bro-bodemkaart/wms/v1_0",
+    layers:"bodemkaarteenheid",
+    type:"wms", opacity:0.55, zIndex:211,
+    beschrijving:"Landbodemtypes toplaag: klei · veen · zand",
+    risicoLabel:"Middel", risicoKleur:"#f59e0b",
+    risicoTekst:"Contextueel voor landzijde insteek — minder relevant waterbodems",
+  },
+  {
+    id:"grondwater", label:"Grondwaterstanden", subtitel:"BRO", emoji:"💧",
+    kleur:"#3b82f6",
+    url:"https://service.pdok.nl/bzk/bro-grondwaterstanden/wms/v1_0",
+    layers:"grondwaterstand",
+    type:"wms", opacity:0.70, zIndex:212,
+    beschrijving:"Peilbuizen, grondwaterdynamiek & seizoensvariatie",
+    risicoLabel:"Hoog", risicoKleur:"#dc2626",
+    risicoTekst:"Hoge GWS → opbarstrisico boorgang & verminderde boorstabiliteit",
+  },
+  {
+    id:"ahn", label:"AHN", subtitel:"Hoogtemodel", emoji:"🌊",
+    kleur:"#f97316",
+    url:"https://service.pdok.nl/rws/ahn/wmts/v1_0",
+    // WMTS tileUrl voor EPSG:28992 (RD New) — zelfde CRS als de kaart
+    wmtsUrl:"https://service.pdok.nl/rws/ahn/wmts/v1_0/dtm_05m/EPSG:28992/{z}/{x}/{y}.png",
+    layers:"dtm_05m",
+    type:"wmts", opacity:0.50, zIndex:208,
+    beschrijving:"Actueel Hoogtebestand Nederland — maaiveld, taluds, oevers",
+    risicoLabel:"Middel", risicoKleur:"#f59e0b",
+    risicoTekst:"Hoogteverschil beïnvloedt insteekhelling & vereiste boringsdiepte",
+  },
+];
+
 // ════════════════════════════════════════════════════════════════
 export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const mapRef       = useRef(null);
@@ -200,13 +257,19 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   const klicRef      = useRef([]);
   const punterMkRef  = useRef([]); // analyse-punt markers op kaart
   const basisLaagRef = useRef(null);
-  const overlayRefs  = useRef({});
+  const overlayRefs       = useRef({});
+  const ondergrondOvRef   = useRef({});
 
   const s3=(() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
   const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond??"brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays??[]);
   const actOvRef = useRef(s3.__overlays??[]);
   actOvRef.current = actieveOverlays;
+
+  const [actieveOndergrondLagen, setActieveOndergrondLagen] = useState([]);
+  const actOndergrondRef = useRef([]);
+  actOndergrondRef.current = actieveOndergrondLagen;
+  const [ondergrondSectieOpen, setOndergrondSectieOpen] = useState(true);
 
   const [analysePunten, setAnalysePunten] = useState(() => {
     try { const s=project?.analyse_punten; if(s)return typeof s==="string"?JSON.parse(s):s; } catch {}
@@ -259,6 +322,25 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       kaart._zetOverlay=zetOverlay;
       zetAchtergrond(s3.__achtergrond??"brt_standaard");
       (s3.__overlays??[]).forEach(id=>zetOverlay(id,true));
+
+      // Ondergrond overlay beheer (GeoTOP, REGIS, Bodemkaart, Grondwater, AHN)
+      function zetOndergrondOverlay(id,aan){
+        if(aan){
+          if(ondergrondOvRef.current[id])return;
+          const laag=ONDERGROND_LAGEN.find(l=>l.id===id);if(!laag)return;
+          let lyr;
+          if(laag.type==="wmts"){
+            lyr=L.tileLayer(laag.wmtsUrl,{maxZoom:22,maxNativeZoom:13,tileSize:256,opacity:laag.opacity??0.6,zIndex:laag.zIndex??210,attribution:"© PDOK AHN",crossOrigin:""});
+          } else {
+            lyr=L.tileLayer.wms(laag.url,{layers:laag.layers,format:"image/png",transparent:true,opacity:laag.opacity??0.65,zIndex:laag.zIndex??210,attribution:"© PDOK BRO"});
+          }
+          ondergrondOvRef.current[id]=lyr;
+          lyr.addTo(kaart);
+        } else {
+          if(ondergrondOvRef.current[id]){kaart.removeLayer(ondergrondOvRef.current[id]);delete ondergrondOvRef.current[id];}
+        }
+      }
+      kaart._zetOndergrondOverlay=zetOndergrondOverlay;
 
       // Filterbox
       if(box)L.rectangle([[box.lat1,box.lng1],[box.lat2,box.lng2]],{color:"#6b7280",weight:2,fillOpacity:0,interactive:false}).addTo(kaart);
@@ -322,6 +404,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     const nieuw=aan?[...actOvRef.current,id]:actOvRef.current.filter(o=>o!==id);
     actOvRef.current=nieuw;setActieveOverlays(nieuw);
     kaartRef.current?._zetOverlay?.(id,aan);
+  }
+  function toggleOndergrondLaag(id){
+    const aan=!actOndergrondRef.current.includes(id);
+    const nieuw=aan?[...actOndergrondRef.current,id]:actOndergrondRef.current.filter(o=>o!==id);
+    setActieveOndergrondLagen(nieuw);
+    kaartRef.current?._zetOndergrondOverlay?.(id,aan);
   }
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
@@ -671,6 +759,55 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     );})}
                   </div>
                 </div>
+
+                {/* ── Ondergrond lagen ── */}
+                <div className="px-4 py-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ondergrond</div>
+                    <button onClick={()=>setOndergrondSectieOpen(o=>!o)} className="text-xs text-gray-400 hover:text-gray-600">{ondergrondSectieOpen?"▲":"▼"}</button>
+                  </div>
+                  {ondergrondSectieOpen&&(
+                    <div className="space-y-1">
+                      {ONDERGROND_LAGEN.map(laag=>{
+                        const aan=actieveOndergrondLagen.includes(laag.id);
+                        return(
+                          <button key={laag.id} onClick={()=>toggleOndergrondLaag(laag.id)}
+                            className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-purple-50":"hover:bg-gray-50"}`}>
+                            <div className="w-2.5 h-2.5 rounded border border-gray-200 flex-shrink-0" style={{background:aan?laag.kleur:"transparent"}}/>
+                            <span className="text-sm leading-none">{laag.emoji}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-xs font-medium ${aan?"text-purple-700":"text-gray-600"}`}>{laag.label}</span>
+                              <span className="text-xs text-gray-400 ml-1">{laag.subtitel}</span>
+                            </div>
+                            <span className="text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0"
+                              style={{background:laag.risicoKleur+"22",color:laag.risicoKleur}}>
+                              {laag.risicoLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Actieve lagen — risico context compact */}
+                  {actieveOndergrondLagen.length>0&&(
+                    <div className="mt-2 space-y-1.5">
+                      {actieveOndergrondLagen.map(id=>{
+                        const laag=ONDERGROND_LAGEN.find(l=>l.id===id);
+                        if(!laag)return null;
+                        return(
+                          <div key={id} className="rounded-lg px-2.5 py-2 border border-gray-100 bg-gray-50">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-sm leading-none">{laag.emoji}</span>
+                              <span className="text-xs font-semibold text-gray-700 flex-1">{laag.label}</span>
+                              <span className="text-xs font-medium" style={{color:laag.risicoKleur}}>{laag.risicoLabel}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 leading-snug">{laag.risicoTekst}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -701,6 +838,49 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           </p>
         </div>
       )}
+
+      {/* ── Ondergrond overzichtspaneel ──────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">🔍 Ondergrondanalyse langs boorlijn</h3>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+            {actieveOndergrondLagen.length}/{ONDERGROND_LAGEN.length} lagen actief
+          </span>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {ONDERGROND_LAGEN.map(laag=>{
+            const aan=actieveOndergrondLagen.includes(laag.id);
+            return(
+              <div key={laag.id}
+                className={`rounded-xl border p-3 flex flex-col gap-1.5 transition-all ${aan?"border-gray-200 shadow-sm bg-white":"border-gray-100 bg-gray-50 opacity-50"}`}>
+                <div className="flex items-start justify-between gap-1">
+                  <div>
+                    <span className="text-base leading-none">{laag.emoji}</span>
+                    <div className="text-xs font-bold text-gray-800 mt-1">{laag.label}</div>
+                    <div className="text-xs text-gray-400">{laag.subtitel}</div>
+                  </div>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5"
+                    style={{background:laag.risicoKleur+"18",color:laag.risicoKleur}}>
+                    {laag.risicoLabel}
+                  </span>
+                </div>
+                <div className="w-full h-px" style={{background:laag.kleur+"44"}}/>
+                <p className="text-xs text-gray-500 leading-snug flex-1">{laag.beschrijving}</p>
+                <p className="text-xs leading-snug font-medium" style={{color:laag.risicoKleur+"cc"}}>{laag.risicoTekst}</p>
+                <button onClick={()=>toggleOndergrondLaag(laag.id)}
+                  className={`mt-1 w-full text-xs rounded-lg py-1 font-medium transition-colors ${aan
+                    ?"bg-purple-100 text-purple-700 hover:bg-purple-200"
+                    :"border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
+                  {aan?"✓ Actief op kaart":"Activeer laag"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-xs text-gray-400 mt-3 text-center">
+          Lagen worden als WMS/WMTS overlay getoond · brondata: PDOK / BRO · klik 'Activeer laag' om op kaart te laden
+        </p>
+      </div>
     </div>
   );
 }
