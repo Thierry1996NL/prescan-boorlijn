@@ -444,24 +444,41 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       // ── BGT klik-highlight (GeoJSON polygon op kaart) ────────────
       let klikHighlightLaag = null;
       let klikMarkerLaag    = null;
-      function zetKlikHighlight(feature, klikLatLng) {
+
+      function zetKlikHighlight(features, klikLatLng) {
         if(klikHighlightLaag){ kaart.removeLayer(klikHighlightLaag); klikHighlightLaag=null; }
         if(klikMarkerLaag)   { kaart.removeLayer(klikMarkerLaag);    klikMarkerLaag=null; }
-        // Klik-positiemarker: kleine rode stip zodat de gebruiker ziet waar ze klikte
+
+        // Rode stip op exacte klikpositie
         if(klikLatLng){
           klikMarkerLaag=L.circleMarker([klikLatLng.lat,klikLatLng.lng],{
-            radius:6,fillColor:"#ef4444",fillOpacity:1,
-            color:"white",weight:2.5,interactive:false,zIndexOffset:500,
+            radius:7,fillColor:"#ef4444",fillOpacity:1,
+            color:"white",weight:2.5,interactive:false,zIndexOffset:9999,
           }).addTo(kaart);
         }
-        if(!feature?.geometry) return;
-        klikHighlightLaag = L.geoJSON(feature, {
+
+        // Zoek de eerste feature MET geldige geometrie
+        const featureArr = Array.isArray(features) ? features : (features ? [features] : []);
+        const feat = featureArr.find(f => f?.geometry?.coordinates?.length > 0);
+        if(!feat) return;
+
+        // Opvallende stijl: oranje/geel zodat het altijd zichtbaar is t.o.v. achtergrond
+        klikHighlightLaag = L.geoJSON(feat, {
           style: {
-            fillColor:"#1a6b8a", fillOpacity:0.35,
-            color:"#0e4d6b", weight:2.5, opacity:1,
+            fillColor:"#f97316", fillOpacity:0.40,
+            color:"#ea580c",     weight:4, opacity:1,
+            dashArray:null,
           },
-          pointToLayer:(_f,latlng) => L.circleMarker(latlng,{radius:8,fillColor:"#1a6b8a",fillOpacity:0.7,color:"#0e4d6b",weight:2}),
+          pointToLayer:(_f,ll) => L.circleMarker(ll,{
+            radius:10,fillColor:"#f97316",fillOpacity:0.7,color:"#ea580c",weight:3,
+          }),
         }).addTo(kaart);
+
+        // Zoom/pan naar de highlight zodat die altijd zichtbaar is
+        try {
+          const bounds = klikHighlightLaag.getBounds();
+          if(bounds.isValid()) kaart.fitBounds(bounds.pad(0.4),{maxZoom:17});
+        } catch{}
       }
       kaart._zetKlikHighlight = zetKlikHighlight;
 
@@ -482,14 +499,14 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           const data = await res.json();
           if(data?.features?.length > 0){
             setBgtKlikInfo(data);
-            kaartRef.current?._zetKlikHighlight?.(data.features[0], {lat,lng});
+            kaartRef.current?._zetKlikHighlight?.(data.features, {lat,lng});
           } else {
             setBgtKlikInfo({leeg:true, lat, lng});
-            kaartRef.current?._zetKlikHighlight?.(null, null);
+            kaartRef.current?._zetKlikHighlight?.([], null);
           }
         } catch(err) {
           setBgtKlikInfo({fout: err.message});
-          kaartRef.current?._zetKlikHighlight?.(null, null);
+          kaartRef.current?._zetKlikHighlight?.([], null);
         }
         setBgtKlikBezig(false);
       });
@@ -1095,8 +1112,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         const rijen = Object.entries(props)
           .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie")
           .map(([k,v])=>[k, String(v).length>120?String(v).slice(0,120)+"…":String(v)]);
-        function sluiten(){ setBgtKlikInfo(null); kaartRef.current?._zetKlikHighlight?.(null,null); }
-        function gaFeature(nieuwIdx){ setActieveKlikIdx(nieuwIdx); kaartRef.current?._zetKlikHighlight?.(feats[nieuwIdx],null); }
+        function sluiten(){ setBgtKlikInfo(null); kaartRef.current?._zetKlikHighlight?.([],null); }
+        function gaFeature(nieuwIdx){ setActieveKlikIdx(nieuwIdx); kaartRef.current?._zetKlikHighlight?.([feats[nieuwIdx]],null); }
         return(
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             {/* Header — donkerblauw als PDOK viewer */}
@@ -1106,6 +1123,14 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 {feats.length>0&&(
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:"#2a5073",color:"#93c5fd"}}>
                     {laag}
+                  </span>
+                )}
+                {bgtKlikInfo.rdX&&(
+                  <span className="text-xs text-gray-400 ml-1">RD {bgtKlikInfo.rdX},{bgtKlikInfo.rdY}</span>
+                )}
+                {bgtKlikInfo.debug?.rawFirstCoord&&(
+                  <span className="text-xs text-yellow-400 ml-1" title="1e coördinaat uit API response">
+                    API:[{bgtKlikInfo.debug.rawFirstCoord[0]?.toFixed?.(1)},{bgtKlikInfo.debug.rawFirstCoord[1]?.toFixed?.(1)}]
                   </span>
                 )}
               </div>
