@@ -443,8 +443,17 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
 
       // ── BGT klik-highlight (GeoJSON polygon op kaart) ────────────
       let klikHighlightLaag = null;
-      function zetKlikHighlight(feature) {
+      let klikMarkerLaag    = null;
+      function zetKlikHighlight(feature, klikLatLng) {
         if(klikHighlightLaag){ kaart.removeLayer(klikHighlightLaag); klikHighlightLaag=null; }
+        if(klikMarkerLaag)   { kaart.removeLayer(klikMarkerLaag);    klikMarkerLaag=null; }
+        // Klik-positiemarker: kleine rode stip zodat de gebruiker ziet waar ze klikte
+        if(klikLatLng){
+          klikMarkerLaag=L.circleMarker([klikLatLng.lat,klikLatLng.lng],{
+            radius:6,fillColor:"#ef4444",fillOpacity:1,
+            color:"white",weight:2.5,interactive:false,zIndexOffset:500,
+          }).addTo(kaart);
+        }
         if(!feature?.geometry) return;
         klikHighlightLaag = L.geoJSON(feature, {
           style: {
@@ -473,14 +482,14 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
           const data = await res.json();
           if(data?.features?.length > 0){
             setBgtKlikInfo(data);
-            kaartRef.current?._zetKlikHighlight?.(data.features[0]);
+            kaartRef.current?._zetKlikHighlight?.(data.features[0], {lat,lng});
           } else {
             setBgtKlikInfo({leeg:true, lat, lng});
-            kaartRef.current?._zetKlikHighlight?.(null);
+            kaartRef.current?._zetKlikHighlight?.(null, null);
           }
         } catch(err) {
           setBgtKlikInfo({fout: err.message});
-          kaartRef.current?._zetKlikHighlight?.(null);
+          kaartRef.current?._zetKlikHighlight?.(null, null);
         }
         setBgtKlikBezig(false);
       });
@@ -1086,8 +1095,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         const rijen = Object.entries(props)
           .filter(([k,v])=>v!=null&&v!==""&&!k.startsWith("gml_")&&k!=="tijdstipRegistratie")
           .map(([k,v])=>[k, String(v).length>120?String(v).slice(0,120)+"…":String(v)]);
-        function sluiten(){ setBgtKlikInfo(null); kaartRef.current?._zetKlikHighlight?.(null); }
-        function gaFeature(nieuwIdx){ setActieveKlikIdx(nieuwIdx); kaartRef.current?._zetKlikHighlight?.(feats[nieuwIdx]); }
+        function sluiten(){ setBgtKlikInfo(null); kaartRef.current?._zetKlikHighlight?.(null,null); }
+        function gaFeature(nieuwIdx){ setActieveKlikIdx(nieuwIdx); kaartRef.current?._zetKlikHighlight?.(feats[nieuwIdx],null); }
         return(
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             {/* Header — donkerblauw als PDOK viewer */}
