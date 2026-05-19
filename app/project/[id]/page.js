@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 const MapTrace            = dynamic(() => import("@/components/MapTrace"),            { ssr: false });
 const OppervlakteAnalyse = dynamic(() => import("@/components/OppervlakteAnalyse"), { ssr: false });
 const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr: false });
+const Diepteligging = dynamic(() => import("@/components/Diepteligging"), { ssr: false });
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -466,12 +467,7 @@ export default function ProjectDetailPagina() {
       // ── Stap 6: Diepteligging ──────────────────────────────────
       case 6:
         return (
-          <div>
-            <p className="text-sm text-gray-500 max-w-2xl mb-4">
-              Stel de diepteligging in langs de boorlijn en vul het dwarsprofiel. Verwerk ook de bodemgesteldheid.
-            </p>
-            <MapTrace projectId={id} project={project} beginTab="diepte" onTraceOpgeslagen={handleTraceOpgeslagen} />
-          </div>
+          <Diepteligging project={project} />
         );
 
       // ── Stap 7: Machine & bentonietlocatie ─────────────────────
