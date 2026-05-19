@@ -467,7 +467,12 @@ export default function ProjectDetailPagina() {
       // ── Stap 6: Diepteligging ──────────────────────────────────
       case 6:
         return (
-          <Diepteligging project={project} />
+          <Diepteligging
+            project={project}
+            onSave={async (updates) => {
+              await updateProject(id, updates);
+            }}
+          />
         );
 
       // ── Stap 7: Machine & bentonietlocatie ─────────────────────

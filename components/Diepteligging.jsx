@@ -219,7 +219,7 @@ function Dwarsprofiel({ profielPunten, insteekDiepte, uitkomstDiepte, klicKruisi
 }
 
 // ─── Hoofd-component ──────────────────────────────────────────────
-export default function Diepteligging({ project, onNaar, opgeslagenDiepte }) {
+export default function Diepteligging({ project, onNaar, opgeslagenDiepte, onSave }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
   const basisLaagRef = useRef(null);
@@ -240,10 +240,27 @@ export default function Diepteligging({ project, onNaar, opgeslagenDiepte }) {
   const [insteekDiepte,  setInsteekDiepte]  = useState(opgeslagen.insteek??1.5);
   const [uitkomstDiepte, setUitkomstDiepte] = useState(opgeslagen.uitkomst??1.5);
 
-  // ── AHN hoogte ──
-  const [profielPunten,  setProfielPunten]  = useState([]);
+  // ── AHN hoogte — laad opgeslagen data bij mount ──
+  const [profielPunten,  setProfielPunten]  = useState(() => {
+    try {
+      const saved = project?.ahn_profiel;
+      if(!saved) return [];
+      const p = typeof saved==="string" ? JSON.parse(saved) : saved;
+      return Array.isArray(p) ? p : [];
+    } catch { return []; }
+  });
   const [hoogteBezig,    setHoogteBezig]    = useState(false);
-  const [hoogteInfo,     setHoogteInfo]     = useState(null);
+  const [hoogteInfo,     setHoogteInfo]     = useState(() => {
+    try {
+      const saved = project?.ahn_profiel;
+      if(!saved) return null;
+      const p = typeof saved==="string" ? JSON.parse(saved) : saved;
+      if(!Array.isArray(p)||!p.length) return null;
+      const geldig = p.filter(pt=>pt.hoogte!==null);
+      if(!geldig.length) return null;
+      return `${geldig.length}/${p.length} punten (opgeslagen) · min ${Math.min(...geldig.map(pt=>pt.hoogte)).toFixed(2)}m · max ${Math.max(...geldig.map(pt=>pt.hoogte)).toFixed(2)}m NAP`;
+    } catch { return null; }
+  });
 
   // ── KLIC kruisingen ──
   const [klicKruisingen, setKlicKruisingen] = useState([]);
@@ -458,11 +475,11 @@ export default function Diepteligging({ project, onNaar, opgeslagenDiepte }) {
     kaartRef.current?._updateBoorLaag?.(boorCoords);
   },[boorCoords]);
 
-  // ── AHN hoogte ophalen ─────────────────────────────────────────
+  // ── AHN hoogte ophalen + opslaan ──────────────────────────────
   const haalHoogteOp = useCallback(async()=>{
     if(boorCoords.length<2) return;
     setHoogteBezig(true);
-    setHoogteInfo(null);
+    setHoogteInfo("Bezig met ophalen…");
     try {
       const punten=interpoleerLijn(boorCoords,5);
       const rdPunten=punten.map(p=>{const rd=latLngNaarRD(p.lat,p.lng);return{x:rd.x,y:rd.y};});
@@ -471,18 +488,27 @@ export default function Diepteligging({ project, onNaar, opgeslagenDiepte }) {
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({punten:rdPunten}),
       });
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      if(!res.ok){
+        const errTxt = await res.text().catch(()=>"");
+        throw new Error(`HTTP ${res.status}${errTxt?" — "+errTxt.slice(0,80):""}`);
+      }
       const data=await res.json();
       const metHoogte=punten.map((p,i)=>({...p,hoogte:data.hoogtes?.[i]??null}));
       setProfielPunten(metHoogte);
       const geldig=metHoogte.filter(p=>p.hoogte!==null);
-      if(geldig.length)
-        setHoogteInfo(`${geldig.length}/${punten.length} punten · min ${Math.min(...geldig.map(p=>p.hoogte)).toFixed(2)}m · max ${Math.max(...geldig.map(p=>p.hoogte)).toFixed(2)}m NAP`);
+      const info=geldig.length
+        ? `${geldig.length}/${punten.length} punten · min ${Math.min(...geldig.map(p=>p.hoogte)).toFixed(2)}m · max ${Math.max(...geldig.map(p=>p.hoogte)).toFixed(2)}m NAP`
+        : "Geen hoogte-data ontvangen — controleer /api/ahn-hoogte";
+      setHoogteInfo(info);
+      // Sla op in project zodat het bij herlaad beschikbaar blijft
+      if(geldig.length && onSave) {
+        try { await onSave({ ahn_profiel: metHoogte }); } catch(e){ console.warn("AHN opslaan:", e); }
+      }
     } catch(e){
-      setHoogteInfo(`Fout: ${e.message}`);
+      setHoogteInfo(`❌ Fout: ${e.message}`);
     }
     setHoogteBezig(false);
-  },[boorCoords]);
+  },[boorCoords, onSave]);
 
   // ── UI render ────────────────────────────────────────────────────
   return(
