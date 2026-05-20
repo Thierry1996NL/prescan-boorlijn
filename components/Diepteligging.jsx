@@ -450,6 +450,8 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
     }catch{return null;}
   });
   const [klicKruisingen,setKlicKruisingen]=useState([]);
+  const [actieveAchtergrond,setActieveAchtergrond]=useState("standaard");
+  const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
   boorCoordRef.current=boorCoords;
 
   useEffect(()=>{
@@ -488,8 +490,32 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       const L=window.L,crs=maakRdCrs(L),center=boorCoordRef.current[0]??[52.15,5.39];
       const kaart=L.map(mapRef.current,{crs,center,zoom:14,maxZoom:22,zoomControl:true});
       kaartRef.current=kaart;
-      basisLaagRef.current=L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT",zIndex:1}).addTo(kaart);
-      L.tileLayer.wms("https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0",{layers:"buisleiding",format:"image/png",transparent:true,opacity:0.8,zIndex:10,attribution:"© Kadaster KLIC"}).addTo(kaart);
+
+      // ── Achtergrondlagen ──────────────────────────────────────
+      const ACHTERGRONDEN={
+        standaard: L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT",zIndex:1}),
+        grijs:     L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT",zIndex:1}),
+        luchtfoto: L.tileLayer("https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/2023_orthoHR/EPSG:28992/{z}/{x}/{y}.jpeg",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK Luchtfoto",zIndex:1}),
+      };
+      ACHTERGRONDEN.standaard.addTo(kaart);
+      basisLaagRef.current=ACHTERGRONDEN;
+      kaart._wisselAchtergrond=(id)=>{
+        Object.values(ACHTERGRONDEN).forEach(l=>kaart.hasLayer(l)&&kaart.removeLayer(l));
+        ACHTERGRONDEN[id]?.addTo(kaart);
+      };
+
+      // ── Overlay-lagen ──────────────────────────────────────────
+      const OVERLAYS={
+        klic:     L.tileLayer.wms("https://service.pdok.nl/kadaster/klic/wms",{layers:"ligging",format:"image/png",transparent:true,opacity:0.9,zIndex:10,attribution:"© Kadaster KLIC"}),
+        kadaster: L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.6,zIndex:11,attribution:"© Kadaster"}),
+        bgt:      L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12,attribution:"© BGT"}),
+      };
+      OVERLAYS.klic.addTo(kaart); // KLIC standaard aan
+      kaart._overlayLagen=OVERLAYS;
+      kaart._toggleOverlay=(id,aan)=>{
+        if(aan)OVERLAYS[id]?.addTo(kaart);
+        else if(kaart.hasLayer(OVERLAYS[id]))kaart.removeLayer(OVERLAYS[id]);
+      };
       let hoverMk=null;
       kaart._zetHoverMarker=(lat,lng)=>{if(hoverMk)hoverMk.setLatLng([lat,lng]);else{hoverMk=L.circleMarker([lat,lng],{radius:9,fillColor:"#f97316",fillOpacity:0.9,color:"white",weight:2.5,interactive:false,zIndexOffset:999}).addTo(kaart);}};
       kaart._verwijderHoverMarker=()=>{if(hoverMk){kaart.removeLayer(hoverMk);hoverMk=null;}};
@@ -511,6 +537,10 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   },[]);
 
   useEffect(()=>{kaartRef.current?._updateBoorLaag?.(boorCoords);},[boorCoords]);
+  useEffect(()=>{kaartRef.current?._wisselAchtergrond?.(actieveAchtergrond);},[actieveAchtergrond]);
+  useEffect(()=>{
+    Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));
+  },[actieveOverlays]);
 
   const handleHoverAfstand=useCallback((afstand)=>{
     if(boorCoords.length<2)return;
@@ -592,19 +622,51 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
                : "💾 Diepteprofiel opslaan"}
             </button>
             {klicKruisingen.length>0&&<div className="border-t border-gray-100 pt-2"><div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">KLIC ({klicKruisingen.length})</div><div className="space-y-0.5">{klicKruisingen.map((k,i)=>{const kt=KLIC_TYPES[k.type]??KLIC_TYPES.tele;return(<div key={i} className="flex items-center gap-2 text-xs"><div className="w-2 h-2 rounded-full" style={{background:kt.kleur}}/><span className="font-medium text-gray-700">{kt.label}</span><span className="text-gray-400">@{Math.round(k.afstand)}m</span><span className="text-gray-500 ml-auto">-{k.diepte.toFixed(1)}m</span></div>);})}</div></div>}
+
+            {/* Achtergrond */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
+              <div className="space-y-1">
+                {[["standaard","BRT Standaard"],["grijs","BRT Grijs"],["luchtfoto","Luchtfoto (HR)"]].map(([id,label])=>(
+                  <label key={id} className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="achtergrond" checked={actieveAchtergrond===id}
+                      onChange={()=>setActieveAchtergrond(id)} className="accent-orange-500"/>
+                    <span className="text-xs text-gray-700">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Overlays */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
+              <div className="space-y-1">
+                {[["klic","KLIC leidingen"],["kadaster","Kadastrale percelen"],["bgt","BGT oppervlakken"]].map(([id,label])=>(
+                  <label key={id} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!actieveOverlays[id]}
+                      onChange={e=>setActieveOverlays(prev=>({...prev,[id]:e.target.checked}))}
+                      className="accent-orange-500"/>
+                    <span className="text-xs text-gray-700">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <button onClick={()=>{if(boorCoords.length<2)return;const gj={type:"Feature",geometry:{type:"LineString",coordinates:boorCoords.map(([lat,lng])=>[lng,lat])},properties:{dieptePunten}};const blob=new Blob([JSON.stringify(gj,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="boorlijn_diepte.geojson";a.click();}}>⬇ Download GeoJSON</button>
           </div>
         </div>
         {/* Kaart + rotatie-wrapper */}
         <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
-          {/* Rotatie-container — CSS-rotatatie zodat boorlijn horizontaal loopt */}
+          {/* Oversized container: 150%×150% gecentreerd zodat hoeken gevuld zijn na rotatie */}
+          {/* Bij max ±45° rotatie dekt √2≈1.41× al genoeg; 1.5× is veilige marge */}
           <div style={{
-            width:"100%",height:"100%",
+            position:"absolute",
+            width:"150%",height:"150%",
+            top:"-25%",left:"-25%",
             transform: geroteerd ? `rotate(${rotatieDeg}deg)` : "none",
             transition:"transform 0.5s ease",
             transformOrigin:"center center",
           }}>
-            <div ref={mapRef} className="w-full h-full"/>
+            <div ref={mapRef} style={{width:"100%",height:"100%"}}/>
           </div>
 
           {/* Noord-pijl overlay — buiten de geroteerde div zodat hij correct wijst */}
