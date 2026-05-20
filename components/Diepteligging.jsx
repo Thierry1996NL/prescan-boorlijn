@@ -541,22 +541,67 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
 
       const klicLaag=L.layerGroup();
       const klicKleuren={klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"};
-      Object.entries(klicKleuren).forEach(([key,kleur])=>{
-        const raw=project?.[key];if(!raw)return;
-        try{
-          const gj=typeof raw==="string"?JSON.parse(raw):raw;
-          const feats=(gj.features??[gj]).map(normFeat).filter(f=>f.geometry?.coordinates);
-          if(!feats.length)return;
-          L.geoJSON({type:"FeatureCollection",features:feats},{
-            style:{color:kleur,weight:3,opacity:1},
-            pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:5,fillColor:kleur,fillOpacity:1,color:"white",weight:1.5})
-          }).addTo(klicLaag);
-        }catch(e){console.warn("KLIC laad fout",key,e);}
+
+      // ── Debug: welke project-velden bevatten GeoJSON-coördinaten? ──
+      const projectKeys=Object.keys(project||{});
+      const geoVelden=projectKeys.filter(k=>{
+        const v=project[k];
+        if(typeof v==="string")return v.includes('"coordinates"')||v.includes('"type"');
+        if(typeof v==="object"&&v!==null)return v.type||v.features||v.coordinates;
+        return false;
       });
-      try{const ss=sessionStorage.getItem("klic_features");
-        if(ss){const feats=JSON.parse(ss).map(normFeat);
-          L.geoJSON({type:"FeatureCollection",features:feats},{style:{color:"#f97316",weight:2.5,opacity:0.9}}).addTo(klicLaag);}
-      }catch{}
+      console.log("[KLIC debug] Project velden met geodata:", geoVelden);
+      // SessionStorage scan
+      try{for(let i=0;i<sessionStorage.length;i++){
+        const k=sessionStorage.key(i);
+        const v=sessionStorage.getItem(k)||"";
+        if(v.includes("coordinates")||v.includes("geometry"))console.log("[KLIC debug] sessionStorage key:",k,"len:",v.length);
+      }}catch{}
+
+      // ── Probeer alle bekende veldnamen ──────────────────────────
+      const KLIC_VELDPATRONEN=[
+        // Patroon 1: klic_[type]
+        {klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"},
+        // Patroon 2: [type]_geojson
+        {ls_geojson:"#ef4444",ms_geojson:"#f97316",gas_geojson:"#eab308",water_geojson:"#3b82f6",tele_geojson:"#8b5cf6",riool_geojson:"#6b7280"},
+        // Patroon 3: ontwerp_[type]
+        {ontwerp_ls:"#ef4444",ontwerp_ms:"#f97316",ontwerp_gas:"#eab308",ontwerp_water:"#3b82f6"},
+        // Patroon 4: gecombineerd
+        {klic_geojson:"#f97316",klic_data:"#f97316",kabels_geojson:"#f97316",kabels_data:"#f97316"},
+      ];
+
+      let klicGeladen=0;
+      KLIC_VELDPATRONEN.forEach(patroon=>{
+        Object.entries(patroon).forEach(([key,kleur])=>{
+          const raw=project?.[key];if(!raw)return;
+          try{
+            const gj=typeof raw==="string"?JSON.parse(raw):raw;
+            const feats=(gj.features??[gj]).filter(f=>f?.geometry).map(normFeat);
+            if(!feats.length)return;
+            console.log("[KLIC debug] Gevonden in veld:",key,feats.length,"features");
+            L.geoJSON({type:"FeatureCollection",features:feats},{
+              style:{color:kleur,weight:3,opacity:1},
+              pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:5,fillColor:kleur,fillOpacity:1,color:"white",weight:1.5})
+            }).addTo(klicLaag);
+            klicGeladen++;
+          }catch(e){console.warn("[KLIC debug] Fout bij",key,e);}
+        });
+      });
+
+      // SessionStorage fallbacks
+      const SS_KEYS=["klic_features","klic_data","klic_geojson","ontwerp_klic","kabels"];
+      SS_KEYS.forEach(ssKey=>{
+        try{const ss=sessionStorage.getItem(ssKey);if(!ss)return;
+          const data=JSON.parse(ss);
+          const feats=(data.features??data).filter?.(f=>f?.geometry)?.map(normFeat)??[];
+          if(!feats.length)return;
+          console.log("[KLIC debug] sessionStorage gevonden:",ssKey,feats.length,"features");
+          L.geoJSON({type:"FeatureCollection",features:feats},{style:{color:"#f97316",weight:2.5,opacity:0.9}}).addTo(klicLaag);
+          klicGeladen++;
+        }catch{}
+      });
+
+      console.log("[KLIC debug] Totaal geladen:",klicGeladen,"bronnen");
       klicLaag.addTo(kaart);
 
       const OVERLAYS={
