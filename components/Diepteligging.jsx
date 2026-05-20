@@ -542,24 +542,45 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       kaart._zetDieptePuntenLaag=(punten,coords)=>{
         dieptePuntenLaag.clearLayers();
         if(!coords||coords.length<2)return;
+        const pp=profielRef.current;
         const sorted=[...punten].sort((a,b)=>a.afstand-b.afstand);
+
         sorted.forEach((dp,i)=>{
           const isStart=i===0,isEnd=i===sorted.length-1;
           const pos=positieOpAfstand(coords,dp.afstand);
           const label=isStart?"S":isEnd?"E":String(i);
           const kleur=isStart?"#16a34a":isEnd?"#dc2626":"#f97316";
+          const napPP=pp?.find?.(p=>Math.abs(p.afstand-dp.afstand)<3);
+          const nap=napPP?.hoogte!=null?(napPP.hoogte-dp.diepte).toFixed(2)+"m":null;
           const diepteTxt=isStart||isEnd?"maaiveld":`-${dp.diepte.toFixed(2)}m`;
-          const napPP=profielRef.current?.find?.(p=>Math.abs(p.afstand-dp.afstand)<3);
-          const napTxt=napPP?.hoogte!=null?(napPP.hoogte-dp.diepte).toFixed(2)+"m NAP":"";
+
           const icon=L.divIcon({
-            html:`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
-              <div style="background:${kleur};color:white;border:2.5px solid white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;box-shadow:0 2px 5px rgba(0,0,0,.4);line-height:1">${label}</div>
-              <div style="background:white;color:${kleur};border:1.5px solid ${kleur};border-radius:4px;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;margin-top:2px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);line-height:1.2">${diepteTxt}${napTxt?`<br><span style='color:#6b7280;font-weight:400'>${napTxt}</span>`:""}</div>
+            html:`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none;transform:translateX(-50%)">
+              <div style="background:${kleur};color:white;border:2.5px solid white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.45)">${label}</div>
+              <div style="background:white;color:${kleur};border:1.5px solid ${kleur};border-radius:5px;padding:2px 6px;font-size:9px;font-weight:700;margin-top:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);text-align:center;line-height:1.4">${diepteTxt}${nap?`<br><span style='color:#6b7280;font-size:8px;font-weight:400'>${nap} NAP</span>`:""}</div>
             </div>`,
-            className:"",iconSize:[70,50],iconAnchor:[13,13],
+            className:"",iconSize:[1,1],iconAnchor:[0,13],
           });
-          L.marker([pos.lat,pos.lng],{icon,interactive:false,zIndexOffset:300}).addTo(dieptePuntenLaag);
+          L.marker([pos.lat,pos.lng],{icon,interactive:false,zIndexOffset:400}).addTo(dieptePuntenLaag);
         });
+
+        // Segment-labels op de boorlijn (afstand + hoek)
+        for(let i=0;i<sorted.length-1;i++){
+          const a=sorted[i],b=sorted[i+1];
+          const midAfstand=(a.afstand+b.afstand)/2;
+          const midPos=positieOpAfstand(coords,midAfstand);
+          const dH=b.afstand-a.afstand;
+          const napA=(pp?.find?.(p=>Math.abs(p.afstand-a.afstand)<3)?.hoogte??0)-a.diepte;
+          const napB=(pp?.find?.(p=>Math.abs(p.afstand-b.afstand)<3)?.hoogte??0)-b.diepte;
+          const hoek=Math.atan2(napB-napA,dH)*180/Math.PI;
+          const hoekKleur=Math.abs(hoek)>15?"#dc2626":Math.abs(hoek)>8?"#f97316":"#16a34a";
+          const pijl=hoek>0.3?"↗":hoek<-0.3?"↘":"→";
+          const segIcon=L.divIcon({
+            html:`<div style="background:white;border:1px solid #e5e7eb;border-radius:5px;padding:2px 5px;font-size:8.5px;font-weight:600;color:#374151;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.2);transform:translateX(-50%)">${Math.round(dH)}m <span style='color:${hoekKleur}'>${pijl}${Math.abs(hoek).toFixed(1)}°</span></div>`,
+            className:"",iconSize:[1,1],iconAnchor:[0,8],
+          });
+          L.marker([midPos.lat,midPos.lng],{icon:segIcon,interactive:false,zIndexOffset:350}).addTo(dieptePuntenLaag);
+        }
       };
       kaart._zetHoverMarker=(lat,lng)=>{if(hoverMk)hoverMk.setLatLng([lat,lng]);else{hoverMk=L.circleMarker([lat,lng],{radius:9,fillColor:"#f97316",fillOpacity:0.9,color:"white",weight:2.5,interactive:false,zIndexOffset:999}).addTo(kaart);}};
       kaart._verwijderHoverMarker=()=>{if(hoverMk){kaart.removeLayer(hoverMk);hoverMk=null;}};
@@ -582,11 +603,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
 
   useEffect(()=>{kaartRef.current?._updateBoorLaag?.(boorCoords);},[boorCoords]);
   useEffect(()=>{ profielRef.current=profielPunten; },[profielPunten]);
-  // Sync dieptepunten-markers op kaart
+  // Sync dieptepunten-markers op kaart — gebruik kaartInstantie (state) zodat
+  // dit ALTIJD na Leaflet init triggert, ook bij eerste render
   useEffect(()=>{
-    if(boorCoords.length>=2)
-      kaartRef.current?._zetDieptePuntenLaag?.(dieptePunten,boorCoords);
-  },[dieptePunten,boorCoords,profielPunten]);
+    if(kaartInstantie && boorCoords.length>=2)
+      kaartInstantie._zetDieptePuntenLaag?.(dieptePunten, boorCoords);
+  },[kaartInstantie, dieptePunten, boorCoords, profielPunten]);
   useEffect(()=>{kaartRef.current?._wisselAchtergrond?.(actieveAchtergrond);},[actieveAchtergrond]);
   useEffect(()=>{
     Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));
