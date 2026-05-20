@@ -87,8 +87,15 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
   const xP=d=>M.l+d/totM*plotW;
   const yP=h=>M.t+(hMax-h)/hSpan*plotH;
 
-  const boorPadPts=geldig.map(pp=>({afstand:pp.afstand,hoogte:pp.hoogte-interpoleerDiepte(pp.afstand,dieptePunten)}));
-  const boorPolyline=boorPadPts.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
+  // Boorpad: rechte lijnen ALLEEN tussen waypoints (geen curve door alle AHN-punten)
+  // Waypoints → NAP hoogte = maaiveld - diepte op dat punt
+  const sortedWP=[...dieptePunten].sort((a,b)=>a.afstand-b.afstand);
+  const boorWaypoints=sortedWP.map(dp=>{
+    const mv=maaiveldOpAfstand(dp.afstand,geldig)??0;
+    return{afstand:dp.afstand,hoogte:mv-dp.diepte};
+  });
+  // Polyline alleen door waypoints → geeft rechte segmenten
+  const boorPolyline=boorWaypoints.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const maaiveldPts=geldig.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const vlakPts=`${xP(geldig[0].afstand)},${H-M.b} ${maaiveldPts} ${xP(geldig[geldig.length-1].afstand)},${H-M.b}`;
 
@@ -327,15 +334,11 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
                   <div className="flex items-center gap-0.5">
                     {!isStart&&!isEinde&&(
                       <>
-                        <div className="flex flex-col gap-0.5">
-                          <button onClick={()=>wijzigDiepte(i,-0.1)} title="Minder diep (+0.1m)" className="w-5 h-5 rounded text-center bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs leading-5">↑</button>
-                          <button onClick={()=>wijzigDiepte(i,+0.1)} title="Meer diep (-0.1m)" className="w-5 h-5 rounded text-center bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs leading-5">↓</button>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <button onClick={()=>wijzigAfstand(i,-1)} title="1m naar achter" className="w-5 h-5 rounded text-center bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs leading-5">←</button>
-                          <button onClick={()=>wijzigAfstand(i,+1)} title="1m naar voren" className="w-5 h-5 rounded text-center bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs leading-5">→</button>
-                        </div>
-                        <button onClick={()=>verwijder(i)} title="Verwijder punt" className="w-5 h-5 rounded text-center bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 text-xs leading-5 ml-0.5">×</button>
+                        <button onClick={()=>wijzigDiepte(i,-0.1)} title="Minder diep" className="w-6 h-6 rounded bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs">↑</button>
+                        <button onClick={()=>wijzigDiepte(i,+0.1)} title="Meer diep"   className="w-6 h-6 rounded bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs">↓</button>
+                        <button onClick={()=>wijzigAfstand(i,-1)}  title="1m naar voren" className="w-6 h-6 rounded bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs">←</button>
+                        <button onClick={()=>wijzigAfstand(i,+1)}  title="1m naar achter" className="w-6 h-6 rounded bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs">→</button>
+                        <button onClick={()=>verwijder(i)} title="Verwijder" className="w-6 h-6 rounded bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 text-xs ml-0.5">×</button>
                       </>
                     )}
                   </div>
