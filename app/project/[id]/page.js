@@ -9,7 +9,8 @@ import dynamic from "next/dynamic";
 const MapTrace            = dynamic(() => import("@/components/MapTrace"),            { ssr: false });
 const OppervlakteAnalyse = dynamic(() => import("@/components/OppervlakteAnalyse"), { ssr: false });
 const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr: false });
-const Diepteligging = dynamic(() => import("@/components/Diepteligging"), { ssr: false });
+const Diepteligging    = dynamic(() => import("@/components/Diepteligging"),    { ssr: false });
+const MachineLocatie   = dynamic(() => import("@/components/MachineLocatie"),   { ssr: false });
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -478,50 +479,10 @@ export default function ProjectDetailPagina() {
       // ── Stap 7: Machine & bentonietlocatie ─────────────────────
       case 7:
         return (
-          <div className="space-y-4 max-w-2xl">
-            <p className="text-sm text-gray-500">Bepaal de locaties van de HDD-boormachine en bentoniet-installatie.</p>
-            <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {[
-                {
-                  titel: "HDD Boormachine", icon: "🏗️",
-                  velden: [
-                    { label: "Adres / omschrijving",    key: "machine_adres", type: "text"   },
-                    { label: "Oppervlak benodigd (m²)", key: "machine_opp",   type: "number" },
-                    { label: "Bijzonderheden",          key: "machine_bijz",  type: "text"   },
-                  ],
-                },
-                {
-                  titel: "Bentoniet tank & opvangput", icon: "🛢️",
-                  velden: [
-                    { label: "Adres / omschrijving",    key: "bentoniet_adres", type: "text"   },
-                    { label: "Oppervlak benodigd (m²)", key: "bentoniet_opp",   type: "number" },
-                    { label: "Bijzonderheden",          key: "bentoniet_bijz",  type: "text"   },
-                  ],
-                },
-              ].map(({ titel, icon, velden }) => (
-                <div key={titel} className="px-5 py-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span>{icon}</span>
-                    <span className="text-sm font-semibold text-gray-800">{titel}</span>
-                  </div>
-                  <div className="space-y-3">
-                    {velden.map(({ label, key, type }) => (
-                      <div key={key}>
-                        <label className="text-xs text-gray-500 font-medium block mb-1">{label}</label>
-                        <input
-                          type={type}
-                          defaultValue={project[key] ?? ""}
-                          onBlur={async e => { try { await updateProject(id, { [key]: e.target.value }); } catch {} }}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
-                          placeholder="—"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <MachineLocatie
+            project={project}
+            onSave={async (updates) => { await updateProject(id, updates); }}
+          />
         );
 
       // ── Stap 8: Eindontwerp ────────────────────────────────────

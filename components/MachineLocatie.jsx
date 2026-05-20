@@ -1,0 +1,343 @@
+"use client";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import KlicAchtergrond from "@/components/KlicAchtergrond";
+
+// ─── RD/WGS84 helpers ────────────────────────────────────────────
+function rdNaarLatLng(x,y){
+  const dX=(x-155000)/100000,dY=(y-463000)/100000;
+  const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
+  const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
+  return [lng,lat];
+}
+function latLngNaarRD(lat,lng){
+  const dLat=0.36*(lat-52.15517440),dLon=0.36*(lng-5.38720621);
+  return{x:155000+190094.945*dLon-11832.228*dLon*dLat-114.221*dLon*dLat*dLat-32.391*dLon*dLon*dLon,
+         y:463000+309056.544*dLat+60940.388*dLon*dLon*dLat-9.941*dLon*dLon-2.340*dLat*dLat*dLat};
+}
+
+function berekenBearing(p1,p2){
+  const lat1=p1[0]*Math.PI/180,lat2=p2[0]*Math.PI/180;
+  const dLon=(p2[1]-p1[1])*Math.PI/180;
+  const x=Math.sin(dLon)*Math.cos(lat2),y=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+  return((Math.atan2(x,y)*180/Math.PI)+360)%360;
+}
+
+// Maak rechthoek-polygoon in Leaflet [lat,lng][] geroteerd langs de bore-richting
+function maakRechthoekCoords(centerRD,lengteM,breedteM,bearingDeg){
+  const B=bearingDeg*Math.PI/180,sinB=Math.sin(B),cosB=Math.cos(B);
+  const hl=lengteM/2,hb=breedteM/2;
+  return[[hl,hb],[hl,-hb],[-hl,-hb],[-hl,hb]].map(([along,perp])=>{
+    const rdX=centerRD.x+along*sinB+perp*cosB;
+    const rdY=centerRD.y+along*cosB-perp*sinB;
+    const[lng,lat]=rdNaarLatLng(rdX,rdY);
+    return[lat,lng];
+  });
+}
+
+function maakRdCrs(L){
+  return new L.Proj.CRS("EPSG:28992","+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs",
+    {resolutions:[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125,0.00656,0.00328,0.00164,0.00082],
+     origin:[-285401.920,903401.920],bounds:L.bounds([-285401.920,22598.080],[595401.920,903401.920])});
+}
+
+// ─── Machine configuratie ─────────────────────────────────────────
+const MACHINE_CONFIG={
+  boormachine:{label:"HDD Boormachine",kleur:"#3b82f6",kleurFill:"rgba(59,130,246,0.15)",icon:"🏗️"},
+  bentoniet:  {label:"Bentoniet & opvangput",kleur:"#f97316",kleurFill:"rgba(249,115,22,0.15)",icon:"🛢️"},
+};
+
+// ─── Hoofd-component ──────────────────────────────────────────────
+export default function MachineLocatie({project,onSave}){
+  const mapRef=useRef(null);
+  const kaartRef=useRef(null);
+  const [kaartInstantie,setKaartInstantie]=useState(null);
+
+  const [boorCoords]=useState(()=>{
+    try{const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[];}catch{return[];}
+  });
+
+  const bearing=useMemo(()=>boorCoords.length>=2?berekenBearing(boorCoords[0],boorCoords[boorCoords.length-1]):0,[boorCoords]);
+  const [geroteerd,setGeroteerd]=useState(true);
+  const rotatieDeg=useMemo(()=>{let r=(90-bearing+360)%360;if(r>180)r-=360;return r;},[bearing]);
+
+  // Machine-afmetingen en posities
+  const [machines,setMachines]=useState(()=>{
+    try{
+      const s=project?.machine_locaties;
+      if(s){const p=typeof s==="string"?JSON.parse(s):s;if(p)return p;}
+    }catch{}
+    return{
+      boormachine:{centerRD:null,lengte:6,breedte:3},
+      bentoniet:  {centerRD:null,lengte:4,breedte:2.5},
+    };
+  });
+
+  const [plaatsModus,setPlaatsModus]=useState(null); // "boormachine"|"bentoniet"|null
+  const [actieveAchtergrond,setActieveAchtergrond]=useState("luchtfoto");
+  const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
+  const [opslaanStatus,setOpslaanStatus]=useState(null);
+
+  const plaatsModusRef=useRef(null);
+  plaatsModusRef.current=plaatsModus;
+
+  // ── Kaart init ────────────────────────────────────────────────
+  useEffect(()=>{
+    if(typeof window==="undefined"||kaartRef.current||!mapRef.current)return;
+    let actief=true;
+    (async()=>{
+      const ls=src=>new Promise((ok,er)=>{if(document.querySelector(`script[src="${src}"]`))return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=er;document.head.appendChild(s);});
+      if(!document.querySelector('link[href*="leaflet"]')){const c=document.createElement("link");c.rel="stylesheet";c.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";document.head.appendChild(c);}
+      await ls("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
+      await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js");
+      await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js");
+      if(!actief||!mapRef.current)return;
+      const L=window.L;
+      const crs=maakRdCrs(L);
+      const center=boorCoords[0]??[52.15,5.39];
+      const kaart=L.map(mapRef.current,{crs,center,zoom:15,maxZoom:22,zoomControl:true});
+      kaartRef.current=kaart;
+      setKaartInstantie(kaart);
+
+      // Achtergrondlagen
+      const ACH={
+        standaard:L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT",zIndex:1}),
+        grijs:    L.tileLayer("https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK BRT",zIndex:1}),
+        luchtfoto:L.tileLayer("https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/2023_orthoHR/EPSG:28992/{z}/{x}/{y}.jpeg",{maxZoom:22,maxNativeZoom:13,tileSize:256,attribution:"© PDOK Luchtfoto",zIndex:1}),
+      };
+      ACH.luchtfoto.addTo(kaart);
+      kaart._wisselAchtergrond=(id)=>{Object.values(ACH).forEach(l=>kaart.hasLayer(l)&&kaart.removeLayer(l));ACH[id]?.addTo(kaart);};
+
+      // Overlays
+      const OVL={
+        kadaster:L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.7,zIndex:11}),
+        bgt:L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12}),
+      };
+      kaart._toggleOverlay=(id,aan)=>{if(aan)OVL[id]?.addTo(kaart);else if(kaart.hasLayer(OVL[id]))kaart.removeLayer(OVL[id]);};
+
+      // Read-only boorlijn
+      if(boorCoords.length>=2){
+        L.polyline(boorCoords,{color:"#f97316",weight:4,opacity:0.8,interactive:false}).addTo(kaart);
+        L.circleMarker(boorCoords[0],{radius:8,fillColor:"#16a34a",fillOpacity:1,color:"white",weight:2,interactive:false}).addTo(kaart);
+        L.circleMarker(boorCoords[boorCoords.length-1],{radius:8,fillColor:"#dc2626",fillOpacity:1,color:"white",weight:2,interactive:false}).addTo(kaart);
+        try{kaart.fitBounds(L.latLngBounds(boorCoords).pad(0.25),{maxZoom:16});}catch{}
+      }
+
+      // Machine-rechthoek lagen
+      const machLagen={};
+      const machMarkers={};
+      Object.keys(MACHINE_CONFIG).forEach(key=>{
+        machLagen[key]=L.polygon([],{color:MACHINE_CONFIG[key].kleur,fillColor:MACHINE_CONFIG[key].kleurFill,fillOpacity:0.6,weight:2.5,dashArray:null,interactive:true}).addTo(kaart);
+        machMarkers[key]=null;
+      });
+
+      function updateRechthoek(key,centerRD,lengte,breedte,bear){
+        if(!centerRD)return;
+        const coords=maakRechthoekCoords(centerRD,lengte,breedte,bear);
+        machLagen[key].setLatLngs(coords);
+        // Centerpunt-marker
+        if(machMarkers[key])kaart.removeLayer(machMarkers[key]);
+        const[lng,lat]=rdNaarLatLng(centerRD.x,centerRD.y);
+        const cfg=MACHINE_CONFIG[key];
+        machMarkers[key]=L.marker([lat,lng],{
+          draggable:true,
+          icon:L.divIcon({
+            html:`<div style="background:${cfg.kleur};color:white;border:2px solid white;border-radius:4px;padding:2px 5px;font-size:9px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:move">${cfg.icon} ${cfg.label}</div>`,
+            className:"",iconSize:[110,22],iconAnchor:[55,11],
+          }),
+          zIndexOffset:500,
+        }).addTo(kaart);
+        machMarkers[key].on("drag",(e)=>{
+          const{lat:la,lng:lo}=e.latlng;
+          const rd=latLngNaarRD(la,lo);
+          const coords2=maakRechthoekCoords(rd,lengte,breedte,bear);
+          machLagen[key].setLatLngs(coords2);
+        });
+        machMarkers[key].on("dragend",(e)=>{
+          const{lat:la,lng:lo}=e.latlng;
+          const rd=latLngNaarRD(la,lo);
+          setMachines(prev=>({...prev,[key]:{...prev[key],centerRD:rd}}));
+        });
+      }
+      kaart._updateRechthoek=updateRechthoek;
+      kaart._machLagen=machLagen;
+
+      // Klik op kaart = plaatsen in plaatsModus
+      kaart.on("click",(e)=>{
+        const key=plaatsModusRef.current;
+        if(!key)return;
+        const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
+        setMachines(prev=>{
+          const nieuweState={...prev,[key]:{...prev[key],centerRD:rd}};
+          return nieuweState;
+        });
+        setPlaatsModus(null);
+      });
+
+      // Noord-pijl overlay
+      const npiDiv=document.createElement("div");
+      npiDiv.style.cssText="position:absolute;top:12px;right:12px;z-index:500;pointer-events:none";
+      npiDiv.innerHTML=`<div style="background:white;border:1px solid #e5e7eb;border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.2)"><svg viewBox="0 0 40 40" width="36" height="36"><polygon points="20,4 24,20 20,17 16,20" fill="#dc2626"/><polygon points="20,36 24,20 20,23 16,20" fill="#374151"/><circle cx="20" cy="20" r="3" fill="white" stroke="#9ca3af" strokeWidth="1"/><text x="20" y="3" textAnchor="middle" fontSize="7" fill="#dc2626" fontWeight="700">N</text></svg></div>`;
+      mapRef.current.appendChild(npiDiv);
+      kaart._noordPijlEl=npiDiv;
+      kaart._zetNoordPijlRotatie=(deg)=>{
+        npiDiv.querySelector("div").style.transform=`rotate(${-deg}deg)`;
+        npiDiv.querySelector("div").style.transition="transform 0.5s ease";
+      };
+    })();
+    return()=>{actief=false;if(kaartRef.current){try{kaartRef.current.remove();}catch{}kaartRef.current=null;}};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // Sync achtergrond/overlays
+  useEffect(()=>{kaartRef.current?._wisselAchtergrond?.(actieveAchtergrond);},[actieveAchtergrond]);
+  useEffect(()=>{Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));},[actieveOverlays]);
+
+  // Sync rotatie
+  useEffect(()=>{
+    kaartRef.current?._zetNoordPijlRotatie?.(geroteerd?rotatieDeg:0);
+    const t=setTimeout(()=>{try{kaartRef.current?.invalidateSize({animate:false});}catch{}},600);
+    return()=>clearTimeout(t);
+  },[geroteerd,rotatieDeg]);
+
+  // Sync machine-rechthoeken naar kaart
+  useEffect(()=>{
+    if(!kaartInstantie?._updateRechthoek)return;
+    Object.keys(machines).forEach(key=>{
+      const m=machines[key];
+      if(m.centerRD)kaartInstantie._updateRechthoek(key,m.centerRD,m.lengte,m.breedte,bearing);
+    });
+  },[kaartInstantie,machines,bearing]);
+
+  // Cursor bij plaatsmodus
+  useEffect(()=>{
+    if(!mapRef.current)return;
+    mapRef.current.style.cursor=plaatsModus?"crosshair":"";
+  },[plaatsModus]);
+
+  // Opslaan
+  const handleOpslaan=useCallback(async()=>{
+    if(!onSave)return;
+    setOpslaanStatus("bezig");
+    try{await onSave({machine_locaties:machines});setOpslaanStatus("ok");setTimeout(()=>setOpslaanStatus(null),3000);}
+    catch(e){setOpslaanStatus("fout");console.error(e);}
+  },[machines,onSave]);
+
+  return(
+    <div className="space-y-4">
+      {kaartInstantie&&<KlicAchtergrond kaart={kaartInstantie} project={project}/>}
+      <div className="flex gap-4" style={{height:"calc(100vh - 200px)",minHeight:480}}>
+
+        {/* Sidebar */}
+        <div className="w-72 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto flex flex-col">
+          <div className="px-4 py-2.5 border-b border-gray-100">
+            <span className="text-sm font-semibold text-gray-900">7. Machine- & bentonietlocatie</span>
+            <div className="text-xs text-gray-400">Klik op de kaart om te plaatsen</div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+
+            {/* Machine blokken */}
+            {Object.entries(MACHINE_CONFIG).map(([key,cfg])=>{
+              const m=machines[key];
+              const isActief=plaatsModus===key;
+              return(
+                <div key={key} className="border rounded-xl overflow-hidden" style={{borderColor:cfg.kleur+"44"}}>
+                  <div className="px-3 py-2 flex items-center gap-2" style={{background:cfg.kleurFill}}>
+                    <span className="text-base">{cfg.icon}</span>
+                    <span className="text-xs font-semibold" style={{color:cfg.kleur}}>{cfg.label}</span>
+                    <div className="ml-auto w-3 h-3 rounded-full" style={{background:m.centerRD?cfg.kleur:"#d1d5db"}}/>
+                  </div>
+                  <div className="px-3 py-2 space-y-2">
+                    <button onClick={()=>setPlaatsModus(isActief?null:key)}
+                      className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${isActief?"text-white":"border"}`}
+                      style={isActief?{background:cfg.kleur}:{borderColor:cfg.kleur+"66",color:cfg.kleur}}>
+                      {isActief?"✕ Annuleer — klik op kaart":"📍 "+(m.centerRD?"Herplaats":"Plaats op kaart")}
+                    </button>
+                    {/* Afmetingen */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-0.5">Lengte (m)</div>
+                        <input type="number" min={1} max={30} step={0.5} value={m.lengte}
+                          onChange={e=>setMachines(prev=>({...prev,[key]:{...prev[key],lengte:+e.target.value}}))}
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-1"
+                          style={{"--tw-ring-color":cfg.kleur}}/>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-400 mb-0.5">Breedte (m)</div>
+                        <input type="number" min={1} max={20} step={0.5} value={m.breedte}
+                          onChange={e=>setMachines(prev=>({...prev,[key]:{...prev[key],breedte:+e.target.value}}))}
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-1"/>
+                      </div>
+                    </div>
+                    {m.centerRD&&(
+                      <div className="text-xs text-gray-400">
+                        {m.lengte}×{m.breedte}m = {(m.lengte*m.breedte).toFixed(1)}m² · Sleep label om te verplaatsen
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Rotatie */}
+            <button onClick={()=>setGeroteerd(v=>!v)}
+              className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${geroteerd?"bg-indigo-600 text-white border-indigo-600":"bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50"}`}>
+              {geroteerd?"↑ Noord-omhoog":"↺ Bore-richting (horizontaal)"}
+            </button>
+
+            {/* Achtergrond */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
+              {[["standaard","BRT Standaard"],["grijs","BRT Grijs"],["luchtfoto","Luchtfoto (HR)"]].map(([id,label])=>(
+                <label key={id} className="flex items-center gap-2 cursor-pointer mb-1">
+                  <input type="radio" name="ach7" checked={actieveAchtergrond===id} onChange={()=>setActieveAchtergrond(id)} className="accent-orange-500"/>
+                  <span className="text-xs text-gray-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* Overlays */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
+              {[["klic","KLIC leidingen"],["kadaster","Kadastrale percelen"],["bgt","BGT oppervlakken"]].map(([id,label])=>(
+                <label key={id} className="flex items-center gap-2 cursor-pointer mb-1">
+                  <input type="checkbox" checked={!!actieveOverlays[id]} onChange={e=>setActieveOverlays(p=>({...p,[id]:e.target.checked}))} className="accent-orange-500"/>
+                  <span className="text-xs text-gray-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* Opslaan */}
+            <div className="border-t border-gray-100 pt-3">
+              <button onClick={handleOpslaan} disabled={!onSave||opslaanStatus==="bezig"}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  opslaanStatus==="ok"?"bg-green-500 text-white":opslaanStatus==="fout"?"bg-red-500 text-white":"bg-blue-600 hover:bg-blue-700 text-white shadow-sm"}`}>
+                {opslaanStatus==="bezig"?"Opslaan…":opslaanStatus==="ok"?"✓ Opgeslagen!":opslaanStatus==="fout"?"✗ Fout":"💾 Locaties opslaan"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Kaart */}
+        <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
+          <div style={{position:"absolute",width:"200%",height:"200%",top:"-50%",left:"-50%",
+            transform:geroteerd?`rotate(${rotatieDeg}deg)`:"none",
+            transition:"transform 0.5s ease",transformOrigin:"center center"}}>
+            <div ref={mapRef} style={{width:"100%",height:"100%"}}/>
+          </div>
+          {plaatsModus&&(
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
+              <div className="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs font-semibold shadow border border-gray-200" style={{color:MACHINE_CONFIG[plaatsModus]?.kleur}}>
+                {MACHINE_CONFIG[plaatsModus]?.icon} Klik om {MACHINE_CONFIG[plaatsModus]?.label} te plaatsen
+              </div>
+            </div>
+          )}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
+            <div className="bg-white/85 backdrop-blur-sm rounded-full px-3 py-1 text-xs text-gray-500 shadow border border-gray-100">
+              🟢 Start · 🔴 Einde · Sleep label om rechthoek te verplaatsen
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
