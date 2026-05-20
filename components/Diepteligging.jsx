@@ -97,8 +97,10 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
   const yP=h=>M.t+(hMax-h)/hSpan*plotH;
 
   // Boorpad: rechte lijnen ALLEEN tussen waypoints (geen curve door alle AHN-punten)
-  // Waypoints → NAP hoogte = maaiveld - diepte op dat punt
-  const sortedWP=[...dieptePunten].sort((a,b)=>a.afstand-b.afstand);
+  const sortedWP=[...dieptePunten]
+    .sort((a,b)=>a.afstand-b.afstand)
+    .filter(dp=>dp.afstand<=totM+0.5) // verwijder punten voorbij het eindpunt
+    .map(dp=>({...dp,afstand:Math.max(0,Math.min(totM,dp.afstand))})); // clamp [0,totM]
   const boorWaypoints=sortedWP.map(dp=>{
     const mv=maaiveldOpAfstand(dp.afstand,geldig)??0;
     return{afstand:dp.afstand,hoogte:mv-dp.diepte};
@@ -428,7 +430,11 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   });
 
   useEffect(()=>{
-    if(totM>0){setDieptePunten(prev=>{const pts=[...prev];pts[0]={afstand:0,diepte:0};pts[pts.length-1]={afstand:totM,diepte:0};return pts;});}
+    if(totM>0){setDieptePunten(prev=>{
+      // Bewaar alleen punten die vóór het (nieuwe) eindpunt liggen
+      const tussenPunten=prev.filter((_,i)=>i>0&&i<prev.length-1&&prev[i].afstand<totM);
+      return[{afstand:0,diepte:0},...tussenPunten,{afstand:totM,diepte:0}];
+    });}
   },[totM]);
 
   const [profielPunten,setProfielPunten]=useState(()=>{
@@ -505,8 +511,27 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       };
 
       // ── Overlay-lagen ──────────────────────────────────────────
+      // KLIC: laad uit project-velden (zelfde bron als stap 5)
+      const klicLaag=L.layerGroup();
+      const klicKleuren={klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"};
+      Object.entries(klicKleuren).forEach(([key,kleur])=>{
+        const raw=project?.[key];if(!raw)return;
+        try{const gj=typeof raw==="string"?JSON.parse(raw):raw;
+          L.geoJSON(gj,{style:{color:kleur,weight:2.5,opacity:0.9},
+            pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:4,fillColor:kleur,fillOpacity:0.9,color:"white",weight:1})
+          }).addTo(klicLaag);}catch{}
+      });
+      // Ook uit sessionStorage
+      try{const ss=sessionStorage.getItem("klic_features");
+        if(ss){const feats=JSON.parse(ss);
+          L.geoJSON({type:"FeatureCollection",features:feats},{
+            style:{color:"#f97316",weight:2,opacity:0.85},
+          }).addTo(klicLaag);}
+      }catch{}
+      klicLaag.addTo(kaart); // standaard aan
+
       const OVERLAYS={
-        klic:     L.tileLayer.wms("https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0",{layers:"buisleiding",format:"image/png",transparent:true,opacity:0.9,zIndex:10,attribution:"© Kadaster KLIC"}),
+        klic:     klicLaag,
         kadaster: L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.7,zIndex:11,attribution:"© Kadaster"}),
         bgt:      L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel,onbegroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12,attribution:"© BGT"}),
       };
