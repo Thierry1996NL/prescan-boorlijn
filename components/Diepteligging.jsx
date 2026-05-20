@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import KlicAchtergrond from "@/components/KlicAchtergrond";
 
 // ─── Geometry helpers ─────────────────────────────────────────────
 function afstandM(p1,p2){const R=6371000,dLat=(p2[0]-p1[0])*Math.PI/180,dLng=(p2[1]-p1[1])*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(p1[0]*Math.PI/180)*Math.cos(p2[0]*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
@@ -458,6 +459,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   const [klicKruisingen,setKlicKruisingen]=useState([]);
   const [actieveAchtergrond,setActieveAchtergrond]=useState("standaard");
   const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
+  const [kaartInstantie,setKaartInstantie]=useState(null); // voor KlicAchtergrond component
   boorCoordRef.current=boorCoords;
 
   useEffect(()=>{
@@ -496,6 +498,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       const L=window.L,crs=maakRdCrs(L),center=boorCoordRef.current[0]??[52.15,5.39];
       const kaart=L.map(mapRef.current,{crs,center,zoom:14,maxZoom:22,zoomControl:true});
       kaartRef.current=kaart;
+      setKaartInstantie(kaart); // triggert KlicAchtergrond component
 
       // ── Achtergrondlagen ──────────────────────────────────────
       const ACHTERGRONDEN={
@@ -510,106 +513,11 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
         ACHTERGRONDEN[id]?.addTo(kaart);
       };
 
-      // ── Overlay-lagen ──────────────────────────────────────────
-      // KLIC: coördinaten kunnen RD New (meters) of WGS84 (graden) zijn
-      // Normaliseer altijd naar WGS84 [lng,lat] vóór L.geoJSON
-      function rdNaarLngLatCl(x,y){
-        const dX=(x-155000)/100000,dY=(y-463000)/100000;
-        const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
-        const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
-        return [lng,lat];
-      }
-      function normCoord(c){
-        if(Math.abs(c[0])>1000||Math.abs(c[1])>1000){return rdNaarLngLatCl(Math.min(c[0],c[1]),Math.max(c[0],c[1]));}
-        if(c[0]>40&&c[1]<20)return[c[1],c[0]];
-        return[c[0],c[1]];
-      }
-      function normGeom(g){
-        if(!g?.coordinates)return g;
-        let fc=g.coordinates;while(Array.isArray(fc[0]))fc=fc[0];
-        const[x,y]=fc;const isRd=Math.abs(x)>1000||Math.abs(y)>1000,isLL=!isRd&&x>40&&y<20;
-        if(!isRd&&!isLL)return g;
-        const pt=c=>isRd?normCoord(c):isLL?[c[1],c[0]]:[c[0],c[1]];
-        const ring=r=>r.map(pt);const t=g.type;
-        if(t==='Point')return{...g,coordinates:pt(g.coordinates)};
-        if(t==='LineString'||t==='MultiPoint')return{...g,coordinates:g.coordinates.map(pt)};
-        if(t==='Polygon'||t==='MultiLineString')return{...g,coordinates:g.coordinates.map(ring)};
-        if(t==='MultiPolygon')return{...g,coordinates:g.coordinates.map(p=>p.map(ring))};
-        return g;
-      }
-      function normFeat(f){return{...f,geometry:normGeom(f.geometry)};}
-
-      const klicLaag=L.layerGroup();
-      const klicKleuren={klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"};
-
-      // ── Debug: welke project-velden bevatten GeoJSON-coördinaten? ──
-      const projectKeys=Object.keys(project||{});
-      const geoVelden=projectKeys.filter(k=>{
-        const v=project[k];
-        if(typeof v==="string")return v.includes('"coordinates"')||v.includes('"type"');
-        if(typeof v==="object"&&v!==null)return v.type||v.features||v.coordinates;
-        return false;
-      });
-      console.log("[KLIC debug] Project velden met geodata:", geoVelden);
-      // SessionStorage scan
-      try{for(let i=0;i<sessionStorage.length;i++){
-        const k=sessionStorage.key(i);
-        const v=sessionStorage.getItem(k)||"";
-        if(v.includes("coordinates")||v.includes("geometry"))console.log("[KLIC debug] sessionStorage key:",k,"len:",v.length);
-      }}catch{}
-
-      // ── Probeer alle bekende veldnamen ──────────────────────────
-      const KLIC_VELDPATRONEN=[
-        // Patroon 1: klic_[type]
-        {klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"},
-        // Patroon 2: [type]_geojson
-        {ls_geojson:"#ef4444",ms_geojson:"#f97316",gas_geojson:"#eab308",water_geojson:"#3b82f6",tele_geojson:"#8b5cf6",riool_geojson:"#6b7280"},
-        // Patroon 3: ontwerp_[type]
-        {ontwerp_ls:"#ef4444",ontwerp_ms:"#f97316",ontwerp_gas:"#eab308",ontwerp_water:"#3b82f6"},
-        // Patroon 4: gecombineerd
-        {klic_geojson:"#f97316",klic_data:"#f97316",kabels_geojson:"#f97316",kabels_data:"#f97316"},
-      ];
-
-      let klicGeladen=0;
-      KLIC_VELDPATRONEN.forEach(patroon=>{
-        Object.entries(patroon).forEach(([key,kleur])=>{
-          const raw=project?.[key];if(!raw)return;
-          try{
-            const gj=typeof raw==="string"?JSON.parse(raw):raw;
-            const feats=(gj.features??[gj]).filter(f=>f?.geometry).map(normFeat);
-            if(!feats.length)return;
-            console.log("[KLIC debug] Gevonden in veld:",key,feats.length,"features");
-            L.geoJSON({type:"FeatureCollection",features:feats},{
-              style:{color:kleur,weight:3,opacity:1},
-              pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:5,fillColor:kleur,fillOpacity:1,color:"white",weight:1.5})
-            }).addTo(klicLaag);
-            klicGeladen++;
-          }catch(e){console.warn("[KLIC debug] Fout bij",key,e);}
-        });
-      });
-
-      // SessionStorage fallbacks
-      const SS_KEYS=["klic_features","klic_data","klic_geojson","ontwerp_klic","kabels"];
-      SS_KEYS.forEach(ssKey=>{
-        try{const ss=sessionStorage.getItem(ssKey);if(!ss)return;
-          const data=JSON.parse(ss);
-          const feats=(data.features??data).filter?.(f=>f?.geometry)?.map(normFeat)??[];
-          if(!feats.length)return;
-          console.log("[KLIC debug] sessionStorage gevonden:",ssKey,feats.length,"features");
-          L.geoJSON({type:"FeatureCollection",features:feats},{style:{color:"#f97316",weight:2.5,opacity:0.9}}).addTo(klicLaag);
-          klicGeladen++;
-        }catch{}
-      });
-
-      console.log("[KLIC debug] Totaal geladen:",klicGeladen,"bronnen");
-      klicLaag.addTo(kaart);
-
+      // ── Overlay-lagen (KLIC via KlicAchtergrond component — zie render) ──
       const OVERLAYS={
-        klic:     klicLaag,
         kadaster: L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.7,zIndex:11,attribution:"© Kadaster"}),
         bgt:      L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel,onbegroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12,attribution:"© BGT"}),
       };
-      OVERLAYS.klic.addTo(kaart); // KLIC standaard aan
       kaart._overlayLagen=OVERLAYS;
       kaart._toggleOverlay=(id,aan)=>{
         if(aan)OVERLAYS[id]?.addTo(kaart);
@@ -690,6 +598,10 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
 
   return(
     <div className="space-y-4">
+      {/* KlicAchtergrond: dezelfde component als stap 3/4 — laadt KLIC uit project.bestanden_meta */}
+      {kaartInstantie && actieveOverlays.klic && (
+        <KlicAchtergrond kaart={kaartInstantie} project={project} />
+      )}
       <div className="flex gap-4" style={{height:"calc(100vh - 260px)",minHeight:420}}>
         {/* Sidebar */}
         <div className="w-72 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto flex flex-col">
