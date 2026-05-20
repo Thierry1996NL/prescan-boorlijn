@@ -405,21 +405,24 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   });
   const totM=useMemo(()=>boorCoords.length>=2?totaalLengte(boorCoords):0,[boorCoords]);
 
-  // ── Bearing + kaartrotatie ──
+  // ── Bearing + kaartrotatie (altijd actief: bore horizontaal) ──
   const bearing=useMemo(()=>boorCoords.length>=2?berekenBearing(boorCoords[0],boorCoords[boorCoords.length-1]):0,[boorCoords]);
-  const [geroteerd,setGeroteerd]=useState(false);
+  const [geroteerd,setGeroteerd]=useState(true); // standaard AAN
   const rotatieDeg=useMemo(()=>{
-    // Roteer zodat boorlijn horizontaal links→rechts loopt
     let r=(90-bearing+360)%360;
-    if(r>180)r-=360; // kortste weg: max ±180°
+    if(r>180)r-=360;
     return r;
   },[bearing]);
 
   const [dieptePunten,setDieptePunten]=useState(()=>{
-    // Laad uit ahn_profiel (nieuw gecombineerd formaat) of legacy diepte_profiel
+    // Laad uit diepte_profiel (aparte kolom) of ahn_profiel (gecombineerd oud formaat)
+    try{
+      const dp=project?.diepte_profiel;
+      if(dp){const p=typeof dp==="string"?JSON.parse(dp):dp;if(Array.isArray(p)&&p.length>=2)return p;}
+    }catch{}
     try{
       const raw=project?.ahn_profiel;
-      if(raw){const p=typeof raw==="string"?JSON.parse(raw):raw;if(!Array.isArray(p)&&p.dieptePunten?.length>=2)return p.dieptePunten;}
+      if(raw){const p=typeof raw==="string"?JSON.parse(raw):raw;if(!Array.isArray(p)&&p?.dieptePunten?.length>=2)return p.dieptePunten;}
     }catch{}
     return [{afstand:0,diepte:0},{afstand:0,diepte:0}];
   });
@@ -522,18 +525,13 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
     if(!onSave) return;
     setOpslaanBezig(true); setOpslaanStatus(null);
     try{
-      // Sla dieptePunten + profielPunten samen op in de bestaande ahn_profiel kolom
-      await onSave({
-        ahn_profiel: JSON.stringify({
-          profielPunten,
-          dieptePunten,
-        })
-      });
+      // diepte_profiel = aparte jsonb kolom (voer SQL uit: ALTER TABLE projecten ADD COLUMN IF NOT EXISTS diepte_profiel jsonb)
+      await onSave({ diepte_profiel: dieptePunten });
       setOpslaanStatus("ok");
       setTimeout(()=>setOpslaanStatus(null), 3000);
-    }catch(e){ setOpslaanStatus("fout"); console.error("Opslaan fout:",e); }
+    }catch(e){ setOpslaanStatus("fout"); console.error("Opslaan:",e); }
     setOpslaanBezig(false);
-  },[dieptePunten, profielPunten, onSave]);
+  },[dieptePunten, onSave]);
 
   const haalHoogteOp=useCallback(async()=>{
     if(boorCoords.length<2)return;
@@ -569,8 +567,11 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
             {/* Kaartrotatie-knop */}
             <button onClick={()=>setGeroteerd(v=>!v)}
               className={`w-full py-2 rounded-xl text-xs font-semibold transition-all border ${geroteerd?"bg-indigo-600 text-white border-indigo-600":"bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50"}`}>
-              {geroteerd?"↑ Terug naar Noord-omhoog":"↺ Roteer kaart naar bore-richting"}
+              {geroteerd?"↑ Terug naar Noord-omhoog (interactief)":"↺ Bore-richting (horizontaal)"}
             </button>
+            <div className="text-xs text-gray-400 text-center -mt-2">
+              {geroteerd?"Kaart + profiel horizontaal uitgelijnd":"Klik om bore horizontaal te zetten"}
+            </div>
             <button onClick={haalHoogteOp} disabled={hoogteBezig||boorCoords.length<2}
               className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${hoogteBezig||boorCoords.length<2?"bg-gray-100 text-gray-400 cursor-not-allowed":"bg-orange-500 hover:bg-orange-600 text-white shadow-sm"}`}>
               {hoogteBezig?<span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</span>:"⛰ Analyseer hoogte (AHN4)"}
