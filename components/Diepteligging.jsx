@@ -511,24 +511,53 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       };
 
       // ── Overlay-lagen ──────────────────────────────────────────
-      // KLIC: laad uit project-velden (zelfde bron als stap 5)
+      // KLIC: coördinaten kunnen RD New (meters) of WGS84 (graden) zijn
+      // Normaliseer altijd naar WGS84 [lng,lat] vóór L.geoJSON
+      function rdNaarLngLatCl(x,y){
+        const dX=(x-155000)/100000,dY=(y-463000)/100000;
+        const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
+        const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
+        return [lng,lat];
+      }
+      function normCoord(c){
+        if(Math.abs(c[0])>1000||Math.abs(c[1])>1000){return rdNaarLngLatCl(Math.min(c[0],c[1]),Math.max(c[0],c[1]));}
+        if(c[0]>40&&c[1]<20)return[c[1],c[0]];
+        return[c[0],c[1]];
+      }
+      function normGeom(g){
+        if(!g?.coordinates)return g;
+        let fc=g.coordinates;while(Array.isArray(fc[0]))fc=fc[0];
+        const[x,y]=fc;const isRd=Math.abs(x)>1000||Math.abs(y)>1000,isLL=!isRd&&x>40&&y<20;
+        if(!isRd&&!isLL)return g;
+        const pt=c=>isRd?normCoord(c):isLL?[c[1],c[0]]:[c[0],c[1]];
+        const ring=r=>r.map(pt);const t=g.type;
+        if(t==='Point')return{...g,coordinates:pt(g.coordinates)};
+        if(t==='LineString'||t==='MultiPoint')return{...g,coordinates:g.coordinates.map(pt)};
+        if(t==='Polygon'||t==='MultiLineString')return{...g,coordinates:g.coordinates.map(ring)};
+        if(t==='MultiPolygon')return{...g,coordinates:g.coordinates.map(p=>p.map(ring))};
+        return g;
+      }
+      function normFeat(f){return{...f,geometry:normGeom(f.geometry)};}
+
       const klicLaag=L.layerGroup();
       const klicKleuren={klic_ls:"#ef4444",klic_ms:"#f97316",klic_gas:"#eab308",klic_water:"#3b82f6",klic_tele:"#8b5cf6",klic_riool:"#6b7280"};
       Object.entries(klicKleuren).forEach(([key,kleur])=>{
         const raw=project?.[key];if(!raw)return;
-        try{const gj=typeof raw==="string"?JSON.parse(raw):raw;
-          L.geoJSON(gj,{style:{color:kleur,weight:2.5,opacity:0.9},
-            pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:4,fillColor:kleur,fillOpacity:0.9,color:"white",weight:1})
-          }).addTo(klicLaag);}catch{}
-      });
-      // Ook uit sessionStorage
-      try{const ss=sessionStorage.getItem("klic_features");
-        if(ss){const feats=JSON.parse(ss);
+        try{
+          const gj=typeof raw==="string"?JSON.parse(raw):raw;
+          const feats=(gj.features??[gj]).map(normFeat).filter(f=>f.geometry?.coordinates);
+          if(!feats.length)return;
           L.geoJSON({type:"FeatureCollection",features:feats},{
-            style:{color:"#f97316",weight:2,opacity:0.85},
-          }).addTo(klicLaag);}
+            style:{color:kleur,weight:3,opacity:1},
+            pointToLayer:(_,ll)=>L.circleMarker(ll,{radius:5,fillColor:kleur,fillOpacity:1,color:"white",weight:1.5})
+          }).addTo(klicLaag);
+        }catch(e){console.warn("KLIC laad fout",key,e);}
+      });
+      try{const ss=sessionStorage.getItem("klic_features");
+        if(ss){const feats=JSON.parse(ss).map(normFeat);
+          L.geoJSON({type:"FeatureCollection",features:feats},{style:{color:"#f97316",weight:2.5,opacity:0.9}}).addTo(klicLaag);}
       }catch{}
-      klicLaag.addTo(kaart); // standaard aan
+      klicLaag.addTo(kaart);
 
       const OVERLAYS={
         klic:     klicLaag,
@@ -586,13 +615,13 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
     if(!onSave) return;
     setOpslaanBezig(true); setOpslaanStatus(null);
     try{
-      // diepte_profiel = aparte jsonb kolom (voer SQL uit: ALTER TABLE projecten ADD COLUMN IF NOT EXISTS diepte_profiel jsonb)
-      await onSave({ diepte_profiel: dieptePunten });
+      // Sla op in ahn_profiel (bestaande kolom) — geen nieuwe kolom nodig
+      await onSave({ ahn_profiel: { profielPunten, dieptePunten } });
       setOpslaanStatus("ok");
       setTimeout(()=>setOpslaanStatus(null), 3000);
     }catch(e){ setOpslaanStatus("fout"); console.error("Opslaan:",e); }
     setOpslaanBezig(false);
-  },[dieptePunten, onSave]);
+  },[dieptePunten, profielPunten, onSave]);
 
   const haalHoogteOp=useCallback(async()=>{
     if(boorCoords.length<2)return;
@@ -606,7 +635,10 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
       setProfielPunten(metHoogte);
       const geldig=metHoogte.filter(p=>p.hoogte!==null);
       setHoogteInfo(geldig.length?`${geldig.length}/${punten.length} punten · ${Math.min(...geldig.map(p=>p.hoogte)).toFixed(2)}–${Math.max(...geldig.map(p=>p.hoogte)).toFixed(2)}m NAP`:"❌ Geen data — controleer /api/ahn-hoogte");
-      if(geldig.length&&onSave)try{await onSave({ahn_profiel:metHoogte});}catch(e){console.warn("AHN opslaan:",e);}
+      if(geldig.length&&onSave)try{
+        // Sla profielPunten + huidige dieptePunten samen op
+        await onSave({ahn_profiel:{profielPunten:metHoogte,dieptePunten}});
+      }catch(e){console.warn("AHN opslaan:",e);}
     }catch(e){setHoogteInfo(`❌ ${e.message}`);}
     setHoogteBezig(false);
   },[boorCoords,onSave]);
