@@ -39,7 +39,16 @@ function segSnijpunt(p1,p2,p3,p4){const dx1=p2.x-p1.x,dy1=p2.y-p1.y,dx2=p4.x-p3.
 const KLIC_TYPES={ls:{label:"LS",kleur:"#ef4444",diepte:0.60},ms:{label:"MS",kleur:"#f97316",diepte:0.80},gas:{label:"Gas",kleur:"#eab308",diepte:0.80},water:{label:"Water",kleur:"#3b82f6",diepte:1.00},tele:{label:"Tele",kleur:"#8b5cf6",diepte:0.45},riool:{label:"Riool",kleur:"#6b7280",diepte:1.20}};
 function detecteerKlicType(f){const n=(f.properties?.naam||f.properties?.thema||"").toLowerCase();if(n.includes("laagspan")||n.includes("ls "))return"ls";if(n.includes("middensp")||n.includes("ms "))return"ms";if(n.includes("gas"))return"gas";if(n.includes("water"))return"water";if(n.includes("tele")||n.includes("data")||n.includes("glas"))return"tele";if(n.includes("riool"))return"riool";return"tele";}
 
-// ─── CRS ─────────────────────────────────────────────────────────
+function berekenBearing(start,end){
+  // [lat,lng] → kompasrichting in graden (0=N,90=E,180=S,270=W)
+  const lat1=start[0]*Math.PI/180,lat2=end[0]*Math.PI/180;
+  const dLon=(end[1]-start[1])*Math.PI/180;
+  const x=Math.sin(dLon)*Math.cos(lat2);
+  const y=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+  return((Math.atan2(x,y)*180/Math.PI)+360)%360;
+}
+
+
 function maakRdCrs(L){return new L.Proj.CRS("EPSG:28992","+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs",{resolutions:[3440.640,1720.320,860.160,430.080,215.040,107.520,53.760,26.880,13.440,6.720,3.360,1.680,0.840,0.420,0.210,0.105,0.0525,0.02625,0.013125,0.00656,0.00328,0.00164,0.00082],origin:[-285401.920,903401.920],bounds:L.bounds([-285401.920,22598.080],[595401.920,903401.920])});}
 
 // ─── Bereken segmenten voor tabel ────────────────────────────────
@@ -396,8 +405,22 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   });
   const totM=useMemo(()=>boorCoords.length>=2?totaalLengte(boorCoords):0,[boorCoords]);
 
+  // ── Bearing + kaartrotatie ──
+  const bearing=useMemo(()=>boorCoords.length>=2?berekenBearing(boorCoords[0],boorCoords[boorCoords.length-1]):0,[boorCoords]);
+  const [geroteerd,setGeroteerd]=useState(false);
+  const rotatieDeg=useMemo(()=>{
+    // Roteer zodat boorlijn horizontaal links→rechts loopt
+    let r=(90-bearing+360)%360;
+    if(r>180)r-=360; // kortste weg: max ±180°
+    return r;
+  },[bearing]);
+
   const [dieptePunten,setDieptePunten]=useState(()=>{
-    try{const s=project?.diepte_profiel;if(s){const p=typeof s==="string"?JSON.parse(s):s;if(Array.isArray(p)&&p.length>=2)return p;}}catch{}
+    // Laad uit ahn_profiel (nieuw gecombineerd formaat) of legacy diepte_profiel
+    try{
+      const raw=project?.ahn_profiel;
+      if(raw){const p=typeof raw==="string"?JSON.parse(raw):raw;if(!Array.isArray(p)&&p.dieptePunten?.length>=2)return p.dieptePunten;}
+    }catch{}
     return [{afstand:0,diepte:0},{afstand:0,diepte:0}];
   });
 
@@ -406,11 +429,22 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   },[totM]);
 
   const [profielPunten,setProfielPunten]=useState(()=>{
-    try{const s=project?.ahn_profiel;if(!s)return[];const p=typeof s==="string"?JSON.parse(s):s;return Array.isArray(p)?p:[];}catch{return[];}
+    try{
+      const raw=project?.ahn_profiel;if(!raw)return[];
+      const p=typeof raw==="string"?JSON.parse(raw):raw;
+      if(Array.isArray(p))return p; // oud formaat
+      return p.profielPunten??[];   // nieuw formaat
+    }catch{return[];}
   });
   const [hoogteBezig,setHoogteBezig]=useState(false);
   const [hoogteInfo,setHoogteInfo]=useState(()=>{
-    try{const p=typeof project?.ahn_profiel==="string"?JSON.parse(project.ahn_profiel):project?.ahn_profiel;if(!Array.isArray(p)||!p.length)return null;const g=p.filter(x=>x.hoogte!==null);return g.length?`${g.length}/${p.length} punten (opgeslagen) · ${Math.min(...g.map(x=>x.hoogte)).toFixed(2)}–${Math.max(...g.map(x=>x.hoogte)).toFixed(2)}m NAP`:null;}catch{return null;}
+    try{
+      const raw=project?.ahn_profiel;if(!raw)return null;
+      const p=typeof raw==="string"?JSON.parse(raw):raw;
+      const pp=Array.isArray(p)?p:(p.profielPunten??[]);
+      const g=pp.filter(x=>x.hoogte!==null);
+      return g.length?`${g.length}/${pp.length} punten (opgeslagen) · ${Math.min(...g.map(x=>x.hoogte)).toFixed(2)}–${Math.max(...g.map(x=>x.hoogte)).toFixed(2)}m NAP`:null;
+    }catch{return null;}
   });
   const [klicKruisingen,setKlicKruisingen]=useState([]);
   boorCoordRef.current=boorCoords;
@@ -488,12 +522,18 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
     if(!onSave) return;
     setOpslaanBezig(true); setOpslaanStatus(null);
     try{
-      await onSave({diepte_profiel: JSON.stringify(dieptePunten)});
+      // Sla dieptePunten + profielPunten samen op in de bestaande ahn_profiel kolom
+      await onSave({
+        ahn_profiel: JSON.stringify({
+          profielPunten,
+          dieptePunten,
+        })
+      });
       setOpslaanStatus("ok");
       setTimeout(()=>setOpslaanStatus(null), 3000);
-    }catch(e){ setOpslaanStatus("fout"); }
+    }catch(e){ setOpslaanStatus("fout"); console.error("Opslaan fout:",e); }
     setOpslaanBezig(false);
-  },[dieptePunten, onSave]);
+  },[dieptePunten, profielPunten, onSave]);
 
   const haalHoogteOp=useCallback(async()=>{
     if(boorCoords.length<2)return;
@@ -523,8 +563,14 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
             <div className="bg-orange-50 rounded-lg px-3 py-2">
               <div className="text-xs font-semibold text-orange-700 mb-1">Boorlijn</div>
-              <div className="text-xs text-orange-600">{boorCoords.length>=2?`${Math.round(totM)}m · ${boorCoords.length} punten`:"Geen boorlijn"}</div>
+              <div className="text-xs text-orange-600">{boorCoords.length>=2?`${Math.round(totM)}m · ${boorCoords.length} punten · ${bearing.toFixed(0)}° ${bearing<22.5||bearing>=337.5?"N":bearing<67.5?"NO":bearing<112.5?"O":bearing<157.5?"ZO":bearing<202.5?"Z":bearing<247.5?"ZW":bearing<292.5?"W":"NW"}`:"Geen boorlijn"}</div>
             </div>
+
+            {/* Kaartrotatie-knop */}
+            <button onClick={()=>setGeroteerd(v=>!v)}
+              className={`w-full py-2 rounded-xl text-xs font-semibold transition-all border ${geroteerd?"bg-indigo-600 text-white border-indigo-600":"bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50"}`}>
+              {geroteerd?"↑ Terug naar Noord-omhoog":"↺ Roteer kaart naar bore-richting"}
+            </button>
             <button onClick={haalHoogteOp} disabled={hoogteBezig||boorCoords.length<2}
               className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${hoogteBezig||boorCoords.length<2?"bg-gray-100 text-gray-400 cursor-not-allowed":"bg-orange-500 hover:bg-orange-600 text-white shadow-sm"}`}>
               {hoogteBezig?<span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</span>:"⛰ Analyseer hoogte (AHN4)"}
@@ -548,9 +594,43 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
             <button onClick={()=>{if(boorCoords.length<2)return;const gj={type:"Feature",geometry:{type:"LineString",coordinates:boorCoords.map(([lat,lng])=>[lng,lat])},properties:{dieptePunten}};const blob=new Blob([JSON.stringify(gj,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="boorlijn_diepte.geojson";a.click();}}>⬇ Download GeoJSON</button>
           </div>
         </div>
-        {/* Kaart */}
-        <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative">
-          <div ref={mapRef} className="w-full h-full"/>
+        {/* Kaart + rotatie-wrapper */}
+        <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
+          {/* Rotatie-container — CSS-rotatatie zodat boorlijn horizontaal loopt */}
+          <div style={{
+            width:"100%",height:"100%",
+            transform: geroteerd ? `rotate(${rotatieDeg}deg)` : "none",
+            transition:"transform 0.5s ease",
+            transformOrigin:"center center",
+          }}>
+            <div ref={mapRef} className="w-full h-full"/>
+          </div>
+
+          {/* Noord-pijl overlay — buiten de geroteerde div zodat hij correct wijst */}
+          <div className="absolute top-3 right-3 z-[500] pointer-events-none">
+            <div className="bg-white/90 backdrop-blur-sm rounded-full w-14 h-14 flex items-center justify-center shadow border border-gray-200"
+              style={{transform: geroteerd ? `rotate(${-rotatieDeg}deg)` : "none", transition:"transform 0.5s ease"}}>
+              <svg viewBox="0 0 40 40" width="40" height="40">
+                {/* Noord-pijl */}
+                <polygon points="20,4 24,20 20,17 16,20" fill="#dc2626"/>
+                <polygon points="20,36 24,20 20,23 16,20" fill="#374151"/>
+                <circle cx="20" cy="20" r="3" fill="white" stroke="#9ca3af" strokeWidth="1"/>
+                <text x="20" y="3" textAnchor="middle" fontSize="7" fill="#dc2626" fontWeight="700">N</text>
+              </svg>
+            </div>
+          </div>
+
+          {/* Info overlay: bearing + rotatiestatus */}
+          <div className="absolute bottom-3 left-3 z-[500] pointer-events-none">
+            <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 shadow border border-gray-100 text-xs text-gray-600">
+              {geroteerd
+                ? <span>↺ <strong>{rotatieDeg>0?"+":""}{rotatieDeg.toFixed(0)}°</strong> → bore loopt horizontaal · Noord op {(-rotatieDeg+360)%360|0}°</span>
+                : <span>Boorlijn: <strong>{bearing.toFixed(0)}°</strong> ({
+                    bearing<22.5||bearing>=337.5?"N":bearing<67.5?"NO":bearing<112.5?"O":bearing<157.5?"ZO":bearing<202.5?"Z":bearing<247.5?"ZW":bearing<292.5?"W":"NW"
+                  })</span>
+              }
+            </div>
+          </div>
         </div>
       </div>
 
