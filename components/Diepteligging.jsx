@@ -238,25 +238,38 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
           </g>
         ))}
 
-        {/* Start/einde op maaiveld */}
-        {(()=>{const s=geldig[0],e=geldig[geldig.length-1];return(<>
-          <circle cx={xP(s.afstand)} cy={yP(s.hoogte)} r={7} fill="#16a34a" stroke="white" strokeWidth={2.5}/>
-          <text x={xP(s.afstand)+9} y={yP(s.hoogte)-7} fontSize={9} fill="#15803d" fontWeight="700">S</text>
-          <circle cx={xP(e.afstand)} cy={yP(e.hoogte)} r={7} fill="#dc2626" stroke="white" strokeWidth={2.5}/>
-          <text x={xP(e.afstand)-9} y={yP(e.hoogte)-7} fontSize={9} fill="#dc2626" fontWeight="700" textAnchor="end">E</text>
+        {/* Start/einde op maaiveld — gelabeld */}
+        {(()=>{const s=geldig[0],e=geldig[geldig.length-1];const sNAP=s.hoogte?.toFixed(2);const eNAP=e.hoogte?.toFixed(2);return(<>
+          {/* S */}
+          <circle cx={xP(s.afstand)} cy={yP(s.hoogte)} r={8} fill="#16a34a" stroke="white" strokeWidth={2.5}/>
+          <text x={xP(s.afstand)} y={yP(s.hoogte)+4} textAnchor="middle" fontSize={10} fill="white" fontWeight="800">S</text>
+          <rect x={xP(s.afstand)-28} y={yP(s.hoogte)-30} width={56} height={20} rx={4} fill="white" fillOpacity={0.92} stroke="#16a34a" strokeWidth={1}/>
+          <text x={xP(s.afstand)} y={yP(s.hoogte)-19} textAnchor="middle" fontSize={8} fill="#15803d" fontWeight="700">maaiveld</text>
+          <text x={xP(s.afstand)} y={yP(s.hoogte)-10} textAnchor="middle" fontSize={7.5} fill="#6b7280">{sNAP}m NAP</text>
+          {/* E */}
+          <circle cx={xP(e.afstand)} cy={yP(e.hoogte)} r={8} fill="#dc2626" stroke="white" strokeWidth={2.5}/>
+          <text x={xP(e.afstand)} y={yP(e.hoogte)+4} textAnchor="middle" fontSize={10} fill="white" fontWeight="800">E</text>
+          <rect x={xP(e.afstand)-28} y={yP(e.hoogte)-30} width={56} height={20} rx={4} fill="white" fillOpacity={0.92} stroke="#dc2626" strokeWidth={1}/>
+          <text x={xP(e.afstand)} y={yP(e.hoogte)-19} textAnchor="middle" fontSize={8} fill="#dc2626" fontWeight="700">maaiveld</text>
+          <text x={xP(e.afstand)} y={yP(e.hoogte)-10} textAnchor="middle" fontSize={7.5} fill="#6b7280">{eNAP}m NAP</text>
         </>);})()}
 
-        {/* Tussenpunten — 2D sleepbaar */}
+        {/* Tussenpunten — genummerd, 2D sleepbaar */}
         {tussenPunten.map((dp,relIdx)=>{
           const mv=maaiveldOpAfstand(dp.afstand,geldig)??0;
           const napHoogte=mv-dp.diepte;
+          const puntnr=relIdx+1; // 1, 2, 3...
           return(<g key={relIdx} style={{cursor:"move"}}
             onMouseDown={e=>handlePuntMouseDown(e,dp.afstand)}
             onDoubleClick={e=>handleDubbelKlik(e,dp.afstand)}>
             <line x1={xP(dp.afstand)} y1={yP(mv)} x2={xP(dp.afstand)} y2={yP(napHoogte)} stroke="#f97316" strokeWidth={1.5} strokeDasharray="3,2" opacity={0.5}/>
-            <circle cx={xP(dp.afstand)} cy={yP(napHoogte)} r={8} fill="#f97316" stroke="white" strokeWidth={2.5}/>
-            <rect x={xP(dp.afstand)-22} y={yP(napHoogte)+11} width={44} height={14} rx={3} fill="white" fillOpacity={0.9}/>
-            <text x={xP(dp.afstand)} y={yP(napHoogte)+22} textAnchor="middle" fontSize={9} fill="#ea580c" fontWeight="700">-{dp.diepte.toFixed(1)}m</text>
+            {/* Genummerd punt */}
+            <circle cx={xP(dp.afstand)} cy={yP(napHoogte)} r={9} fill="#f97316" stroke="white" strokeWidth={2.5}/>
+            <text x={xP(dp.afstand)} y={yP(napHoogte)+4} textAnchor="middle" fontSize={10} fill="white" fontWeight="800">{puntnr}</text>
+            {/* Label: diepte + NAP */}
+            <rect x={xP(dp.afstand)-30} y={yP(napHoogte)+12} width={60} height={22} rx={4} fill="white" fillOpacity={0.92} stroke="#f97316" strokeWidth={1}/>
+            <text x={xP(dp.afstand)} y={yP(napHoogte)+23} textAnchor="middle" fontSize={9} fill="#ea580c" fontWeight="700">-{dp.diepte.toFixed(1)}m</text>
+            <text x={xP(dp.afstand)} y={yP(napHoogte)+32} textAnchor="middle" fontSize={7.5} fill="#6b7280">{napHoogte.toFixed(2)}m NAP</text>
           </g>);
         })}
 
@@ -459,7 +472,8 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   const [klicKruisingen,setKlicKruisingen]=useState([]);
   const [actieveAchtergrond,setActieveAchtergrond]=useState("standaard");
   const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
-  const [kaartInstantie,setKaartInstantie]=useState(null); // voor KlicAchtergrond component
+  const [kaartInstantie,setKaartInstantie]=useState(null);
+  const profielRef=useRef([]); // voor kaart-labels met NAP waarde
   boorCoordRef.current=boorCoords;
 
   useEffect(()=>{
@@ -523,7 +537,30 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
         if(aan)OVERLAYS[id]?.addTo(kaart);
         else if(kaart.hasLayer(OVERLAYS[id]))kaart.removeLayer(OVERLAYS[id]);
       };
-      let hoverMk=null;
+      // ── Dieptepunten-markers op kaart ──────────────────────────
+      const dieptePuntenLaag=L.layerGroup().addTo(kaart);
+      kaart._zetDieptePuntenLaag=(punten,coords)=>{
+        dieptePuntenLaag.clearLayers();
+        if(!coords||coords.length<2)return;
+        const sorted=[...punten].sort((a,b)=>a.afstand-b.afstand);
+        sorted.forEach((dp,i)=>{
+          const isStart=i===0,isEnd=i===sorted.length-1;
+          const pos=positieOpAfstand(coords,dp.afstand);
+          const label=isStart?"S":isEnd?"E":String(i);
+          const kleur=isStart?"#16a34a":isEnd?"#dc2626":"#f97316";
+          const diepteTxt=isStart||isEnd?"maaiveld":`-${dp.diepte.toFixed(2)}m`;
+          const napPP=profielRef.current?.find?.(p=>Math.abs(p.afstand-dp.afstand)<3);
+          const napTxt=napPP?.hoogte!=null?(napPP.hoogte-dp.diepte).toFixed(2)+"m NAP":"";
+          const icon=L.divIcon({
+            html:`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+              <div style="background:${kleur};color:white;border:2.5px solid white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;box-shadow:0 2px 5px rgba(0,0,0,.4);line-height:1">${label}</div>
+              <div style="background:white;color:${kleur};border:1.5px solid ${kleur};border-radius:4px;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;margin-top:2px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);line-height:1.2">${diepteTxt}${napTxt?`<br><span style='color:#6b7280;font-weight:400'>${napTxt}</span>`:""}</div>
+            </div>`,
+            className:"",iconSize:[70,50],iconAnchor:[13,13],
+          });
+          L.marker([pos.lat,pos.lng],{icon,interactive:false,zIndexOffset:300}).addTo(dieptePuntenLaag);
+        });
+      };
       kaart._zetHoverMarker=(lat,lng)=>{if(hoverMk)hoverMk.setLatLng([lat,lng]);else{hoverMk=L.circleMarker([lat,lng],{radius:9,fillColor:"#f97316",fillOpacity:0.9,color:"white",weight:2.5,interactive:false,zIndexOffset:999}).addTo(kaart);}};
       kaart._verwijderHoverMarker=()=>{if(hoverMk){kaart.removeLayer(hoverMk);hoverMk=null;}};
       let boorPoly=null,editMks=[],tussenMks=[],isDrag=false;
@@ -544,6 +581,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   },[]);
 
   useEffect(()=>{kaartRef.current?._updateBoorLaag?.(boorCoords);},[boorCoords]);
+  useEffect(()=>{ profielRef.current=profielPunten; },[profielPunten]);
+  // Sync dieptepunten-markers op kaart
+  useEffect(()=>{
+    if(boorCoords.length>=2)
+      kaartRef.current?._zetDieptePuntenLaag?.(dieptePunten,boorCoords);
+  },[dieptePunten,boorCoords,profielPunten]);
   useEffect(()=>{kaartRef.current?._wisselAchtergrond?.(actieveAchtergrond);},[actieveAchtergrond]);
   useEffect(()=>{
     Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));
