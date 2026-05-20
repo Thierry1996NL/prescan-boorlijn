@@ -94,7 +94,19 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
     const mv=maaiveldOpAfstand(dp.afstand,geldig)??0;
     return{afstand:dp.afstand,hoogte:mv-dp.diepte};
   });
-  // Polyline alleen door waypoints → geeft rechte segmenten
+  // Segment labels op elke lijn: lengte + hoek
+  const segmentLabels=boorWaypoints.slice(0,-1).map((wp,i)=>{
+    const nxt=boorWaypoints[i+1];
+    const mx=(xP(wp.afstand)+xP(nxt.afstand))/2;
+    const my=(yP(wp.hoogte)+yP(nxt.hoogte))/2;
+    const dH=nxt.afstand-wp.afstand;
+    const dV=nxt.hoogte-wp.hoogte;
+    const len=Math.sqrt(dH*dH+dV*dV); // werkelijke boorsegmentlengte
+    const hoek=Math.atan2(dV,dH)*180/Math.PI;
+    const kleur=Math.abs(hoek)>15?"#dc2626":Math.abs(hoek)>8?"#f97316":"#16a34a";
+    const pijl=hoek>0.3?"↗":hoek<-0.3?"↘":"→";
+    return{mx,my,len,hoek,kleur,pijl};
+  });
   const boorPolyline=boorWaypoints.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const maaiveldPts=geldig.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const vlakPts=`${xP(geldig[0].afstand)},${H-M.b} ${maaiveldPts} ${xP(geldig[geldig.length-1].afstand)},${H-M.b}`;
@@ -199,6 +211,20 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         {/* Boorpad klikzone */}
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={10} opacity={0} style={{cursor:"copy"}} onClick={handleBoorpadKlik}/>
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={3} strokeDasharray="10,5" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
+
+        {/* Segment labels: lengte + hoek op elke lijn */}
+        {segmentLabels.map((sl,i)=>(
+          <g key={i} style={{pointerEvents:"none"}}>
+            <rect x={sl.mx-42} y={sl.my-26} width={84} height={24} rx={4}
+              fill="white" fillOpacity={0.93} stroke="#e5e7eb" strokeWidth={0.8}/>
+            <text x={sl.mx} y={sl.my-15} textAnchor="middle" fontSize={9} fill="#374151" fontWeight="600">
+              {sl.len.toFixed(1)}m
+            </text>
+            <text x={sl.mx} y={sl.my-5} textAnchor="middle" fontSize={9} fill={sl.kleur} fontWeight="700">
+              {sl.pijl}{Math.abs(sl.hoek).toFixed(1)}°
+            </text>
+          </g>
+        ))}
 
         {/* Start/einde op maaiveld */}
         {(()=>{const s=geldig[0],e=geldig[geldig.length-1];return(<>
@@ -455,6 +481,20 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
     kaartRef.current?._zetHoverMarker?.(pos.lat,pos.lng);
   },[boorCoords]);
 
+  const [opslaanBezig,  setOpslaanBezig]  = useState(false);
+  const [opslaanStatus, setOpslaanStatus] = useState(null); // "ok" | "fout" | null
+
+  const handleOpslaan = useCallback(async()=>{
+    if(!onSave) return;
+    setOpslaanBezig(true); setOpslaanStatus(null);
+    try{
+      await onSave({diepte_profiel: JSON.stringify(dieptePunten)});
+      setOpslaanStatus("ok");
+      setTimeout(()=>setOpslaanStatus(null), 3000);
+    }catch(e){ setOpslaanStatus("fout"); }
+    setOpslaanBezig(false);
+  },[dieptePunten, onSave]);
+
   const haalHoogteOp=useCallback(async()=>{
     if(boorCoords.length<2)return;
     setHoogteBezig(true);setHoogteInfo("Bezig met ophalen…");
@@ -490,6 +530,20 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
               {hoogteBezig?<span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</span>:"⛰ Analyseer hoogte (AHN4)"}
             </button>
             {hoogteInfo&&<div className={`text-xs rounded-lg px-3 py-2 leading-snug ${hoogteInfo.startsWith("❌")?"bg-red-50 text-red-600":"bg-green-50 text-green-700"}`}>{hoogteInfo}</div>}
+
+            {/* Opslaan */}
+            <button onClick={handleOpslaan} disabled={opslaanBezig||!onSave}
+              className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                opslaanBezig||!onSave?"bg-gray-100 text-gray-400 cursor-not-allowed"
+                :opslaanStatus==="ok"?"bg-green-500 text-white"
+                :opslaanStatus==="fout"?"bg-red-500 text-white"
+                :"bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+              }`}>
+              {opslaanBezig ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Opslaan…</span>
+               : opslaanStatus==="ok" ? "✓ Opgeslagen!"
+               : opslaanStatus==="fout" ? "✗ Fout bij opslaan"
+               : "💾 Diepteprofiel opslaan"}
+            </button>
             {klicKruisingen.length>0&&<div className="border-t border-gray-100 pt-2"><div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">KLIC ({klicKruisingen.length})</div><div className="space-y-0.5">{klicKruisingen.map((k,i)=>{const kt=KLIC_TYPES[k.type]??KLIC_TYPES.tele;return(<div key={i} className="flex items-center gap-2 text-xs"><div className="w-2 h-2 rounded-full" style={{background:kt.kleur}}/><span className="font-medium text-gray-700">{kt.label}</span><span className="text-gray-400">@{Math.round(k.afstand)}m</span><span className="text-gray-500 ml-auto">-{k.diepte.toFixed(1)}m</span></div>);})}</div></div>}
             <button onClick={()=>{if(boorCoords.length<2)return;const gj={type:"Feature",geometry:{type:"LineString",coordinates:boorCoords.map(([lat,lng])=>[lng,lat])},properties:{dieptePunten}};const blob=new Blob([JSON.stringify(gj,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="boorlijn_diepte.geojson";a.click();}}>⬇ Download GeoJSON</button>
           </div>
