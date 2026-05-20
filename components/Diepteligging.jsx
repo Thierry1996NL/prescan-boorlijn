@@ -506,9 +506,9 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
 
       // ── Overlay-lagen ──────────────────────────────────────────
       const OVERLAYS={
-        klic:     L.tileLayer.wms("https://service.pdok.nl/kadaster/klic/wms",{layers:"ligging",format:"image/png",transparent:true,opacity:0.9,zIndex:10,attribution:"© Kadaster KLIC"}),
-        kadaster: L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.6,zIndex:11,attribution:"© Kadaster"}),
-        bgt:      L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12,attribution:"© BGT"}),
+        klic:     L.tileLayer.wms("https://service.pdok.nl/kadaster/buisleidingen/wms/v1_0",{layers:"buisleiding",format:"image/png",transparent:true,opacity:0.9,zIndex:10,attribution:"© Kadaster KLIC"}),
+        kadaster: L.tileLayer.wms("https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0",{layers:"Perceel",format:"image/png",transparent:true,opacity:0.7,zIndex:11,attribution:"© Kadaster"}),
+        bgt:      L.tileLayer.wms("https://service.pdok.nl/lv/bgt/wms/v1_0",{layers:"wegdeel,waterdeel,pand,begroeidterreindeel,onbegroeidterreindeel",format:"image/png",transparent:true,opacity:0.5,zIndex:12,attribution:"© BGT"}),
       };
       OVERLAYS.klic.addTo(kaart); // KLIC standaard aan
       kaart._overlayLagen=OVERLAYS;
@@ -541,6 +541,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
   useEffect(()=>{
     Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));
   },[actieveOverlays]);
+  // Na rotatieverandering: vertel Leaflet dat de container-grootte is gewijzigd
+  // zodat tiles voor het volledige 200%×200% gebied geladen worden
+  useEffect(()=>{
+    const t=setTimeout(()=>{ try{kaartRef.current?.invalidateSize({animate:false});}catch{} },600);
+    return()=>clearTimeout(t);
+  },[geroteerd,rotatieDeg]);
 
   const handleHoverAfstand=useCallback((afstand)=>{
     if(boorCoords.length<2)return;
@@ -656,12 +662,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
         </div>
         {/* Kaart + rotatie-wrapper */}
         <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
-          {/* Oversized container: 150%×150% gecentreerd zodat hoeken gevuld zijn na rotatie */}
-          {/* Bij max ±45° rotatie dekt √2≈1.41× al genoeg; 1.5× is veilige marge */}
+          {/* Oversized container: 200%×200% gecentreerd zodat hoeken gevuld zijn na rotatie   */}
+          {/* Benodigde factor: |cos34°|+|sin34°|≈1.39; 2.0× geeft ruime marge + Leaflet-buffer */}
           <div style={{
             position:"absolute",
-            width:"150%",height:"150%",
-            top:"-25%",left:"-25%",
+            width:"200%",height:"200%",
+            top:"-50%",left:"-50%",
             transform: geroteerd ? `rotate(${rotatieDeg}deg)` : "none",
             transition:"transform 0.5s ease",
             transformOrigin:"center center",
