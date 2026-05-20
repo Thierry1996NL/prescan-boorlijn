@@ -79,6 +79,10 @@ export default function MachineLocatie({project,onSave}){
 
   const plaatsModusRef=useRef(null);
   plaatsModusRef.current=plaatsModus;
+  const machinesRef=useRef(machines);
+  machinesRef.current=machines;
+  const bearingRef=useRef(bearing);
+  bearingRef.current=bearing;
 
   // ── Kaart init ────────────────────────────────────────────────
   useEffect(()=>{
@@ -126,50 +130,64 @@ export default function MachineLocatie({project,onSave}){
       const machLagen={};
       const machMarkers={};
       Object.keys(MACHINE_CONFIG).forEach(key=>{
-        machLagen[key]=L.polygon([],{color:MACHINE_CONFIG[key].kleur,fillColor:MACHINE_CONFIG[key].kleurFill,fillOpacity:0.6,weight:2.5,dashArray:null,interactive:true}).addTo(kaart);
+        machLagen[key]=null; // start leeg — aangemaakt bij eerste update
         machMarkers[key]=null;
       });
 
-      function updateRechthoek(key,centerRD,lengte,breedte,bear){
+      function updateRechthoek(key,centerRD,lengte,breedte,bear,zoomNaar=false){
+        // Verwijder oude lagen
+        if(machLagen[key]){try{kaart.removeLayer(machLagen[key]);}catch{}}
+        if(machMarkers[key]){try{kaart.removeLayer(machMarkers[key]);}catch{}}
         if(!centerRD)return;
+
         const coords=maakRechthoekCoords(centerRD,lengte,breedte,bear);
-        machLagen[key].setLatLngs(coords);
-        // Centerpunt-marker
-        if(machMarkers[key])kaart.removeLayer(machMarkers[key]);
-        const[lng,lat]=rdNaarLatLng(centerRD.x,centerRD.y);
         const cfg=MACHINE_CONFIG[key];
-        machMarkers[key]=L.marker([lat,lng],{
-          draggable:true,
-          icon:L.divIcon({
-            html:`<div style="background:${cfg.kleur};color:white;border:2px solid white;border-radius:4px;padding:2px 5px;font-size:9px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:move">${cfg.icon} ${cfg.label}</div>`,
-            className:"",iconSize:[110,22],iconAnchor:[55,11],
-          }),
-          zIndexOffset:500,
+
+        // Nieuw polygoon — dikke rand, goed zichtbaar
+        machLagen[key]=L.polygon(coords,{
+          color:cfg.kleur,weight:4,opacity:1,
+          fillColor:cfg.kleurFill,fillOpacity:0.45,
+          interactive:true,
         }).addTo(kaart);
+
+        // Label-tekst in het midden
+        const[lng,lat]=rdNaarLatLng(centerRD.x,centerRD.y);
+        const labelIcon=L.divIcon({
+          html:`<div style="background:${cfg.kleur};color:white;border:2px solid white;border-radius:5px;padding:3px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.35);cursor:move">${cfg.icon} ${lengte}×${breedte}m</div>`,
+          className:"",iconSize:[100,22],iconAnchor:[50,11],
+        });
+
+        machMarkers[key]=L.marker([lat,lng],{draggable:true,icon:labelIcon,zIndexOffset:600}).addTo(kaart);
         machMarkers[key].on("drag",(e)=>{
-          const{lat:la,lng:lo}=e.latlng;
-          const rd=latLngNaarRD(la,lo);
-          const coords2=maakRechthoekCoords(rd,lengte,breedte,bear);
-          machLagen[key].setLatLngs(coords2);
+          const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
+          const c=maakRechthoekCoords(rd,lengte,breedte,bear);
+          machLagen[key]?.setLatLngs(c);
         });
         machMarkers[key].on("dragend",(e)=>{
-          const{lat:la,lng:lo}=e.latlng;
-          const rd=latLngNaarRD(la,lo);
+          const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
           setMachines(prev=>({...prev,[key]:{...prev[key],centerRD:rd}}));
         });
+
+        // Zoom naar de rechthoek na plaatsen
+        if(zoomNaar){
+          try{
+            const bounds=machLagen[key].getBounds();
+            kaart.fitBounds(bounds.pad(3),{maxZoom:19,animate:true});
+          }catch{}
+        }
       }
       kaart._updateRechthoek=updateRechthoek;
-      kaart._machLagen=machLagen;
 
       // Klik op kaart = plaatsen in plaatsModus
       kaart.on("click",(e)=>{
         const key=plaatsModusRef.current;
         if(!key)return;
         const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
-        setMachines(prev=>{
-          const nieuweState={...prev,[key]:{...prev[key],centerRD:rd}};
-          return nieuweState;
-        });
+        const currentMachines=machinesRef.current??{};
+        const m=currentMachines[key]??{lengte:6,breedte:3};
+        // Teken direct op de kaart (met zoom)
+        updateRechthoek(key,rd,m.lengte,m.breedte,bearingRef.current??0,true);
+        setMachines(prev=>{const n={...prev,[key]:{...prev[key],centerRD:rd}};machinesRef.current=n;return n;});
         setPlaatsModus(null);
       });
 
