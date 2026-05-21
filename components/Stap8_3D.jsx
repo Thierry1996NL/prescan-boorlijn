@@ -245,34 +245,47 @@ export default function Stap8_3D({ project }) {
         }catch(e){console.warn("KLIC laden:",e);}
       }
 
-      // ── 3D BAG (alle gebouwen NL, AHN4 hoogtes) ────────────────
+      // ── 3D BAG via lokale proxy (CORS-bypass) ──────────────────
       setBag3dStatus("laden");
-      try{
-        const bag3d=await C.Cesium3DTileset.fromUrl(
-          "https://api.3dbag.nl/collections/pand/3dtiles",
-          {skipLevelOfDetail:false,maximumScreenSpaceError:16}
+      try {
+        // Proxy-route: /api/bag3d/... → https://api.3dbag.nl/collections/pand/3dtiles/...
+        const bag3d = await C.Cesium3DTileset.fromUrl(
+          "/api/bag3d/tileset.json",
+          { maximumScreenSpaceError: 16 }
         );
-        bag3d.show=true;
-        // Neutrale beige kleur, licht transparant zodat terrein erdoor te zien is
-        bag3d.style=new C.Cesium3DTileStyle({
-          color:"color('rgba(210, 185, 150, 0.85)')",
+        bag3d.style = new C.Cesium3DTileStyle({
+          color: "color('rgba(210, 185, 150, 0.9)')",
         });
         viewer.scene.primitives.add(bag3d);
-        viewer._bag3dTileset=bag3d;
+        viewer._bag3dTileset = bag3d;
         setBag3dStatus("klaar");
-      }catch(e){
-        console.error("3D BAG:",e.message);
+      } catch(e) {
+        console.error("3D BAG:", e.message);
         setBag3dStatus("fout");
       }
 
-      // Camera fly-to
-      if(boorCoords.length>=2){
-        const mid=boorCoords[Math.floor(boorCoords.length/2)];
+      // Camera fly-to op de boorlijn
+      viewer._vliegNaarBoor = () => {
+        if (!boorCoords.length) return;
+        const mid = boorCoords[Math.floor(boorCoords.length/2)];
         viewer.camera.flyTo({
-          destination:C.Cartesian3.fromDegrees(mid[1],mid[0],250),
-          orientation:{heading:C.Math.toRadians(0),pitch:C.Math.toRadians(-40),roll:0},
-          duration:2,
+          destination: C.Cartesian3.fromDegrees(mid[1], mid[0], 300),
+          orientation: { heading: C.Math.toRadians(0), pitch: C.Math.toRadians(-45), roll: 0 },
+          duration: 1.5,
         });
+      };
+      viewer._vliegVanBovenaf = () => {
+        if (!boorCoords.length) return;
+        const mid = boorCoords[Math.floor(boorCoords.length/2)];
+        viewer.camera.flyTo({
+          destination: C.Cartesian3.fromDegrees(mid[1], mid[0], 500),
+          orientation: { heading: C.Math.toRadians(0), pitch: C.Math.toRadians(-90), roll: 0 },
+          duration: 1.5,
+        });
+      };
+
+      if (boorCoords.length >= 2) {
+        viewer._vliegNaarBoor();
       }
       setStatus("klaar");
     })().catch(e=>{console.error("Cesium init:",e);setStatus("fout");});
@@ -335,7 +348,19 @@ export default function Stap8_3D({ project }) {
           </div>
 
           <div className="border-t border-gray-100 pt-2">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Navigatie</div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Camera</div>
+            <button onClick={()=>viewerRef.current?._vliegNaarBoor?.()}
+              className="w-full mb-1 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-gray-700">
+              📍 Vlieg naar boorlijn
+            </button>
+            <button onClick={()=>viewerRef.current?._vliegVanBovenaf?.()}
+              className="w-full py-1.5 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-gray-700">
+              🔭 Verticaal (vogelperspectief)
+            </button>
+          </div>
+
+          <div className="border-t border-gray-100 pt-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Navigatie</div>
             <div className="text-xs text-gray-400 leading-relaxed">🖱 Klik+sleep = draaien<br/>⚙ Rechts+sleep = kantelen<br/>🔍 Scroll = zoom</div>
           </div>
 
