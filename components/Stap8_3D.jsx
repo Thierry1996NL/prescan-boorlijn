@@ -245,22 +245,60 @@ export default function Stap8_3D({ project }) {
         }catch(e){console.warn("KLIC laden:",e);}
       }
 
-      // ── 3D BAG via lokale proxy (CORS-bypass) ──────────────────
+      // ── 3D BAG via WFS (gebouwpolygonen + AHN4-hoogtes) ────────
+      viewer._bag3dEntities = [];
       setBag3dStatus("laden");
       try {
-        // Proxy-route: /api/bag3d/... → https://api.3dbag.nl/collections/pand/3dtiles/...
-        const bag3d = await C.Cesium3DTileset.fromUrl(
-          "/api/bag3d/tileset.json",
-          { maximumScreenSpaceError: 16 }
-        );
-        bag3d.style = new C.Cesium3DTileStyle({
-          color: "color('rgba(210, 185, 150, 0.9)')",
-        });
-        viewer.scene.primitives.add(bag3d);
-        viewer._bag3dTileset = bag3d;
-        setBag3dStatus("klaar");
+        if (boorCoords.length >= 2) {
+          const lats=boorCoords.map(([la])=>la), lngs=boorCoords.map(([,lo])=>lo);
+          const marge=0.006; // ~600m rondom boorlijn
+          const bbox=`${Math.min(...lngs)-marge},${Math.min(...lats)-marge},${Math.max(...lngs)+marge},${Math.max(...lats)+marge}`;
+
+          const res = await fetch(`/api/bag3d-wfs?bbox=${encodeURIComponent(bbox)}&limit=500`);
+          if (!res.ok) throw new Error(`WFS status ${res.status}`);
+          const data = await res.json();
+
+          let teller = 0;
+          (data.features ?? []).forEach(feat => {
+            const geom = feat.geometry;
+            if (!geom || (geom.type !== "Polygon" && geom.type !== "MultiPolygon")) return;
+
+            // AHN4-hoogtes uit 3D BAG properties (in meters NAP)
+            const hGrond = feat.properties?.["h_maaiveld_50p"] ?? feat.properties?.["h_maaiveld"] ?? 0;
+            const hDak   = feat.properties?.["h_dak_50p"] ?? (hGrond + 6);
+            const baseH  = napNaarCesium(Number(hGrond) || 0);
+            const topH   = napNaarCesium(Number(hDak)   || 6);
+            if (topH <= baseH) return;
+
+            const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates[0];
+            const outerRing = rings[0];
+            if (!outerRing || outerRing.length < 3) return;
+
+            const positions = outerRing.map(([lo,la]) => C.Cartesian3.fromDegrees(lo, la, baseH));
+            const entity = viewer.entities.add({
+              polygon: {
+                hierarchy: new C.PolygonHierarchy(positions),
+                perPositionHeight: true,
+                extrudedHeight: topH,
+                material: C.Color.fromBytes(215, 190, 155, 210),
+                outline: true,
+                outlineColor: C.Color.fromBytes(110, 80, 40, 255),
+                outlineWidth: 1,
+                closeTop: true,
+                closeBottom: true,
+              }
+            });
+            viewer._bag3dEntities.push(entity);
+            teller++;
+          });
+
+          console.log(`[3D BAG] ${teller} gebouwen geladen`);
+          setBag3dStatus(teller > 0 ? "klaar" : "leeg");
+        } else {
+          setBag3dStatus("leeg");
+        }
       } catch(e) {
-        console.error("3D BAG:", e.message);
+        console.error("3D BAG WFS:", e.message);
         setBag3dStatus("fout");
       }
 
@@ -300,6 +338,7 @@ export default function Stap8_3D({ project }) {
     v._klicEntities?.forEach(e=>{e.show=lagen.klic;});
     v._machineEntities?.forEach(e=>{e.show=lagen.machines;});
     if(v._bag3dTileset) v._bag3dTileset.show=lagen.bag3d;
+    v._bag3dEntities?.forEach(e=>{e.show=lagen.bag3d;});
   },[lagen]);
 
   const herlaadViewer=()=>{
