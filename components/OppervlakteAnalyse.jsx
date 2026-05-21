@@ -850,10 +850,16 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
   }
 
   // ── BGT Download handler ──────────────────────────────────────────
+  const [bgtDlTijd, setBgtDlTijd] = useState(0);
+  const bgtDlPollRef = useRef(null);
+
   async function handleBgtDownload() {
     if (!bgtDlHoek1 || !bgtDlHoek2) return;
     setBgtDlStatus("laden");
     setBgtDlUrl(null);
+    setBgtDlTijd(0);
+    // Secondenteller
+    const tijdInterval = setInterval(() => setBgtDlTijd(t => t + 1), 1000);
     try {
       const sw = { lat: Math.min(bgtDlHoek1.lat, bgtDlHoek2.lat), lng: Math.min(bgtDlHoek1.lng, bgtDlHoek2.lng) };
       const ne = { lat: Math.max(bgtDlHoek1.lat, bgtDlHoek2.lat), lng: Math.max(bgtDlHoek1.lng, bgtDlHoek2.lng) };
@@ -864,24 +870,38 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
       });
       const data = await res.json();
       if (!data.downloadRequestId) throw new Error(data.error ?? JSON.stringify(data));
-      // Poll status elke 2 seconden
+
+      // Poll status elke 3 sec, timeout na 5 minuten
+      const MAX_WACHT = 300;
       const poll = setInterval(async () => {
         try {
-          const st = await fetch(`/api/bgt-download?id=${data.downloadRequestId}`).then(r=>r.json());
+          const st = await fetch(`/api/bgt-download?id=${data.downloadRequestId}`).then(r => r.json());
           if (st.status === "COMPLETED") {
-            clearInterval(poll);
+            clearInterval(poll); clearInterval(tijdInterval);
             setBgtDlUrl(st._links?.download?.href ?? null);
             setBgtDlStatus("klaar");
           } else if (st.status === "FAILED" || st.status === "CANCELLED") {
-            clearInterval(poll);
+            clearInterval(poll); clearInterval(tijdInterval);
+            setBgtDlUrl(`PDOK status: ${st.status}`);
             setBgtDlStatus("fout");
           }
-        } catch { clearInterval(poll); setBgtDlStatus("fout"); }
-      }, 2500);
+          // Timeout na MAX_WACHT seconden
+          setBgtDlTijd(t => {
+            if (t >= MAX_WACHT) {
+              clearInterval(poll); clearInterval(tijdInterval);
+              setBgtDlStatus("fout");
+              setBgtDlUrl("Timeout na 5 minuten — PDOK reageert niet");
+            }
+            return t + 3;
+          });
+        } catch(e) { clearInterval(poll); clearInterval(tijdInterval); setBgtDlStatus("fout"); setBgtDlUrl(e.message); }
+      }, 3000);
+      bgtDlPollRef.current = poll;
     } catch(e) {
+      clearInterval(tijdInterval);
       console.error("BGT download:", e.message);
       setBgtDlStatus("fout");
-      setBgtDlUrl(e.message); // hergebruik url-state voor foutdetail
+      setBgtDlUrl(e.message);
     }
   }
 
@@ -1160,10 +1180,26 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                 {/* Laden */}
                 {bgtDlStatus==="laden"&&(
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-indigo-600 py-1.5 justify-center">
+                    <div className="flex items-center gap-2 text-xs text-indigo-600 py-1 justify-center">
                       <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"/>
-                      PDOK verwerkt aanvraag… (~30–60 sec)
+                      <span>PDOK verwerkt… <strong>{bgtDlTijd}s</strong></span>
                     </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5">
+                      <div className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                        style={{width:`${Math.min((bgtDlTijd/120)*100,95)}%`}}/>
+                    </div>
+                    <div className="text-xs text-gray-400 text-center">
+                      {bgtDlTijd < 30 ? "Aanvraag verwerken…"
+                        : bgtDlTijd < 90 ? "BGT-data genereren…"
+                        : bgtDlTijd < 180 ? "Bijna klaar, nog even geduld…"
+                        : "Groot gebied — kan tot 5 min duren"}
+                    </div>
+                    <button onClick={()=>{
+                      if(bgtDlPollRef.current) clearInterval(bgtDlPollRef.current);
+                      resetBgtDownload();
+                    }} className="w-full py-1 text-xs text-gray-400 hover:text-gray-600">
+                      ✕ Annuleer
+                    </button>
                   </div>
                 )}
 
