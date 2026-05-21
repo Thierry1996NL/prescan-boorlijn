@@ -59,6 +59,18 @@ function interpoleerDiepte(dieptePunten, afstand) {
   }
   return 0;
 }
+
+// Haal actuele AHN4-hoogte via Cesium terrain sampling
+async function sampleTerreinHoogte(viewer, C, lngLatPairs) {
+  try {
+    const carts = lngLatPairs.map(([lo,la]) => C.Cartographic.fromDegrees(lo, la));
+    const sampled = await C.sampleTerrainMostDetailed(viewer.terrainProvider, carts);
+    return sampled.map(c => (c.height != null && isFinite(c.height)) ? c.height : 44.1);
+  } catch {
+    return lngLatPairs.map(() => 44.1);
+  }
+}
+
 function parseImklMini(xmlTekst) {
   const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
   const netThema = {};
@@ -146,7 +158,8 @@ export default function Stap8_3D({ project }) {
   });
   const [status, setStatus] = useState("init");
   const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, gebouwen:false, fotorealistisch:false, overpass:false });
-  const [overpassStatus, setOverpassStatus] = useState(null); // null|laden|klaar|fout
+  const [overpassStatus, setOverpassStatus] = useState(null);
+  const [overpassTelling, setOverpassTelling] = useState({g:0,bo:0,b:0});
 
   // Parse project data
   const boorCoords = useMemo(() => {
@@ -452,43 +465,59 @@ export default function Stap8_3D({ project }) {
 
       // ── Overpass OSM gebouwen + bomen (geen API key nodig) ─────
       viewer._overpassEntities = [];
-      viewer._laadOverpass = async (setStatus2) => {
+      viewer._laadOverpass = async (setStatus2, setTelling) => {
         viewer._overpassEntities.forEach(e=>{try{viewer.entities.remove(e);}catch{}});
         viewer._overpassEntities = [];
         if (!boorCoords.length) return;
+
+        // Grotere bbox: 800m marge ipv 300m
         const lats=boorCoords.map(([la])=>la),lngs=boorCoords.map(([,lo])=>lo);
-        const marge=0.003;
+        const marge=0.008;
         const bbox=`${Math.min(...lats)-marge},${Math.min(...lngs)-marge},${Math.max(...lats)+marge},${Math.max(...lngs)+marge}`;
 
-        // Gebouwen
+        // Middelpunt van bore voor test
+        const midLat=(Math.min(...lats)+Math.max(...lats))/2;
+        const midLng=(Math.min(...lngs)+Math.max(...lngs))/2;
+
+        // Hoogte: gebruik AHN profiel als beschikbaar, anders NAP_OFFSET
+        const ahnH=ahnProfiel?.profielPunten?.[0]?.hoogte??0;
+        const baseH=napNaarCesium(ahnH); // gemeten terrein-hoogte ipv vaste offset
+
+        let totGebouwen=0,totBossen=0,totBomen=0;
+
+        
+        // Gebouwen met AHN4 terrein-hoogte sampling
         try {
           const res=await fetch("https://overpass-api.de/api/interpreter",{
             method:"POST",
-            body:`[out:json][timeout:30];(way["building"](${bbox}););out body;>;out skel qt;`,
+            body:`[out:json][timeout:30];(way["building"](${bbox});relation["building"](${bbox}););out body;>;out skel qt;`,
           });
           const data=await res.json();
           const gebouwen=parseOverpassGebouwen(data);
+          totGebouwen=gebouwen.length;
           console.log(`[Overpass] ${gebouwen.length} gebouwen gevonden`);
-          gebouwen.forEach(g=>{
-            const baseH=NAP_OFFSET; // NL maaiveld ≈ 44.1m boven WGS84 ellipsoïde
-            const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,baseH));
-            viewer._overpassEntities.push(viewer.entities.add({
-              name:`🏠 ${g.naam}`,
-              polygon:{
-                hierarchy:new C.PolygonHierarchy(pos),
-                height:baseH,
-                extrudedHeight:baseH+g.hoogte,
-                material:C.Color.fromBytes(210,180,140,210),
-                outline:true,
-                outlineColor:C.Color.fromBytes(120,90,50,255),
-                outlineWidth:1,
-                closeTop:true,
-                closeBottom:false,
-                perPositionHeight:false,
-              }
-            }));
-          });
-        } catch(e){console.warn("Overpass gebouwen:",e.message);}
+          if(gebouwen.length>0){
+            const centroids=gebouwen.map(g=>[
+              g.coords.reduce((s,[x])=>s+x,0)/g.coords.length,
+              g.coords.reduce((s,[,y])=>s+y,0)/g.coords.length,
+            ]);
+            const hoogtes=await sampleTerreinHoogte(viewer,C,centroids);
+            gebouwen.forEach((g,i)=>{
+              const bH=hoogtes[i];
+              const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,bH));
+              viewer._overpassEntities.push(viewer.entities.add({
+                polygon:{
+                  hierarchy:new C.PolygonHierarchy(pos),
+                  perPositionHeight:true,
+                  extrudedHeight:bH+Math.max(g.hoogte,4),
+                  material:C.Color.fromBytes(220,190,150,210),
+                  outline:true, outlineColor:C.Color.fromBytes(100,70,30,255), outlineWidth:2,
+                  closeTop:true, closeBottom:true,
+                }
+              }));
+            });
+          }
+        } catch(e){console.error("Overpass gebouwen:",e);}
 
         // Bomen & bossen
         try {
@@ -498,54 +527,43 @@ export default function Stap8_3D({ project }) {
           });
           const data=await res.json();
           const {bomen,bossen}=parseOverpassBomen(data);
+          totBossen=bossen.length; totBomen=bomen.length;
           console.log(`[Overpass] ${bossen.length} bossen, ${bomen.length} bomen`);
 
-          const bosH=NAP_OFFSET;
-          bossen.forEach(coords=>{
-            const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,bosH));
-            viewer._overpassEntities.push(viewer.entities.add({
-              polygon:{
-                hierarchy:new C.PolygonHierarchy(pos),
-                height:bosH,
-                extrudedHeight:bosH+15,
-                material:C.Color.fromBytes(34,139,34,170),
-                outline:true,
-                outlineColor:C.Color.fromBytes(0,80,0,220),
-                outlineWidth:1,
-                perPositionHeight:false,
-              }
-            }));
-          });
-
-          const boomH=NAP_OFFSET;
-          bomen.forEach(([lo,la])=>{
-            viewer._overpassEntities.push(viewer.entities.add({
-              position:C.Cartesian3.fromDegrees(lo,la,boomH+4),
-              ellipse:{
-                semiMinorAxis:3,
-                semiMajorAxis:3,
-                height:boomH,
-                extrudedHeight:boomH+9,
-                material:C.Color.fromBytes(34,139,34,220),
-                outline:false,
-              }
-            }));
-          });
-        } catch(e){console.warn("Overpass bomen:",e.message);}
-
-        if(setStatus2) setStatus2("klaar");
-
-        // Zoom naar gebieden met content
-        if(viewer._overpassEntities.length>0 && boorCoords.length>=2){
-          try{
-            const mid=boorCoords[Math.floor(boorCoords.length/2)];
-            viewer.camera.flyTo({
-              destination:C.Cartesian3.fromDegrees(mid[1],mid[0],150),
-              orientation:{heading:C.Math.toRadians(0),pitch:C.Math.toRadians(-45),roll:0},
-              duration:1.5,
+          if(bossen.length>0){
+            const bc=bossen.map(c=>[
+              c.reduce((s,[x])=>s+x,0)/c.length,
+              c.reduce((s,[,y])=>s+y,0)/c.length,
+            ]);
+            const bosH=await sampleTerreinHoogte(viewer,C,bc);
+            bossen.forEach((coords,i)=>{
+              const bH=bosH[i];
+              const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,bH));
+              viewer._overpassEntities.push(viewer.entities.add({
+                polygon:{
+                  hierarchy:new C.PolygonHierarchy(pos),
+                  perPositionHeight:true, extrudedHeight:bH+15,
+                  material:C.Color.fromBytes(34,139,34,160),
+                  outline:true, outlineColor:C.Color.fromBytes(0,80,0,220), outlineWidth:1,
+                }
+              }));
             });
-          }catch{}
-        }
+          }
+          if(bomen.length>0){
+            const boomH=await sampleTerreinHoogte(viewer,C,bomen);
+            bomen.forEach(([lo,la],i)=>{
+              const bH=boomH[i];
+              viewer._overpassEntities.push(viewer.entities.add({
+                position:C.Cartesian3.fromDegrees(lo,la,bH+4.5),
+                ellipse:{semiMinorAxis:3,semiMajorAxis:3,height:bH,extrudedHeight:bH+9,
+                  material:C.Color.fromBytes(34,139,34,220)}
+              }));
+            });
+          }
+        } catch(e){console.error("Overpass bomen:",e);}
+
+        if(setTelling) setTelling({g:totGebouwen,bo:totBossen,b:totBomen});
+        if(setStatus2) setStatus2(totGebouwen+totBossen+totBomen>0?"klaar":"leeg");
       };
 
       if (boorCoords.length >= 2) {
@@ -589,7 +607,7 @@ export default function Stap8_3D({ project }) {
     // Overpass — laden bij aanzetten, verwijderen bij uitzetten
     if(lagen.overpass && (v._overpassEntities?.length??0)===0){
       setOverpassStatus("laden");
-      v._laadOverpass?.(setOverpassStatus);
+      v._laadOverpass?.(setOverpassStatus, setOverpassTelling);
     }
     if(!lagen.overpass && (v._overpassEntities?.length??0)>0){
       v._overpassEntities.forEach(e=>{try{v.entities.remove(e);}catch{}});
@@ -651,8 +669,10 @@ export default function Stap8_3D({ project }) {
                 <span className="text-gray-400 block">geen API key nodig</span>
               </span>
               {overpassStatus==="laden"&&<span className="text-xs text-indigo-500 animate-pulse">⏳</span>}
-              {overpassStatus==="klaar"&&<span className="text-xs text-green-500">✓</span>}
+              {overpassStatus==="klaar"&&<span className="text-xs text-green-500">🏠{overpassTelling.g} 🌲{overpassTelling.bo+overpassTelling.b}</span>}
+              {overpassStatus==="leeg"&&<span className="text-xs text-amber-500">⚠ 0</span>}
             </label>
+            {overpassStatus==="leeg"&&<div className="text-xs text-amber-600 ml-6 leading-tight">Geen OSM data in dit gebied. Probeer een project dichter bij bebouwing.</div>}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={!!lagen.fotorealistisch} disabled={!googleToken} onChange={e=>setLagen(p=>({...p,fotorealistisch:e.target.checked,gebouwen:false}))} className="accent-indigo-600 disabled:opacity-40"/>
               <span className={`text-xs ${googleToken?"text-gray-700":"text-gray-400"}`}>🌳 Google Fotorealistisch <span className="text-gray-400">(bomen+huizen)</span></span>
