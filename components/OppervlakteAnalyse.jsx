@@ -863,7 +863,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         body: JSON.stringify({ sw, ne }),
       });
       const data = await res.json();
-      if (!data.downloadRequestId) throw new Error(data.error ?? "Geen ID");
+      if (!data.downloadRequestId) throw new Error(data.error ?? JSON.stringify(data));
       // Poll status elke 2 seconden
       const poll = setInterval(async () => {
         try {
@@ -881,6 +881,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     } catch(e) {
       console.error("BGT download:", e.message);
       setBgtDlStatus("fout");
+      setBgtDlUrl(e.message); // hergebruik url-state voor foutdetail
     }
   }
 
@@ -1132,7 +1133,10 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                       </div>
                     )}
                     {bgtDlStatus==="fout"&&(
-                      <div className="text-xs text-red-500 mt-1">✗ Download mislukt — probeer opnieuw</div>
+                      <div className="text-xs text-red-500 mt-1">
+                        ✗ Download mislukt — probeer opnieuw
+                        {bgtDlUrl&&<div className="text-red-400 mt-0.5 font-mono break-all">{bgtDlUrl.slice(0,120)}</div>}
+                      </div>
                     )}
                   </div>
                 )}
