@@ -11,6 +11,7 @@ const OppervlakteAnalyse = dynamic(() => import("@/components/OppervlakteAnalyse
 const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr: false });
 const Diepteligging    = dynamic(() => import("@/components/Diepteligging"),    { ssr: false });
 const MachineLocatie   = dynamic(() => import("@/components/MachineLocatie"),   { ssr: false });
+const Stap8_3D         = dynamic(() => import("@/components/Stap8_3D"),         { ssr: false });
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -20,14 +21,15 @@ const STAP_LABELS = {
   5:  "Oppervlakteanalyse",
   6:  "Diepteligging & dwarsprofiel",
   7:  "Machine- & bentonietlocatie",
-  8:  "Eindontwerp",
-  9:  "AI optimalisatie & kruisingen",
-  10: "Pre-scan en tekeningen",
-  11: "Contactpersonen (KLIC)",
-  12: "Exporteren",
+  8:  "3D ontwerp",
+  9:  "Eindontwerp",
+  10: "AI optimalisatie & kruisingen",
+  11: "Pre-scan en tekeningen",
+  12: "Contactpersonen (KLIC)",
+  13: "Exporteren",
 };
 
-const STAP_MAX_UITGEWERKT = 8;
+const STAP_MAX_UITGEWERKT = 9;
 
 // ═══════════════════════════════════════════════════════════════
 export default function ProjectDetailPagina() {
@@ -485,8 +487,12 @@ export default function ProjectDetailPagina() {
           />
         );
 
-      // ── Stap 8: Eindontwerp ────────────────────────────────────
+      // ── Stap 8: 3D Ontwerp ─────────────────────────────────────
       case 8:
+        return <Stap8_3D project={project} />;
+
+      // ── Stap 9: Eindontwerp ────────────────────────────────────
+      case 9:
         return (
           <div className="space-y-5">
             <p className="text-sm text-gray-500 max-w-2xl">Read-only overzicht van het volledige ontwerp.</p>
@@ -523,13 +529,13 @@ export default function ProjectDetailPagina() {
           </div>
         );
 
-      // ── Stap 9–12: Nog niet uitgewerkt ────────────────────────
+      // ── Stap 10–13: Nog niet uitgewerkt ──────────────────────
       default:
         return (
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <div className="text-4xl mb-4">🚧</div>
             <h2 className="text-base font-semibold text-gray-700 mb-1">{STAP_LABELS[actieveStap]}</h2>
-            <p className="text-sm text-gray-400">Wordt uitgewerkt zodra stap 1 t/m 8 stabiel zijn.</p>
+            <p className="text-sm text-gray-400">Wordt uitgewerkt zodra stap 1 t/m 9 stabiel zijn.</p>
           </div>
         );
     }
@@ -550,7 +556,7 @@ export default function ProjectDetailPagina() {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-20 flex-shrink-0">
           <div>
-            <div className="text-xs text-gray-400">Stap {actieveStap} van 12</div>
+            <div className="text-xs text-gray-400">Stap {actieveStap} van 13</div>
             <h1 className="text-base font-semibold text-gray-900 mt-0.5">{STAP_LABELS[actieveStap]}</h1>
           </div>
           <div className="flex items-center gap-2">

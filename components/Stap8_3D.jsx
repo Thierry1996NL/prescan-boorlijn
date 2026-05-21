@@ -1,0 +1,409 @@
+"use client";
+import { useEffect, useRef, useState, useMemo } from "react";
+
+// ─── RD → WGS84 ──────────────────────────────────────────────────
+function rdNaarWgs84(x, y) {
+  const dX=(x-155000)/100000, dY=(y-463000)/100000;
+  const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY-0.06550*dY*dY*dY)/3600;
+  const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.45656*dX*dY*dY-0.81885*dX*dX*dX)/3600;
+  return [lng, lat];
+}
+
+// NAP → hoogte boven WGS84 ellipsoïde (NL gemiddeld: +44.1m)
+const NAP_OFFSET = 44.1;
+function napNaarCesium(nap) { return nap + NAP_OFFSET; }
+
+// Bereken positie op afstand langs polyline
+function positieOpAfstand(coords, afstand) {
+  let cumul = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lat1,lng1]=coords[i],[lat2,lng2]=coords[i+1];
+    const R=6371000, toRad=d=>d*Math.PI/180;
+    const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+    const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+    const d=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    if (cumul + d >= afstand) {
+      const t = (afstand - cumul) / d;
+      return [lat1 + t*(lat2-lat1), lng1 + t*(lng2-lng1)];
+    }
+    cumul += d;
+  }
+  return coords[coords.length-1];
+}
+
+// Interpoleer hoogte op afstand uit profielPunten
+function interpoleerHoogte(profielPunten, afstand) {
+  if (!profielPunten?.length) return 0;
+  for (let i = 0; i < profielPunten.length - 1; i++) {
+    const a = profielPunten[i], b = profielPunten[i+1];
+    if (afstand >= a.afstand && afstand <= b.afstand) {
+      const t = (afstand - a.afstand) / (b.afstand - a.afstand);
+      return a.hoogte + t * (b.hoogte - a.hoogte);
+    }
+  }
+  return profielPunten[profielPunten.length-1]?.hoogte ?? 0;
+}
+
+// IMKL parser (zelfde als KlicAchtergrond)
+function parseImklMini(xmlTekst) {
+  const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
+  const netThema = {};
+  doc.querySelectorAll("Utiliteitsnet").forEach(net => {
+    const id = net.getAttribute("gml:id") || net.getAttributeNS?.("http://www.opengis.net/gml/3.2","id") || "";
+    const href = net.querySelector("thema")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "";
+    if (id) netThema[id] = href.split("/").pop() || "overig";
+  });
+  const themalagen = {};
+  doc.querySelectorAll("UtilityLink").forEach(link => {
+    const netHref = (link.querySelector("inNetwork")?.getAttributeNS?.("http://www.w3.org/1999/xlink","href") || "").replace(/^#/,"");
+    const thema = netThema[netHref] || "overig";
+    const posListEl = link.querySelector("posList");
+    if (!posListEl) return;
+    const nums = posListEl.textContent.trim().split(/\s+/).map(Number);
+    const coords = [];
+    for (let i = 0; i+1 < nums.length; i+=2) {
+      const x=nums[i],y=nums[i+1];
+      const [lng,lat]=(Math.abs(x)>180||Math.abs(y)>90)?rdNaarWgs84(x,y):[x,y];
+      coords.push([lng, lat]);
+    }
+    if (coords.length >= 2) { if (!themalagen[thema]) themalagen[thema]=[]; themalagen[thema].push(coords); }
+  });
+  return themalagen;
+}
+
+const THEMA_CESIUM_KLEUR = {
+  laagspanning:"#7B00AA", middenspanning:"#00CCFF", hoogspanning:"#FF4400",
+  gasLageDruk:"#FFFF00", gasHogeDruk:"#FF0000", water:"#0000CC",
+  datatransport:"#00CC00", rioolVrijverval:"#AA00CC", rioolOnderOverOfOnderdruk:"#AA00CC",
+  warmte:"#FF6600", overig:"#888888",
+};
+
+// ════════════════════════════════════════════════════════════════════
+export default function Stap8_3D({ project }) {
+  const containerRef = useRef(null);
+  const viewerRef = useRef(null);
+  const [ionToken, setIonToken] = useState(() => {
+    try { return localStorage.getItem("cesium_ion_token") || ""; } catch { return ""; }
+  });
+  const [tokenInput, setTokenInput] = useState(ionToken);
+  const [status, setStatus] = useState("init"); // init|laden|klaar|fout
+  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, oppervlak:true });
+
+  // Parse project data
+  const boorCoords = useMemo(() => {
+    try { const g=project?.boortrace_geojson; if(!g)return[]; const p=typeof g==="string"?JSON.parse(g):g; return p.coordinates?.map(([lng,lat])=>[lat,lng])??[]; } catch{return[];}
+  }, [project]);
+
+  const ahnProfiel = useMemo(() => {
+    try { const r=project?.ahn_profiel; if(!r)return null; const p=typeof r==="string"?JSON.parse(r):r; return Array.isArray(p)?{profielPunten:p,dieptePunten:[]}:p; } catch{return null;}
+  }, [project]);
+
+  const machineLocaties = useMemo(() => {
+    try { const r=project?.machine_locaties; if(!r)return null; return typeof r==="string"?JSON.parse(r):r; } catch{return null;}
+  }, [project]);
+
+  const bestandenMeta = useMemo(() => {
+    try { return JSON.parse(project?.bestanden_meta||"[]"); } catch{return[];}
+  }, [project]);
+
+  // ── Init Cesium ────────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window==="undefined" || viewerRef.current || !containerRef.current) return;
+    let actief = true;
+    setStatus("laden");
+
+    (async () => {
+      // Laad Cesium CSS + JS
+      if (!document.querySelector('link[href*="cesium"]')) {
+        const link = document.createElement("link");
+        link.rel="stylesheet"; link.href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css";
+        document.head.appendChild(link);
+      }
+      if (!window.Cesium) {
+        await new Promise((ok,er)=>{ const s=document.createElement("script"); s.src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"; s.onload=ok; s.onerror=er; document.head.appendChild(s); });
+      }
+      if (!actief || !containerRef.current) return;
+      const C = window.Cesium;
+
+      // Ion token
+      if (ionToken) C.Ion.defaultAccessToken = ionToken;
+
+      // Terrein
+      let terrein;
+      try {
+        if (ionToken) {
+          terrein = await C.CesiumTerrainProvider.fromIonAssetId(1);
+        } else {
+          terrein = new C.EllipsoidTerrainProvider();
+        }
+      } catch { terrein = new C.EllipsoidTerrainProvider(); }
+
+      if (!actief || !containerRef.current) return;
+
+      // Viewer
+      const viewer = new C.Viewer(containerRef.current, {
+        terrainProvider: terrein,
+        baseLayerPicker: false,
+        navigationHelpButton: false,
+        animation: false,
+        timeline: false,
+        geocoder: false,
+        sceneModePicker: true,
+        homeButton: false,
+        infoBox: true,
+        selectionIndicator: false,
+        fullscreenButton: false,
+        creditContainer: document.createElement("div"),
+      });
+      viewerRef.current = viewer;
+
+      // PDOK luchtfoto als imagery
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(
+        new C.WebMapServiceImageryProvider({
+          url: "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+          layers: "2023_orthoHR",
+          parameters: { format:"image/jpeg", transparent:false },
+          rectangle: C.Rectangle.fromDegrees(3.2,50.7,7.3,53.7),
+        })
+      );
+
+      viewer.scene.globe.depthTestAgainstTerrain = true;
+      viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+
+      // ── Boorlijn ────────────────────────────────────────────────
+      if (boorCoords.length >= 2) {
+        const pp = ahnProfiel?.profielPunten ?? [];
+        const dp = ahnProfiel?.dieptePunten ?? [];
+        const sorted = [...dp].sort((a,b)=>a.afstand-b.afstand);
+
+        // Oppervlak-lijn (oranje, op maaiveld)
+        const oppPts = boorCoords.flatMap(([lat,lng]) => [lng, lat, napNaarCesium(0)]);
+        viewer.entities.add({
+          name:"Boorlijn maaiveld",
+          polyline:{
+            positions: C.Cartesian3.fromDegreesArrayHeights(oppPts),
+            width:4, clampToGround:true,
+            material: C.Color.fromCssColorString("#f97316"),
+          }
+        });
+
+        // Diepe boorlijn (oranje gestreept, ondergronds)
+        if (sorted.length >= 2) {
+          const boorPts3D = sorted.flatMap(pt=>{
+            const [lat,lng] = positieOpAfstand(boorCoords, pt.afstand);
+            const maaiveld = interpoleerHoogte(pp, pt.afstand);
+            const hoogte = napNaarCesium(maaiveld - pt.diepte);
+            return [lng, lat, hoogte];
+          });
+          viewer.entities.add({
+            name:"Boorlijn diepteprofiel",
+            polyline:{
+              positions: C.Cartesian3.fromDegreesArrayHeights(boorPts3D),
+              width:6,
+              material: new C.PolylineGlowMaterialProperty({ glowPower:0.3, color:C.Color.fromCssColorString("#f97316") }),
+              depthFailMaterial: new C.PolylineDashMaterialProperty({ color:C.Color.fromCssColorString("#f97316").withAlpha(0.6), dashLength:20 }),
+            }
+          });
+
+          // Verticale lijnen van maaiveld naar boor
+          sorted.forEach(pt=>{
+            const [lat,lng]=positieOpAfstand(boorCoords,pt.afstand);
+            const mv=interpoleerHoogte(pp,pt.afstand);
+            const boorH=napNaarCesium(mv-pt.diepte);
+            const mvH=napNaarCesium(mv);
+            viewer.entities.add({ polyline:{
+              positions:C.Cartesian3.fromDegreesArrayHeights([lng,lat,boorH,lng,lat,mvH]),
+              width:1.5, material:new C.PolylineDashMaterialProperty({color:C.Color.fromCssColorString("#f97316").withAlpha(0.4),dashLength:12}),
+            }});
+            // Label bij dieptepunt
+            viewer.entities.add({ position:C.Cartesian3.fromDegrees(lng,lat,boorH),
+              label:{text:`-${pt.diepte.toFixed(1)}m`,font:"11px sans-serif",fillColor:C.Color.WHITE,
+                outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
+                verticalOrigin:C.VerticalOrigin.TOP,pixelOffset:new C.Cartesian2(0,5),
+                disableDepthTestDistance:500}});
+          });
+        }
+
+        // Start/einde markers
+        const [sLat,sLng]=boorCoords[0],[eLat,eLng]=boorCoords[boorCoords.length-1];
+        const startH=napNaarCesium(ahnProfiel?.profielPunten?.[0]?.hoogte??0);
+        const eindeH=napNaarCesium(ahnProfiel?.profielPunten?.[ahnProfiel.profielPunten.length-1]?.hoogte??0);
+        viewer.entities.add({position:C.Cartesian3.fromDegrees(sLng,sLat,startH+5),
+          point:{pixelSize:12,color:C.Color.fromCssColorString("#16a34a"),outlineColor:C.Color.WHITE,outlineWidth:2},
+          label:{text:"S",font:"bold 14px sans-serif",fillColor:C.Color.fromCssColorString("#16a34a"),
+            outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-8)}});
+        viewer.entities.add({position:C.Cartesian3.fromDegrees(eLng,eLat,eindeH+5),
+          point:{pixelSize:12,color:C.Color.fromCssColorString("#dc2626"),outlineColor:C.Color.WHITE,outlineWidth:2},
+          label:{text:"E",font:"bold 14px sans-serif",fillColor:C.Color.fromCssColorString("#dc2626"),
+            outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-8)}});
+      }
+
+      // ── Machine-locaties ────────────────────────────────────────
+      if (machineLocaties) {
+        const MACH_CFG={ boormachine:{kleur:"#3b82f6",icon:"🏗️",hoogte:3}, bentoniet:{kleur:"#f97316",icon:"🛢️",hoogte:2.5}};
+        Object.entries(machineLocaties).forEach(([key,m])=>{
+          if (!m?.centerRD) return;
+          const cfg=MACH_CFG[key]; if(!cfg)return;
+          const [lo,la]=rdNaarWgs84(m.centerRD.x,m.centerRD.y);
+          const bearing=(key==="boormachine"?boorCoords:null);
+          const bear=bearing?.length>=2 ? Math.atan2(boorCoords[boorCoords.length-1][1]-boorCoords[0][1], boorCoords[boorCoords.length-1][0]-boorCoords[0][0]) : 0;
+          const hl=m.lengte/2, hb=m.breedte/2;
+          const sinB=Math.sin(bear+Math.PI/2), cosB=Math.cos(bear+Math.PI/2);
+          const h=napNaarCesium(ahnProfiel?.profielPunten?.[0]?.hoogte??1);
+          const corners=[[-hl,hb],[-hl,-hb],[hl,-hb],[hl,hb]].map(([a,p])=>{
+            const [clo,cla]=rdNaarWgs84(m.centerRD.x+a*cosB-p*sinB, m.centerRD.y+a*sinB+p*cosB);
+            return C.Cartesian3.fromDegrees(clo,cla,h);
+          });
+          viewer.entities.add({
+            name:`${cfg.icon} ${key==="boormachine"?"HDD Boormachine":"Bentoniet & opvangput"}`,
+            polygon:{
+              hierarchy: new C.PolygonHierarchy(corners),
+              height: h, extrudedHeight: h + cfg.hoogte,
+              material: C.Color.fromCssColorString(cfg.kleur).withAlpha(0.5),
+              outline:true, outlineColor: C.Color.fromCssColorString(cfg.kleur), outlineWidth:3,
+            }
+          });
+          viewer.entities.add({position:C.Cartesian3.fromDegrees(lo,la,h+cfg.hoogte+2),
+            label:{text:`${cfg.icon} ${m.lengte}×${m.breedte}m`,font:"bold 11px sans-serif",
+              fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:2,
+              style:C.LabelStyle.FILL_AND_OUTLINE,disableDepthTestDistance:1000}});
+        });
+      }
+
+      // ── KLIC leidingen ──────────────────────────────────────────
+      const zipBestanden = bestandenMeta.filter(b=>b.naam?.toLowerCase().endsWith(".zip")&&b.url);
+      if (zipBestanden.length > 0) {
+        try {
+          const JSZip = await (async ()=>{ if(window.JSZip)return window.JSZip; await new Promise((ok,er)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";s.onload=ok;s.onerror=er;document.head.appendChild(s);}); return window.JSZip; })();
+          for (const bestand of zipBestanden) {
+            if (!actief) break;
+            try {
+              const res=await fetch(bestand.url); if(!res.ok)continue;
+              const blob=await res.blob();
+              const zip=await JSZip.loadAsync(blob);
+              const xmlNaam=Object.keys(zip.files).find(n=>n.includes("GI_gebiedsinformatie")&&n.endsWith(".xml"));
+              if (!xmlNaam) continue;
+              const xml=await zip.files[xmlNaam].async("string");
+              const themalagen=parseImklMini(xml);
+              Object.entries(themalagen).forEach(([thema,lijnen])=>{
+                const kleur=THEMA_CESIUM_KLEUR[thema]??"#888888";
+                lijnen.forEach(lijn=>{
+                  const pts=lijn.flatMap(([lo,la])=>[lo,la,napNaarCesium(0.5)]);
+                  if(pts.length<6)return;
+                  viewer.entities.add({ polyline:{
+                    positions:C.Cartesian3.fromDegreesArrayHeights(pts),
+                    width:3, clampToGround:true,
+                    material:C.Color.fromCssColorString(kleur),
+                  }});
+                });
+              });
+            } catch(e){ console.warn("KLIC 3D:",e.message); }
+          }
+        } catch(e){ console.warn("KLIC 3D laden:",e); }
+      }
+
+      // ── Camera fly-to ───────────────────────────────────────────
+      if (boorCoords.length >= 2) {
+        const mid=boorCoords[Math.floor(boorCoords.length/2)];
+        viewer.camera.flyTo({
+          destination: C.Cartesian3.fromDegrees(mid[1], mid[0], 200),
+          orientation:{ heading:C.Math.toRadians(0), pitch:C.Math.toRadians(-35), roll:0 },
+          duration: 2,
+        });
+      }
+
+      setStatus("klaar");
+    })().catch(e=>{ console.error("Cesium init:",e); setStatus("fout"); });
+
+    return () => {
+      actief=false;
+      if (viewerRef.current) { try { viewerRef.current.destroy(); } catch {} viewerRef.current=null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ionToken]);
+
+  // Laag-toggles
+  useEffect(() => {
+    const v=viewerRef.current; if(!v)return;
+    const C=window.Cesium; if(!C)return;
+    v.entities.values.forEach(e=>{
+      const n=(e.name??"").toLowerCase();
+      if(n.includes("boorlijn")||n.includes("s")||n.includes("e")){
+        if(e.polyline)e.polyline.show=lagen.boorlijn;
+        if(e.point)e.point.show=lagen.boorlijn;
+        if(e.label&&(n.includes("s")||n.includes("e")))e.label.show=lagen.boorlijn;
+      }
+      if(e.polygon){const nm=e.name??"";if(nm.includes("machine")||nm.includes("bentoniet")||nm.includes("Boormachine")||nm.includes("Bentoniet"))e.polygon.show=lagen.machines;}
+    });
+  }, [lagen]);
+
+  const slaTokenOp = () => {
+    try { localStorage.setItem("cesium_ion_token", tokenInput); } catch {}
+    if (viewerRef.current) { try { viewerRef.current.destroy(); } catch {} viewerRef.current=null; }
+    setStatus("init");
+    setIonToken(tokenInput);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Ion token banner */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-gray-700">🌍 Cesium Ion token <span className="text-gray-400 font-normal">(optioneel — voor echt 3D terrein)</span></div>
+          <div className="text-xs text-gray-400 mt-0.5">Gratis token via <a href="https://ion.cesium.com" target="_blank" className="text-blue-500 underline">ion.cesium.com</a> → "Access Tokens" → kopieer de default token</div>
+        </div>
+        <div className="flex gap-2">
+          <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)} placeholder="eyJhbGci..."
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-52 focus:outline-none focus:ring-1 focus:ring-indigo-400 font-mono"/>
+          <button onClick={slaTokenOp} className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 whitespace-nowrap">
+            {ionToken?"↺ Bijwerken":"Toepassen"}
+          </button>
+        </div>
+      </div>
+
+      {/* Kaart + laag-panel */}
+      <div className="flex gap-3" style={{height:"calc(100vh - 220px)",minHeight:500}}>
+        {/* Laag-controls */}
+        <div className="w-52 flex-shrink-0 bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
+          <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Lagen</div>
+          {[
+            ["boorlijn","🟠 Boorlijn & diepteprofiel"],
+            ["klic","🔌 KLIC leidingen"],
+            ["machines","🏗️ Machine-locaties"],
+          ].map(([key,label])=>(
+            <label key={key} className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!lagen[key]} onChange={e=>setLagen(p=>({...p,[key]:e.target.checked}))} className="accent-indigo-600"/>
+              <span className="text-xs text-gray-700">{label}</span>
+            </label>
+          ))}
+          <div className="border-t border-gray-100 pt-3 space-y-1.5">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Navigatie</div>
+            <div className="text-xs text-gray-400 leading-relaxed">🖱️ Klik+sleep = draaien<br/>⚙️ Rechts+sleep = kantelen<br/>🔍 Scroll = zoom</div>
+          </div>
+          <div className="mt-auto">
+            {status==="laden"&&<div className="text-xs text-indigo-600 animate-pulse">⏳ Laden…</div>}
+            {status==="klaar"&&<div className="text-xs text-green-600">✓ Klaar</div>}
+            {status==="fout"&&<div className="text-xs text-red-500">✗ Fout bij laden</div>}
+            {!ionToken&&status==="klaar"&&<div className="text-xs text-amber-500 mt-1">⚠ Geen terrein — voer Ion token in voor AHN</div>}
+          </div>
+        </div>
+
+        {/* Cesium container */}
+        <div className="flex-1 min-w-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-black relative">
+          <div ref={containerRef} style={{width:"100%",height:"100%"}}/>
+          {status==="laden"&&(
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10">
+              <div className="text-center">
+                <div className="text-white text-lg font-semibold mb-2">3D wereld laden…</div>
+                <div className="text-gray-300 text-sm">CesiumJS · PDOK luchtfoto · KLIC leidingen</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
