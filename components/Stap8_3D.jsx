@@ -187,21 +187,8 @@ export default function Stap8_3D({ project }) {
       // Ion token
       if (ionToken) C.Ion.defaultAccessToken = ionToken;
 
-      // Terrein
-      let terrein;
-      try {
-        if (ionToken) {
-          terrein = await C.CesiumTerrainProvider.fromIonAssetId(1);
-        } else {
-          terrein = new C.EllipsoidTerrainProvider();
-        }
-      } catch { terrein = new C.EllipsoidTerrainProvider(); }
-
-      if (!actief || !containerRef.current) return;
-
-      // Viewer
+      // Viewer — GEEN terrainProvider/imageryProvider in constructor (verwijderd in v1.103+)
       const viewer = new C.Viewer(containerRef.current, {
-        terrainProvider: terrein,
         baseLayerPicker: false,
         navigationHelpButton: false,
         animation: false,
@@ -216,16 +203,32 @@ export default function Stap8_3D({ project }) {
       });
       viewerRef.current = viewer;
 
-      // PDOK luchtfoto als imagery
+      // Terrein via scene.setTerrain (nieuwe API)
+      if (ionToken) {
+        try {
+          viewer.scene.setTerrain(C.Terrain.fromWorldTerrain({
+            requestVertexNormals: false, requestWaterMask: false,
+          }));
+        } catch(e) { console.warn("Terrain Ion:", e.message); }
+      }
+
+      // PDOK luchtfoto via nieuwe async factory
       viewer.imageryLayers.removeAll();
-      viewer.imageryLayers.addImageryProvider(
-        new C.WebMapServiceImageryProvider({
-          url: "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
-          layers: "2023_orthoHR",
-          parameters: { format:"image/jpeg", transparent:false },
-          rectangle: C.Rectangle.fromDegrees(3.2,50.7,7.3,53.7),
-        })
-      );
+      try {
+        const pdok = await C.WebMapServiceImageryProvider.fromUrl(
+          "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+          { layers:"2023_orthoHR", parameters:{format:"image/jpeg",transparent:false} }
+        );
+        viewer.imageryLayers.addImageryProvider(pdok);
+      } catch(e) {
+        console.warn("PDOK WMS:", e.message);
+        // Fallback: OpenStreetMap via constructor (altijd beschikbaar)
+        try {
+          viewer.imageryLayers.addImageryProvider(
+            new C.OpenStreetMapImageryProvider({ url:"https://tile.openstreetmap.org/" })
+          );
+        } catch(e2) { console.warn("OSM fallback:", e2.message); }
+      }
 
       viewer.scene.globe.depthTestAgainstTerrain = true;
       viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
@@ -417,32 +420,33 @@ export default function Stap8_3D({ project }) {
 
       // ── OSM 3D Gebouwen (gratis via Ion) ───────────────────────
       let osmTileset = null;
-      try {
-        osmTileset = await C.createOsmBuildingsAsync();
-        osmTileset.show = false; // standaard uit
-        viewer.scene.primitives.add(osmTileset);
-        kaart._osmTileset = osmTileset;
-      } catch(e) { console.warn("OSM buildings:", e.message); }
+      if (ionToken) {
+        try {
+          osmTileset = await C.createOsmBuildingsAsync();
+          osmTileset.show = false;
+          viewer.scene.primitives.add(osmTileset);
+          viewer._osmTileset = osmTileset;
+        } catch(e) { console.warn("OSM buildings:", e.message); }
+      }
 
-      // ── Google Photorealistisch (gebouwen + bomen) ──────────────
+      // ── Google Photorealistisch ─────────────────────────────────
       let googleTileset = null;
       if (googleToken) {
         try {
           googleTileset = await C.createGooglePhotorealistic3DTileset(googleToken);
           googleTileset.show = false;
           viewer.scene.primitives.add(googleTileset);
-          kaart._googleTileset = googleTileset;
-          // Schakel terrein en eigen imagery uit bij Google tiles
+          viewer._googleTileset = googleTileset;
           viewer.scene.globe.show = !googleTileset.show;
         } catch(e) { console.warn("Google 3D tiles:", e.message); }
       }
-      kaart._googleToken = googleToken;
+      viewer._googleToken = googleToken;
 
       // ── Overpass OSM gebouwen + bomen (geen API key nodig) ─────
-      kaart._overpassEntities = [];
-      kaart._laadOverpass = async (setStatus2) => {
-        kaart._overpassEntities.forEach(e=>{try{viewer.entities.remove(e);}catch{}});
-        kaart._overpassEntities = [];
+      viewer._overpassEntities = [];
+      viewer._laadOverpass = async (setStatus2) => {
+        viewer._overpassEntities.forEach(e=>{try{viewer.entities.remove(e);}catch{}});
+        viewer._overpassEntities = [];
         if (!boorCoords.length) return;
         const lats=boorCoords.map(([la])=>la),lngs=boorCoords.map(([,lo])=>lo);
         const marge=0.003;
@@ -457,7 +461,7 @@ export default function Stap8_3D({ project }) {
           const data=await res.json();
           parseOverpassGebouwen(data).forEach(g=>{
             const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
-            kaart._overpassEntities.push(viewer.entities.add({
+            viewer._overpassEntities.push(viewer.entities.add({
               name:`🏠 ${g.naam}`,
               polygon:{
                 hierarchy:new C.PolygonHierarchy(pos),
@@ -481,7 +485,7 @@ export default function Stap8_3D({ project }) {
           const {bomen,bossen}=parseOverpassBomen(data);
           bossen.forEach(coords=>{
             const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
-            kaart._overpassEntities.push(viewer.entities.add({
+            viewer._overpassEntities.push(viewer.entities.add({
               polygon:{
                 hierarchy:new C.PolygonHierarchy(pos),
                 height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
@@ -492,7 +496,7 @@ export default function Stap8_3D({ project }) {
             }));
           });
           bomen.forEach(([lo,la])=>{
-            kaart._overpassEntities.push(viewer.entities.add({
+            viewer._overpassEntities.push(viewer.entities.add({
               position:C.Cartesian3.fromDegrees(lo,la,0),
               ellipse:{
                 semiMinorAxis:2.5, semiMajorAxis:2.5,
@@ -531,7 +535,8 @@ export default function Stap8_3D({ project }) {
     if(v._googleTileset){
       v._googleTileset.show = lagen.fotorealistisch;
       v.scene.globe.show = !lagen.fotorealistisch;
-      v.imageryLayers.show = !lagen.fotorealistisch;
+      // Verberg/toon alle imagery layers individueel
+      for(let i=0;i<v.imageryLayers.length;i++) v.imageryLayers.get(i).show=!lagen.fotorealistisch;
     }
     if(lagen.fotorealistisch && v._osmTileset) v._osmTileset.show = false;
     // Overpass toggle
