@@ -83,6 +83,16 @@ export default function MachineLocatie({project,onSave}){
   machinesRef.current=machines;
   const bearingRef=useRef(bearing);
   bearingRef.current=bearing;
+  const rotDegRef=useRef(0);
+  rotDegRef.current=geroteerd?rotatieDeg:0;
+  const prevGeroteerdRef=useRef(false); // herstel rotatie na plaatsen
+
+  // Auto-switch naar Noord-omhoog bij plaatsen (correcte klikpositie)
+  const startPlaatsen=(key)=>{
+    if(geroteerd){prevGeroteerdRef.current=true;setGeroteerd(false);}
+    else{prevGeroteerdRef.current=false;}
+    setPlaatsModus(key);
+  };
 
   // ── Kaart init ────────────────────────────────────────────────
   useEffect(()=>{
@@ -134,8 +144,7 @@ export default function MachineLocatie({project,onSave}){
         machMarkers[key]=null;
       });
 
-      function updateRechthoek(key,centerRD,lengte,breedte,bear,zoomNaar=false){
-        // Verwijder oude lagen
+      function updateRechthoek(key,centerRD,lengte,breedte,bear,zoomNaar=false,rotDeg=0){
         if(machLagen[key]){try{kaart.removeLayer(machLagen[key]);}catch{}}
         if(machMarkers[key]){try{kaart.removeLayer(machMarkers[key]);}catch{}}
         if(!centerRD)return;
@@ -143,18 +152,20 @@ export default function MachineLocatie({project,onSave}){
         const coords=maakRechthoekCoords(centerRD,lengte,breedte,bear);
         const cfg=MACHINE_CONFIG[key];
 
-        // Nieuw polygoon — dikke rand, goed zichtbaar
         machLagen[key]=L.polygon(coords,{
           color:cfg.kleur,weight:4,opacity:1,
           fillColor:cfg.kleurFill,fillOpacity:0.45,
           interactive:true,
         }).addTo(kaart);
 
-        // Label-tekst in het midden
         const[lng,lat]=rdNaarLatLng(centerRD.x,centerRD.y);
+        // Counter-rotatie: label staat altijd rechtop, naast het punt
         const labelIcon=L.divIcon({
-          html:`<div style="background:${cfg.kleur};color:white;border:2px solid white;border-radius:5px;padding:3px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.35);cursor:move">${cfg.icon} ${lengte}×${breedte}m</div>`,
-          className:"",iconSize:[100,22],iconAnchor:[50,11],
+          html:`<div style="transform:rotate(${-rotDeg}deg);transform-origin:left center;display:inline-flex;align-items:center;gap:6px;pointer-events:none">
+            <div style="width:12px;height:12px;border-radius:50%;background:${cfg.kleur};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);flex-shrink:0"></div>
+            <div style="background:white;color:${cfg.kleur};border:2px solid ${cfg.kleur};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3)">${cfg.icon} ${lengte}×${breedte}m</div>
+          </div>`,
+          className:"",iconSize:[120,20],iconAnchor:[6,6],
         });
 
         machMarkers[key]=L.marker([lat,lng],{draggable:true,icon:labelIcon,zIndexOffset:600}).addTo(kaart);
@@ -168,12 +179,8 @@ export default function MachineLocatie({project,onSave}){
           setMachines(prev=>({...prev,[key]:{...prev[key],centerRD:rd}}));
         });
 
-        // Zoom naar de rechthoek na plaatsen
         if(zoomNaar){
-          try{
-            const bounds=machLagen[key].getBounds();
-            kaart.fitBounds(bounds.pad(3),{maxZoom:19,animate:true});
-          }catch{}
+          try{kaart.fitBounds(machLagen[key].getBounds().pad(3),{maxZoom:19,animate:true});}catch{}
         }
       }
       kaart._updateRechthoek=updateRechthoek;
@@ -185,10 +192,12 @@ export default function MachineLocatie({project,onSave}){
         const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
         const currentMachines=machinesRef.current??{};
         const m=currentMachines[key]??{lengte:6,breedte:3};
-        // Teken direct op de kaart (met zoom)
-        updateRechthoek(key,rd,m.lengte,m.breedte,bearingRef.current??0,true);
+        // Noord-omhoog modus bij plaatsen → rotDeg is 0, herstel na placement
+        updateRechthoek(key,rd,m.lengte,m.breedte,bearingRef.current??0,true,0);
         setMachines(prev=>{const n={...prev,[key]:{...prev[key],centerRD:rd}};machinesRef.current=n;return n;});
         setPlaatsModus(null);
+        // Herstel rotatie als die aan stond voor plaatsen
+        if(prevGeroteerdRef.current){setTimeout(()=>setGeroteerd(true),500);}
       });
 
       // Noord-pijl overlay
@@ -220,11 +229,12 @@ export default function MachineLocatie({project,onSave}){
   // Sync machine-rechthoeken naar kaart
   useEffect(()=>{
     if(!kaartInstantie?._updateRechthoek)return;
+    const rotDeg=geroteerd?rotatieDeg:0;
     Object.keys(machines).forEach(key=>{
       const m=machines[key];
-      if(m.centerRD)kaartInstantie._updateRechthoek(key,m.centerRD,m.lengte,m.breedte,bearing);
+      if(m.centerRD)kaartInstantie._updateRechthoek(key,m.centerRD,m.lengte,m.breedte,bearing,false,rotDeg);
     });
-  },[kaartInstantie,machines,bearing]);
+  },[kaartInstantie,machines,bearing,geroteerd,rotatieDeg]);
 
   // Cursor bij plaatsmodus
   useEffect(()=>{
@@ -265,11 +275,17 @@ export default function MachineLocatie({project,onSave}){
                     <div className="ml-auto w-3 h-3 rounded-full" style={{background:m.centerRD?cfg.kleur:"#d1d5db"}}/>
                   </div>
                   <div className="px-3 py-2 space-y-2">
-                    <button onClick={()=>setPlaatsModus(isActief?null:key)}
+                    <button onClick={()=>{
+                        if(isActief){
+                          setPlaatsModus(null);
+                          if(prevGeroteerdRef.current)setGeroteerd(true);
+                        } else{ startPlaatsen(key); }
+                      }}
                       className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${isActief?"text-white":"border"}`}
                       style={isActief?{background:cfg.kleur}:{borderColor:cfg.kleur+"66",color:cfg.kleur}}>
-                      {isActief?"✕ Annuleer — klik op kaart":"📍 "+(m.centerRD?"Herplaats":"Plaats op kaart")}
+                      {isActief?"✕ Annuleer":"📍 "+(m.centerRD?"Herplaats":"Plaats op kaart")}
                     </button>
+                    {isActief&&<div className="text-xs text-center" style={{color:cfg.kleur}}>↑ Noord-omhoog voor nauwkeurig klikken</div>}
                     {/* Afmetingen */}
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
