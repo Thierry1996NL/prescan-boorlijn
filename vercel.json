@@ -2,6 +2,16 @@
   "functions": {
     "app/api/bgt/route.js": {
       "regions": ["fra1"]
+    },
+    "app/api/bgt-download/route.js": {
+      "regions": ["fra1"],
+      "maxDuration": 60
+    },
+    "app/api/bgt-klik/route.js": {
+      "regions": ["fra1"]
+    },
+    "app/api/ahn-hoogte/route.js": {
+      "regions": ["fra1"]
     }
   }
 }

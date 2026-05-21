@@ -313,6 +313,15 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
 
   // BGT klik-info (GetFeatureInfo op klik)
   const [bgtKlikInfo,  setBgtKlikInfo]  = useState(null);
+
+  // ── BGT Download state ────────────────────────────────────────
+  const [bgtDlModus,   setBgtDlModus]   = useState(false);
+  const [bgtDlHoek1,   setBgtDlHoek1]   = useState(null);
+  const [bgtDlHoek2,   setBgtDlHoek2]   = useState(null);
+  const [bgtDlStatus,  setBgtDlStatus]  = useState(null); // null|tekenen|gereed|laden|klaar|fout
+  const [bgtDlUrl,     setBgtDlUrl]     = useState(null);
+  const bgtDlModusRef  = useRef(false);
+  bgtDlModusRef.current = bgtDlModus;
   const [bgtKlikPos,   setBgtKlikPos]   = useState({x:0,y:0});
   const [bgtKlikBezig, setBgtKlikBezig] = useState(false);
   const [actieveKlikIdx, setActieveKlikIdx] = useState(0);
@@ -481,6 +490,43 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         } catch{}
       }
       kaart._zetKlikHighlight = zetKlikHighlight;
+
+      // ── BGT Download: bbox-selectie via twee klikken ───────────────
+      let bgtDlRect = null;
+      let bgtDlCorner1 = null;
+      kaart._setBgtDlModus = (aan) => {
+        kaart._container.style.cursor = aan ? "crosshair" : "";
+        if (!aan) bgtDlCorner1 = null;
+      };
+      kaart._resetBgtDl = () => {
+        if (bgtDlRect) { try{kaart.removeLayer(bgtDlRect);}catch{} bgtDlRect=null; }
+        bgtDlCorner1 = null;
+      };
+      // Klik-handler voor bbox
+      const origKlikHandler = null;
+      kaart.on("click", (e) => {
+        if (!bgtDlModusRef.current) return;
+        if (!bgtDlCorner1) {
+          bgtDlCorner1 = e.latlng;
+          // Tijdelijke marker
+          if (bgtDlRect) { try{kaart.removeLayer(bgtDlRect);}catch{} }
+          bgtDlRect = window.L.circleMarker(e.latlng, {radius:5,color:"#f97316",fillOpacity:1}).addTo(kaart);
+        } else {
+          // Tweede hoek → teken rechthoek
+          const bounds = window.L.latLngBounds(bgtDlCorner1, e.latlng);
+          if (bgtDlRect) { try{kaart.removeLayer(bgtDlRect);}catch{} }
+          bgtDlRect = window.L.rectangle(bounds, {
+            color:"#f97316",weight:2.5,dashArray:"6,4",
+            fillColor:"#f97316",fillOpacity:0.08,interactive:false,
+          }).addTo(kaart);
+          setBgtDlHoek1(bgtDlCorner1);
+          setBgtDlHoek2(e.latlng);
+          setBgtDlStatus("gereed");
+          setBgtDlModus(false);
+          bgtDlCorner1 = null;
+          kaart._container.style.cursor = "";
+        }
+      });
 
       // ── BGT GetFeatureInfo op klik (tab 5.1) ─────────────────────
       kaart.on("click", async (e) => {
@@ -803,6 +849,53 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
     );
   }
 
+  // ── BGT Download handler ──────────────────────────────────────────
+  async function handleBgtDownload() {
+    if (!bgtDlHoek1 || !bgtDlHoek2) return;
+    setBgtDlStatus("laden");
+    setBgtDlUrl(null);
+    try {
+      const sw = { lat: Math.min(bgtDlHoek1.lat, bgtDlHoek2.lat), lng: Math.min(bgtDlHoek1.lng, bgtDlHoek2.lng) };
+      const ne = { lat: Math.max(bgtDlHoek1.lat, bgtDlHoek2.lat), lng: Math.max(bgtDlHoek1.lng, bgtDlHoek2.lng) };
+      const res = await fetch("/api/bgt-download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sw, ne }),
+      });
+      const data = await res.json();
+      if (!data.downloadRequestId) throw new Error(data.error ?? "Geen ID");
+      // Poll status elke 2 seconden
+      const poll = setInterval(async () => {
+        try {
+          const st = await fetch(`/api/bgt-download?id=${data.downloadRequestId}`).then(r=>r.json());
+          if (st.status === "COMPLETED") {
+            clearInterval(poll);
+            setBgtDlUrl(st._links?.download?.href ?? null);
+            setBgtDlStatus("klaar");
+          } else if (st.status === "FAILED" || st.status === "CANCELLED") {
+            clearInterval(poll);
+            setBgtDlStatus("fout");
+          }
+        } catch { clearInterval(poll); setBgtDlStatus("fout"); }
+      }, 2500);
+    } catch(e) {
+      console.error("BGT download:", e.message);
+      setBgtDlStatus("fout");
+    }
+  }
+
+  function resetBgtDownload() {
+    setBgtDlModus(false); setBgtDlHoek1(null); setBgtDlHoek2(null);
+    setBgtDlStatus(null); setBgtDlUrl(null);
+    kaartRef.current?._resetBgtDl?.();
+    kaartRef.current?._setBgtDlModus?.(false);
+    // Verwijder ook de direct-getekende boorlijn-bbox
+    if(kaartRef.current?._bgtDlRectDirect){
+      try{kaartRef.current.removeLayer(kaartRef.current._bgtDlRectDirect);}catch{}
+      kaartRef.current._bgtDlRectDirect=null;
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────
   const actSubStapDef = SUB_STAPPEN.find(s=>s.id===actieveSubStap);
   const actOndergrondLaag = actSubStapDef?.ondergrondId
@@ -983,6 +1076,106 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
               </>
             )}
             </>)}
+
+            {/* ── BGT Download sectie (sub-stap 5.1) ──────────────── */}
+            {actieveSubStap==="5.1"&&(
+              <div className="px-4 py-3 border-t border-gray-100">
+                <div className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                  📥 BGT downloaden
+                  {bgtDlStatus==="laden"&&<span className="text-indigo-500 animate-pulse font-normal">— verwerken…</span>}
+                  {bgtDlStatus==="klaar"&&<span className="text-green-600 font-normal">— gereed!</span>}
+                </div>
+
+                {/* Gebied kiezen */}
+                {(bgtDlStatus===null||bgtDlStatus==="tekenen"||bgtDlStatus==="fout")&&(
+                  <div className="space-y-1.5">
+                    {/* Snel: gebruik boorlijn-bbox */}
+                    {project?.boortrace_geojson&&(
+                      <button
+                        onClick={()=>{
+                          try{
+                            const g=typeof project.boortrace_geojson==="string"?JSON.parse(project.boortrace_geojson):project.boortrace_geojson;
+                            const lngs=g.coordinates.map(([lo])=>lo);
+                            const lats=g.coordinates.map(([,la])=>la);
+                            const marge=0.003;
+                            const sw={lat:Math.min(...lats)-marge,lng:Math.min(...lngs)-marge};
+                            const ne={lat:Math.max(...lats)+marge,lng:Math.max(...lngs)+marge};
+                            const bounds=window.L?.latLngBounds([sw.lat,sw.lng],[ne.lat,ne.lng]);
+                            kaartRef.current?._resetBgtDl?.();
+                            if(bounds&&kaartRef.current){
+                              const rect=window.L.rectangle(bounds,{color:"#f97316",weight:2.5,dashArray:"6,4",fillColor:"#f97316",fillOpacity:0.08,interactive:false});
+                              rect.addTo(kaartRef.current);
+                              kaartRef.current._bgtDlRectDirect=rect;
+                            }
+                            setBgtDlHoek1(sw);
+                            setBgtDlHoek2(ne);
+                            setBgtDlStatus("gereed");
+                            setBgtDlModus(false);
+                          }catch(e){console.warn("bbox:",e);}
+                        }}
+                        className="w-full py-2 rounded-lg text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100">
+                        📍 Gebruik boorlijn-gebied
+                      </button>
+                    )}
+                    {/* Handmatig tekenen */}
+                    <button
+                      onClick={()=>{
+                        if(bgtDlStatus==="tekenen"){resetBgtDownload();}
+                        else{setBgtDlModus(true);setBgtDlStatus("tekenen");setBgtDlHoek1(null);setBgtDlHoek2(null);kaartRef.current?._resetBgtDl?.();kaartRef.current?._setBgtDlModus?.(true);}
+                      }}
+                      className={`w-full py-2 rounded-lg text-xs font-semibold border transition-all ${bgtDlStatus==="tekenen"?"bg-orange-50 text-orange-700 border-orange-300":"bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"}`}>
+                      {bgtDlStatus==="tekenen"?"✕ Annuleer — klik 2× op de kaart":"▭ Teken gebied op kaart"}
+                    </button>
+                    {bgtDlStatus==="tekenen"&&(
+                      <div className="text-xs text-orange-600 text-center">
+                        {bgtDlHoek1?"✓ Hoek 1 — klik nu voor hoek 2":"Klik voor hoek 1 van het gebied"}
+                      </div>
+                    )}
+                    {bgtDlStatus==="fout"&&(
+                      <div className="text-xs text-red-500 mt-1">✗ Download mislukt — probeer opnieuw</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Gebied klaar → download starten */}
+                {bgtDlStatus==="gereed"&&(
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5 text-center">
+                      ✓ Gebied geselecteerd
+                    </div>
+                    <button onClick={handleBgtDownload}
+                      className="w-full py-2 rounded-lg text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600">
+                      ↓ Download BGT (GeoPackage)
+                    </button>
+                    <button onClick={resetBgtDownload} className="w-full py-1 text-xs text-gray-400 hover:text-gray-600">
+                      Ander gebied kiezen
+                    </button>
+                  </div>
+                )}
+
+                {/* Laden */}
+                {bgtDlStatus==="laden"&&(
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-indigo-600 py-1.5 justify-center">
+                      <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"/>
+                      PDOK verwerkt aanvraag… (~30–60 sec)
+                    </div>
+                  </div>
+                )}
+
+                {/* Klaar → auto-download */}
+                {bgtDlStatus==="klaar"&&bgtDlUrl&&(
+                  <div className="space-y-1.5">
+                    <a href={bgtDlUrl} download
+                      className="block w-full py-2 rounded-lg text-xs font-semibold bg-green-500 text-white text-center hover:bg-green-600"
+                      onClick={()=>setTimeout(resetBgtDownload,1000)}>
+                      ✓ Download BGT ZIP
+                    </a>
+                    <div className="text-xs text-gray-400 text-center">GeoPackage-formaat · alle BGT-lagen</div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── 5.2 GeoTOP / 5.3 REGIS II (geen WMS) ─────────── */}
             {(actieveSubStap==="5.2"||actieveSubStap==="5.3")&&actOndergrondLaag&&(
