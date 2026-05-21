@@ -467,17 +467,24 @@ export default function Stap8_3D({ project }) {
             body:`[out:json][timeout:30];(way["building"](${bbox}););out body;>;out skel qt;`,
           });
           const data=await res.json();
-          parseOverpassGebouwen(data).forEach(g=>{
-            const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
+          const gebouwen=parseOverpassGebouwen(data);
+          console.log(`[Overpass] ${gebouwen.length} gebouwen gevonden`);
+          gebouwen.forEach(g=>{
+            const baseH=NAP_OFFSET; // NL maaiveld ≈ 44.1m boven WGS84 ellipsoïde
+            const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,baseH));
             viewer._overpassEntities.push(viewer.entities.add({
               name:`🏠 ${g.naam}`,
               polygon:{
                 hierarchy:new C.PolygonHierarchy(pos),
-                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
-                extrudedHeight:g.hoogte, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
+                height:baseH,
+                extrudedHeight:baseH+g.hoogte,
                 material:C.Color.fromBytes(210,180,140,210),
-                outline:true, outlineColor:C.Color.fromBytes(120,90,50,255), outlineWidth:1,
-                closeTop:true, closeBottom:false,
+                outline:true,
+                outlineColor:C.Color.fromBytes(120,90,50,255),
+                outlineWidth:1,
+                closeTop:true,
+                closeBottom:false,
+                perPositionHeight:false,
               }
             }));
           });
@@ -491,31 +498,54 @@ export default function Stap8_3D({ project }) {
           });
           const data=await res.json();
           const {bomen,bossen}=parseOverpassBomen(data);
+          console.log(`[Overpass] ${bossen.length} bossen, ${bomen.length} bomen`);
+
+          const bosH=NAP_OFFSET;
           bossen.forEach(coords=>{
-            const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
+            const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,bosH));
             viewer._overpassEntities.push(viewer.entities.add({
               polygon:{
                 hierarchy:new C.PolygonHierarchy(pos),
-                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
-                extrudedHeight:15, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
+                height:bosH,
+                extrudedHeight:bosH+15,
                 material:C.Color.fromBytes(34,139,34,170),
-                outline:true, outlineColor:C.Color.fromBytes(0,80,0,220), outlineWidth:1,
+                outline:true,
+                outlineColor:C.Color.fromBytes(0,80,0,220),
+                outlineWidth:1,
+                perPositionHeight:false,
               }
             }));
           });
+
+          const boomH=NAP_OFFSET;
           bomen.forEach(([lo,la])=>{
             viewer._overpassEntities.push(viewer.entities.add({
-              position:C.Cartesian3.fromDegrees(lo,la,0),
+              position:C.Cartesian3.fromDegrees(lo,la,boomH+4),
               ellipse:{
-                semiMinorAxis:2.5, semiMajorAxis:2.5,
-                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
-                extrudedHeight:9, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
-                material:C.Color.fromBytes(34,139,34,210), outline:false,
+                semiMinorAxis:3,
+                semiMajorAxis:3,
+                height:boomH,
+                extrudedHeight:boomH+9,
+                material:C.Color.fromBytes(34,139,34,220),
+                outline:false,
               }
             }));
           });
         } catch(e){console.warn("Overpass bomen:",e.message);}
+
         if(setStatus2) setStatus2("klaar");
+
+        // Zoom naar gebieden met content
+        if(viewer._overpassEntities.length>0 && boorCoords.length>=2){
+          try{
+            const mid=boorCoords[Math.floor(boorCoords.length/2)];
+            viewer.camera.flyTo({
+              destination:C.Cartesian3.fromDegrees(mid[1],mid[0],150),
+              orientation:{heading:C.Math.toRadians(0),pitch:C.Math.toRadians(-45),roll:0},
+              duration:1.5,
+            });
+          }catch{}
+        }
       };
 
       if (boorCoords.length >= 2) {
