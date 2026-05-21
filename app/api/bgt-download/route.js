@@ -10,32 +10,50 @@ const BGT_FEATURETYPES = [
   "waterinrichtingselement","functioneelgebied",
 ];
 
+// Probe welk formaat PDOK accepteert
+async function tryFormat(poly, format) {
+  const res = await fetch(PDOK_BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ featuretypes: BGT_FEATURETYPES, format, geofilter: poly }),
+  });
+  const txt = await res.text();
+  return { status: res.status, body: txt };
+}
+
 export async function POST(request) {
   try {
     const { sw, ne } = await request.json();
     if (!sw?.lat || !sw?.lng || !ne?.lat || !ne?.lng)
       return Response.json({ error: "Ongeldige coördinaten" }, { status: 400 });
 
-    // WKT polygon in WGS84 — lng lat volgorde
+    // WKT in WGS84 (lng lat)
     const poly = `POLYGON((${sw.lng} ${sw.lat},${ne.lng} ${sw.lat},${ne.lng} ${ne.lat},${sw.lng} ${ne.lat},${sw.lng} ${sw.lat}))`;
 
-    const res = await fetch(PDOK_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({
-        featuretypes: BGT_FEATURETYPES,
-        format: "gml",   // PDOK ondersteunt: gml, citygml, imgeo-gml
-        geofilter: poly,
-      }),
-    });
+    // Probeer formaten in volgorde van voorkeur
+    const formats = ["gml", "citygml", "imgeo-gml", "GML", "application/gml+xml"];
+    let lastError = "";
 
-    const txt = await res.text();
-    console.log("[BGT-download] status:", res.status, "body:", txt.slice(0, 200));
+    for (const fmt of formats) {
+      const { status, body } = await tryFormat(poly, fmt);
+      console.log(`[BGT] format="${fmt}" → ${status}:`, body.slice(0, 200));
 
-    if (!res.ok) return Response.json({ error: `PDOK ${res.status}: ${txt}` }, { status: res.status });
-    return Response.json(JSON.parse(txt));
+      if (status < 300) {
+        try {
+          const data = JSON.parse(body);
+          if (data.downloadRequestId) {
+            console.log(`[BGT] ✓ Werkt met format="${fmt}", id=${data.downloadRequestId}`);
+            return Response.json({ ...data, format: fmt });
+          }
+        } catch {}
+      }
+      lastError = `format="${fmt}": HTTP ${status}: ${body}`;
+    }
+
+    // Geen enkel formaat werkte — geef volledige fout terug
+    return Response.json({ error: lastError }, { status: 400 });
   } catch (e) {
-    console.error("[BGT-download] POST fout:", e.message);
+    console.error("[BGT] POST fout:", e.message);
     return Response.json({ error: e.message }, { status: 500 });
   }
 }

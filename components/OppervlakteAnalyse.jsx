@@ -1135,7 +1135,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
                     {bgtDlStatus==="fout"&&(
                       <div className="text-xs text-red-500 mt-1">
                         ✗ Download mislukt — probeer opnieuw
-                        {bgtDlUrl&&<div className="text-red-400 mt-0.5 font-mono break-all">{bgtDlUrl.slice(0,120)}</div>}
+                        {bgtDlUrl&&<div className="text-red-400 mt-0.5 font-mono text-xs break-all leading-tight">{bgtDlUrl}</div>}
                       </div>
                     )}
                   </div>
