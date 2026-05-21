@@ -85,6 +85,39 @@ function parseImklMini(xmlTekst) {
   return themalagen;
 }
 
+// ─── Overpass OSM parsers ─────────────────────────────────────────
+function parseOverpassGebouwen(data) {
+  const nodes = {};
+  data.elements.forEach(el => { if (el.type==="node") nodes[el.id]=[el.lon,el.lat]; });
+  const gebouwen = [];
+  data.elements.forEach(el => {
+    if (el.type==="way" && (el.tags?.building||el.tags?.["building:part"])) {
+      const coords = (el.nodes||[]).map(id=>nodes[id]).filter(Boolean);
+      if (coords.length < 3) return;
+      const hoogte = el.tags?.height ? parseFloat(el.tags.height) :
+                     el.tags?.["building:levels"] ? parseFloat(el.tags["building:levels"])*3.2 :
+                     el.tags?.building==="house"||el.tags?.building==="residential" ? 6 :
+                     el.tags?.building==="garage" ? 3 : 8;
+      gebouwen.push({ coords, hoogte:isNaN(hoogte)?7:hoogte, naam:el.tags?.name||el.tags?.building||"gebouw" });
+    }
+  });
+  return gebouwen;
+}
+
+function parseOverpassBomen(data) {
+  const nodes = {};
+  data.elements.forEach(el => { if (el.type==="node") nodes[el.id]=[el.lon,el.lat]; });
+  const bomen=[], bossen=[];
+  data.elements.forEach(el => {
+    if (el.type==="node" && el.tags?.natural==="tree") bomen.push([el.lon,el.lat]);
+    if (el.type==="way" && (el.tags?.natural==="wood"||el.tags?.landuse==="forest")) {
+      const coords=(el.nodes||[]).map(id=>nodes[id]).filter(Boolean);
+      if (coords.length>=3) bossen.push(coords);
+    }
+  });
+  return { bomen, bossen };
+}
+
 const THEMA_CESIUM_KLEUR = {
   laagspanning:"#7B00AA", middenspanning:"#00CCFF", hoogspanning:"#FF4400",
   gasLageDruk:"#FFFF00", gasHogeDruk:"#FF0000", water:"#0000CC",
@@ -112,7 +145,8 @@ export default function Stap8_3D({ project }) {
     try { return localStorage.getItem("google_maps_token") || ""; } catch { return ""; }
   });
   const [status, setStatus] = useState("init");
-  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, gebouwen:false, fotorealistisch:false });
+  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, gebouwen:false, fotorealistisch:false, overpass:false });
+  const [overpassStatus, setOverpassStatus] = useState(null); // null|laden|klaar|fout
 
   // Parse project data
   const boorCoords = useMemo(() => {
@@ -403,6 +437,75 @@ export default function Stap8_3D({ project }) {
         } catch(e) { console.warn("Google 3D tiles:", e.message); }
       }
       kaart._googleToken = googleToken;
+
+      // ── Overpass OSM gebouwen + bomen (geen API key nodig) ─────
+      kaart._overpassEntities = [];
+      kaart._laadOverpass = async (setStatus2) => {
+        kaart._overpassEntities.forEach(e=>{try{viewer.entities.remove(e);}catch{}});
+        kaart._overpassEntities = [];
+        if (!boorCoords.length) return;
+        const lats=boorCoords.map(([la])=>la),lngs=boorCoords.map(([,lo])=>lo);
+        const marge=0.003;
+        const bbox=`${Math.min(...lats)-marge},${Math.min(...lngs)-marge},${Math.max(...lats)+marge},${Math.max(...lngs)+marge}`;
+
+        // Gebouwen
+        try {
+          const res=await fetch("https://overpass-api.de/api/interpreter",{
+            method:"POST",
+            body:`[out:json][timeout:30];(way["building"](${bbox}););out body;>;out skel qt;`,
+          });
+          const data=await res.json();
+          parseOverpassGebouwen(data).forEach(g=>{
+            const pos=g.coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
+            kaart._overpassEntities.push(viewer.entities.add({
+              name:`🏠 ${g.naam}`,
+              polygon:{
+                hierarchy:new C.PolygonHierarchy(pos),
+                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
+                extrudedHeight:g.hoogte, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
+                material:C.Color.fromBytes(210,180,140,210),
+                outline:true, outlineColor:C.Color.fromBytes(120,90,50,255), outlineWidth:1,
+                closeTop:true, closeBottom:false,
+              }
+            }));
+          });
+        } catch(e){console.warn("Overpass gebouwen:",e.message);}
+
+        // Bomen & bossen
+        try {
+          const res=await fetch("https://overpass-api.de/api/interpreter",{
+            method:"POST",
+            body:`[out:json][timeout:30];(way["natural"="wood"](${bbox});way["landuse"="forest"](${bbox});node["natural"="tree"](${bbox}););out body;>;out skel qt;`,
+          });
+          const data=await res.json();
+          const {bomen,bossen}=parseOverpassBomen(data);
+          bossen.forEach(coords=>{
+            const pos=coords.map(([lo,la])=>C.Cartesian3.fromDegrees(lo,la,0));
+            kaart._overpassEntities.push(viewer.entities.add({
+              polygon:{
+                hierarchy:new C.PolygonHierarchy(pos),
+                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
+                extrudedHeight:15, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
+                material:C.Color.fromBytes(34,139,34,170),
+                outline:true, outlineColor:C.Color.fromBytes(0,80,0,220), outlineWidth:1,
+              }
+            }));
+          });
+          bomen.forEach(([lo,la])=>{
+            kaart._overpassEntities.push(viewer.entities.add({
+              position:C.Cartesian3.fromDegrees(lo,la,0),
+              ellipse:{
+                semiMinorAxis:2.5, semiMajorAxis:2.5,
+                height:0, heightReference:C.HeightReference.CLAMP_TO_GROUND,
+                extrudedHeight:9, extrudedHeightReference:C.HeightReference.RELATIVE_TO_GROUND,
+                material:C.Color.fromBytes(34,139,34,210), outline:false,
+              }
+            }));
+          });
+        } catch(e){console.warn("Overpass bomen:",e.message);}
+        if(setStatus2) setStatus2("klaar");
+      };
+
       if (boorCoords.length >= 2) {
         const mid=boorCoords[Math.floor(boorCoords.length/2)];
         viewer.camera.flyTo({
@@ -422,19 +525,25 @@ export default function Stap8_3D({ project }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ionToken]);
 
-  // Laag-toggles
   useEffect(() => {
     const v=viewerRef.current; if(!v)return;
-    // OSM gebouwen
     if(v._osmTileset) v._osmTileset.show = lagen.gebouwen && !lagen.fotorealistisch;
-    // Google fotorealistisch — verbergt globe, toont alles
     if(v._googleTileset){
       v._googleTileset.show = lagen.fotorealistisch;
       v.scene.globe.show = !lagen.fotorealistisch;
       v.imageryLayers.show = !lagen.fotorealistisch;
     }
-    // OSM uit als fotorealistisch aan
     if(lagen.fotorealistisch && v._osmTileset) v._osmTileset.show = false;
+    // Overpass toggle
+    if(lagen.overpass && v._overpassEntities?.length===0){
+      setOverpassStatus("laden");
+      v._laadOverpass?.(setOverpassStatus);
+    }
+    if(!lagen.overpass && v._overpassEntities?.length>0){
+      v._overpassEntities.forEach(e=>{try{v.entities.remove(e);}catch{}});
+      v._overpassEntities=[];
+      setOverpassStatus(null);
+    }
   }, [lagen]);
 
   const slaTokenOp = () => {
@@ -480,9 +589,15 @@ export default function Stap8_3D({ project }) {
 
           <div className="border-t border-gray-100 pt-2">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3D Omgeving</div>
-            <label className="flex items-center gap-2 cursor-pointer mb-1">
-              <input type="checkbox" checked={!!lagen.gebouwen} onChange={e=>setLagen(p=>({...p,gebouwen:e.target.checked,fotorealistisch:false}))} className="accent-indigo-600"/>
-              <span className="text-xs text-gray-700">🏠 OSM Gebouwen <span className="text-gray-400">(Ion)</span></span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!lagen.overpass}
+                onChange={e=>setLagen(p=>({...p,overpass:e.target.checked}))}
+                className="accent-indigo-600"/>
+              <span className="text-xs text-gray-700 flex-1">🌳 OSM Gebouwen + Bomen
+                <span className="text-gray-400 block">geen API key nodig</span>
+              </span>
+              {overpassStatus==="laden"&&<span className="text-xs text-indigo-500 animate-pulse">⏳</span>}
+              {overpassStatus==="klaar"&&<span className="text-xs text-green-500">✓</span>}
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={!!lagen.fotorealistisch} disabled={!googleToken} onChange={e=>setLagen(p=>({...p,fotorealistisch:e.target.checked,gebouwen:false}))} className="accent-indigo-600 disabled:opacity-40"/>
