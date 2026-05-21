@@ -44,7 +44,21 @@ function interpoleerHoogte(profielPunten, afstand) {
   return profielPunten[profielPunten.length-1]?.hoogte ?? 0;
 }
 
-// IMKL parser (zelfde als KlicAchtergrond)
+// Interpoleer diepte op afstand uit dieptePunten
+function interpoleerDiepte(dieptePunten, afstand) {
+  if (!dieptePunten?.length) return 0;
+  const s = [...dieptePunten].sort((a,b)=>a.afstand-b.afstand);
+  if (afstand <= s[0].afstand) return s[0].diepte;
+  if (afstand >= s[s.length-1].afstand) return s[s.length-1].diepte;
+  for (let i = 0; i < s.length-1; i++) {
+    const a=s[i], b=s[i+1];
+    if (afstand >= a.afstand && afstand <= b.afstand) {
+      const t=(afstand-a.afstand)/(b.afstand-a.afstand);
+      return a.diepte + t*(b.diepte-a.diepte);
+    }
+  }
+  return 0;
+}
 function parseImklMini(xmlTekst) {
   const doc = new DOMParser().parseFromString(xmlTekst, "text/xml");
   const netThema = {};
@@ -177,51 +191,70 @@ export default function Stap8_3D({ project }) {
         const dp = ahnProfiel?.dieptePunten ?? [];
         const sorted = [...dp].sort((a,b)=>a.afstand-b.afstand);
 
-        // Oppervlak-lijn (oranje, op maaiveld)
-        const oppPts = boorCoords.flatMap(([lat,lng]) => [lng, lat, napNaarCesium(0)]);
+        // Oppervlak-lijn — geclamped, altijd op maaiveld
         viewer.entities.add({
           name:"Boorlijn maaiveld",
           polyline:{
-            positions: C.Cartesian3.fromDegreesArrayHeights(oppPts),
+            positions: C.Cartesian3.fromDegreesArray(
+              boorCoords.flatMap(([lat,lng])=>[lng,lat])
+            ),
             width:4, clampToGround:true,
             material: C.Color.fromCssColorString("#f97316"),
           }
         });
 
-        // Diepe boorlijn (oranje gestreept, ondergronds)
-        if (sorted.length >= 2) {
-          const boorPts3D = sorted.flatMap(pt=>{
-            const [lat,lng] = positieOpAfstand(boorCoords, pt.afstand);
-            const maaiveld = interpoleerHoogte(pp, pt.afstand);
-            const hoogte = napNaarCesium(maaiveld - pt.diepte);
-            return [lng, lat, hoogte];
+        // 3D bore — gebruik ALLE profielPunten met geïnterpoleerde diepte
+        // Zo krijg je 18+ punten ipv 2-4 → echte curve
+        if (pp.length >= 2 && sorted.length >= 2) {
+          const bore3DPts = pp.flatMap(profPt => {
+            const diepte = interpoleerDiepte(sorted, profPt.afstand);
+            // AHN hoogte (NAP) - diepte = bore NAP hoogte → + offset = boven WGS84 ellipsoïde
+            const absH = napNaarCesium(profPt.hoogte - diepte);
+            const [lat,lng] = positieOpAfstand(boorCoords, profPt.afstand);
+            return [lng, lat, absH];
           });
+
+          // Ondergrondse buis — gloeiend oranje, gestippeld achter terrein
           viewer.entities.add({
             name:"Boorlijn diepteprofiel",
             polyline:{
-              positions: C.Cartesian3.fromDegreesArrayHeights(boorPts3D),
-              width:6,
-              material: new C.PolylineGlowMaterialProperty({ glowPower:0.3, color:C.Color.fromCssColorString("#f97316") }),
-              depthFailMaterial: new C.PolylineDashMaterialProperty({ color:C.Color.fromCssColorString("#f97316").withAlpha(0.6), dashLength:20 }),
+              positions: C.Cartesian3.fromDegreesArrayHeights(bore3DPts),
+              width:8,
+              material: new C.PolylineGlowMaterialProperty({
+                glowPower:0.3, taperPower:0.0,
+                color:C.Color.fromCssColorString("#f97316"),
+              }),
+              depthFailMaterial: new C.PolylineDashMaterialProperty({
+                color:C.Color.fromCssColorString("#fb923c").withAlpha(0.7),
+                dashLength:18, dashPattern:255,
+              }),
+              arcType: C.ArcType.NONE,
             }
           });
 
-          // Verticale lijnen van maaiveld naar boor
+          // Verticale diepte-lijnen van bore → maaiveld bij elke waypoint
           sorted.forEach(pt=>{
             const [lat,lng]=positieOpAfstand(boorCoords,pt.afstand);
-            const mv=interpoleerHoogte(pp,pt.afstand);
-            const boorH=napNaarCesium(mv-pt.diepte);
-            const mvH=napNaarCesium(mv);
+            const mvH=napNaarCesium(interpoleerHoogte(pp,pt.afstand));
+            const boorH=napNaarCesium(interpoleerHoogte(pp,pt.afstand)-pt.diepte);
+            if(pt.diepte < 0.1)return;
             viewer.entities.add({ polyline:{
               positions:C.Cartesian3.fromDegreesArrayHeights([lng,lat,boorH,lng,lat,mvH]),
-              width:1.5, material:new C.PolylineDashMaterialProperty({color:C.Color.fromCssColorString("#f97316").withAlpha(0.4),dashLength:12}),
+              width:1.5,
+              material:new C.PolylineDashMaterialProperty({
+                color:C.Color.fromCssColorString("#f97316").withAlpha(0.45),dashLength:10
+              }),
             }});
-            // Label bij dieptepunt
-            viewer.entities.add({ position:C.Cartesian3.fromDegrees(lng,lat,boorH),
-              label:{text:`-${pt.diepte.toFixed(1)}m`,font:"11px sans-serif",fillColor:C.Color.WHITE,
-                outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin:C.VerticalOrigin.TOP,pixelOffset:new C.Cartesian2(0,5),
-                disableDepthTestDistance:500}});
+            // Diepte-label
+            viewer.entities.add({ position:C.Cartesian3.fromDegrees(lng,lat,boorH-1),
+              label:{text:`-${pt.diepte.toFixed(1)}m\n${(interpoleerHoogte(pp,pt.afstand)-pt.diepte).toFixed(2)}m NAP`,
+                font:"bold 11px sans-serif",fillColor:C.Color.WHITE,
+                outlineColor:C.Color.BLACK,outlineWidth:2,
+                style:C.LabelStyle.FILL_AND_OUTLINE,
+                verticalOrigin:C.VerticalOrigin.TOP,
+                pixelOffset:new C.Cartesian2(0,5),
+                disableDepthTestDistance:1000,
+                scale:0.9}});
           });
         }
 
@@ -243,33 +276,65 @@ export default function Stap8_3D({ project }) {
 
       // ── Machine-locaties ────────────────────────────────────────
       if (machineLocaties) {
-        const MACH_CFG={ boormachine:{kleur:"#3b82f6",icon:"🏗️",hoogte:3}, bentoniet:{kleur:"#f97316",icon:"🛢️",hoogte:2.5}};
+        const MACH_CFG={
+          boormachine:{kleur:"#3b82f6",icon:"🏗️",hoogte:3,label:"HDD Boormachine"},
+          bentoniet:  {kleur:"#f97316",icon:"🛢️",hoogte:2.5,label:"Bentoniet & opvangput"},
+        };
         Object.entries(machineLocaties).forEach(([key,m])=>{
           if (!m?.centerRD) return;
           const cfg=MACH_CFG[key]; if(!cfg)return;
           const [lo,la]=rdNaarWgs84(m.centerRD.x,m.centerRD.y);
-          const bearing=(key==="boormachine"?boorCoords:null);
-          const bear=bearing?.length>=2 ? Math.atan2(boorCoords[boorCoords.length-1][1]-boorCoords[0][1], boorCoords[boorCoords.length-1][0]-boorCoords[0][0]) : 0;
+
+          // Zoek dichtstbijzijnde profielPunt voor de hoogte
+          const pp2=ahnProfiel?.profielPunten??[];
+          let bestH=napNaarCesium(1); // fallback: 1m NAP
+          if(pp2.length>0){
+            // Gebruik eerste of laatste profielPunt afhankelijk van machine type
+            const refPt = key==="boormachine" ? pp2[0] : pp2[pp2.length-1];
+            bestH = napNaarCesium(refPt?.hoogte??1);
+          }
+
+          // Bearing langs boorlijn voor oriëntatie rechthoek
+          const bear=boorCoords.length>=2 ?
+            Math.atan2(
+              boorCoords[boorCoords.length-1][1]-boorCoords[0][1],
+              boorCoords[boorCoords.length-1][0]-boorCoords[0][0]
+            ) : 0;
+
           const hl=m.lengte/2, hb=m.breedte/2;
           const sinB=Math.sin(bear+Math.PI/2), cosB=Math.cos(bear+Math.PI/2);
-          const h=napNaarCesium(ahnProfiel?.profielPunten?.[0]?.hoogte??1);
           const corners=[[-hl,hb],[-hl,-hb],[hl,-hb],[hl,hb]].map(([a,p])=>{
             const [clo,cla]=rdNaarWgs84(m.centerRD.x+a*cosB-p*sinB, m.centerRD.y+a*sinB+p*cosB);
-            return C.Cartesian3.fromDegrees(clo,cla,h);
+            return C.Cartesian3.fromDegrees(clo,cla,bestH);
           });
+
+          // 3D box — lage opake rand, subtiele fill
           viewer.entities.add({
-            name:`${cfg.icon} ${key==="boormachine"?"HDD Boormachine":"Bentoniet & opvangput"}`,
+            name:`${cfg.icon} ${cfg.label}`,
             polygon:{
               hierarchy: new C.PolygonHierarchy(corners),
-              height: h, extrudedHeight: h + cfg.hoogte,
-              material: C.Color.fromCssColorString(cfg.kleur).withAlpha(0.5),
-              outline:true, outlineColor: C.Color.fromCssColorString(cfg.kleur), outlineWidth:3,
+              height: bestH,
+              extrudedHeight: bestH + cfg.hoogte,
+              material: C.Color.fromCssColorString(cfg.kleur).withAlpha(0.35),
+              outline:true,
+              outlineColor: C.Color.fromCssColorString(cfg.kleur),
+              outlineWidth:3,
+              closeTop:true, closeBottom:true,
             }
           });
-          viewer.entities.add({position:C.Cartesian3.fromDegrees(lo,la,h+cfg.hoogte+2),
-            label:{text:`${cfg.icon} ${m.lengte}×${m.breedte}m`,font:"bold 11px sans-serif",
-              fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:2,
-              style:C.LabelStyle.FILL_AND_OUTLINE,disableDepthTestDistance:1000}});
+          // Label boven de box
+          viewer.entities.add({
+            position:C.Cartesian3.fromDegrees(lo,la,bestH+cfg.hoogte+3),
+            label:{
+              text:`${cfg.icon} ${cfg.label}\n${m.lengte}×${m.breedte}m`,
+              font:"bold 11px sans-serif",
+              fillColor:C.Color.fromCssColorString(cfg.kleur),
+              outlineColor:C.Color.BLACK,outlineWidth:2,
+              style:C.LabelStyle.FILL_AND_OUTLINE,
+              disableDepthTestDistance:2000,
+              horizontalOrigin:C.HorizontalOrigin.CENTER,
+            }
+          });
         });
       }
 
