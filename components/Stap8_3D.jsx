@@ -100,8 +100,19 @@ export default function Stap8_3D({ project }) {
     try { return localStorage.getItem("cesium_ion_token") || ""; } catch { return ""; }
   });
   const [tokenInput, setTokenInput] = useState(ionToken);
-  const [status, setStatus] = useState("init"); // init|laden|klaar|fout
-  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, oppervlak:true });
+  const [tokenOpgeslagen, setTokenOpgeslagen] = useState(false);
+
+  const handleTokenInput = (val) => {
+    setTokenInput(val);
+    try { localStorage.setItem("cesium_ion_token", val); } catch {}
+    setTokenOpgeslagen(true);
+    setTimeout(() => setTokenOpgeslagen(false), 2000);
+  };
+  const [googleToken, setGoogleToken] = useState(() => {
+    try { return localStorage.getItem("google_maps_token") || ""; } catch { return ""; }
+  });
+  const [status, setStatus] = useState("init");
+  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, gebouwen:false, fotorealistisch:false });
 
   // Parse project data
   const boorCoords = useMemo(() => {
@@ -370,7 +381,28 @@ export default function Stap8_3D({ project }) {
         } catch(e){ console.warn("KLIC 3D laden:",e); }
       }
 
-      // ── Camera fly-to ───────────────────────────────────────────
+      // ── OSM 3D Gebouwen (gratis via Ion) ───────────────────────
+      let osmTileset = null;
+      try {
+        osmTileset = await C.createOsmBuildingsAsync();
+        osmTileset.show = false; // standaard uit
+        viewer.scene.primitives.add(osmTileset);
+        kaart._osmTileset = osmTileset;
+      } catch(e) { console.warn("OSM buildings:", e.message); }
+
+      // ── Google Photorealistisch (gebouwen + bomen) ──────────────
+      let googleTileset = null;
+      if (googleToken) {
+        try {
+          googleTileset = await C.createGooglePhotorealistic3DTileset(googleToken);
+          googleTileset.show = false;
+          viewer.scene.primitives.add(googleTileset);
+          kaart._googleTileset = googleTileset;
+          // Schakel terrein en eigen imagery uit bij Google tiles
+          viewer.scene.globe.show = !googleTileset.show;
+        } catch(e) { console.warn("Google 3D tiles:", e.message); }
+      }
+      kaart._googleToken = googleToken;
       if (boorCoords.length >= 2) {
         const mid=boorCoords[Math.floor(boorCoords.length/2)];
         viewer.camera.flyTo({
@@ -393,16 +425,16 @@ export default function Stap8_3D({ project }) {
   // Laag-toggles
   useEffect(() => {
     const v=viewerRef.current; if(!v)return;
-    const C=window.Cesium; if(!C)return;
-    v.entities.values.forEach(e=>{
-      const n=(e.name??"").toLowerCase();
-      if(n.includes("boorlijn")||n.includes("s")||n.includes("e")){
-        if(e.polyline)e.polyline.show=lagen.boorlijn;
-        if(e.point)e.point.show=lagen.boorlijn;
-        if(e.label&&(n.includes("s")||n.includes("e")))e.label.show=lagen.boorlijn;
-      }
-      if(e.polygon){const nm=e.name??"";if(nm.includes("machine")||nm.includes("bentoniet")||nm.includes("Boormachine")||nm.includes("Bentoniet"))e.polygon.show=lagen.machines;}
-    });
+    // OSM gebouwen
+    if(v._osmTileset) v._osmTileset.show = lagen.gebouwen && !lagen.fotorealistisch;
+    // Google fotorealistisch — verbergt globe, toont alles
+    if(v._googleTileset){
+      v._googleTileset.show = lagen.fotorealistisch;
+      v.scene.globe.show = !lagen.fotorealistisch;
+      v.imageryLayers.show = !lagen.fotorealistisch;
+    }
+    // OSM uit als fotorealistisch aan
+    if(lagen.fotorealistisch && v._osmTileset) v._osmTileset.show = false;
   }, [lagen]);
 
   const slaTokenOp = () => {
@@ -421,10 +453,11 @@ export default function Stap8_3D({ project }) {
           <div className="text-xs text-gray-400 mt-0.5">Gratis token via <a href="https://ion.cesium.com" target="_blank" className="text-blue-500 underline">ion.cesium.com</a> → "Access Tokens" → kopieer de default token</div>
         </div>
         <div className="flex gap-2">
-          <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)} placeholder="eyJhbGci..."
+          <input value={tokenInput} onChange={e=>handleTokenInput(e.target.value)} placeholder="eyJhbGci..."
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-52 focus:outline-none focus:ring-1 focus:ring-indigo-400 font-mono"/>
+          <span className={`text-xs transition-opacity duration-500 ${tokenOpgeslagen?"text-green-500 opacity-100":"opacity-0"}`}>✓ opgeslagen</span>
           <button onClick={slaTokenOp} className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 whitespace-nowrap">
-            {ionToken?"↺ Bijwerken":"Toepassen"}
+            {ionToken?"↺ Herladen":"Activeren"}
           </button>
         </div>
       </div>
@@ -444,6 +477,33 @@ export default function Stap8_3D({ project }) {
               <span className="text-xs text-gray-700">{label}</span>
             </label>
           ))}
+
+          <div className="border-t border-gray-100 pt-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3D Omgeving</div>
+            <label className="flex items-center gap-2 cursor-pointer mb-1">
+              <input type="checkbox" checked={!!lagen.gebouwen} onChange={e=>setLagen(p=>({...p,gebouwen:e.target.checked,fotorealistisch:false}))} className="accent-indigo-600"/>
+              <span className="text-xs text-gray-700">🏠 OSM Gebouwen <span className="text-gray-400">(Ion)</span></span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!lagen.fotorealistisch} disabled={!googleToken} onChange={e=>setLagen(p=>({...p,fotorealistisch:e.target.checked,gebouwen:false}))} className="accent-indigo-600 disabled:opacity-40"/>
+              <span className={`text-xs ${googleToken?"text-gray-700":"text-gray-400"}`}>🌳 Google Fotorealistisch <span className="text-gray-400">(bomen+huizen)</span></span>
+            </label>
+            {!googleToken&&(
+              <div className="mt-1.5 text-xs text-amber-600 leading-tight">Voer Google Maps API key in om in te schakelen →</div>
+            )}
+          </div>
+
+          <div className="border-t border-gray-100 pt-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Google Maps API key</div>
+            <div className="text-xs text-gray-400 mb-1.5 leading-tight">Voor 3D bomen & gebouwen. Gratis via <a href="https://console.cloud.google.com" target="_blank" className="text-blue-500 underline">console.cloud.google.com</a> → "Map Tiles API"</div>
+            <input value={googleToken} onChange={e=>setGoogleToken(e.target.value)} placeholder="AIza..."
+              className="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-400 mb-1"/>
+            <button onClick={()=>{
+              try{localStorage.setItem("google_maps_token",googleToken);}catch{}
+              if(viewerRef.current){try{viewerRef.current.destroy();}catch{}viewerRef.current=null;}
+              setStatus("init"); setIonToken(t=>t);
+            }} className="w-full py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border border-gray-200 text-gray-600">Toepassen & herladen</button>
+          </div>
           <div className="border-t border-gray-100 pt-3 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Navigatie</div>
             <div className="text-xs text-gray-400 leading-relaxed">🖱️ Klik+sleep = draaien<br/>⚙️ Rechts+sleep = kantelen<br/>🔍 Scroll = zoom</div>
