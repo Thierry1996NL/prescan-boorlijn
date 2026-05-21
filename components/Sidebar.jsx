@@ -12,11 +12,12 @@ const STAPPEN = [
   { nr: 5,  label: "Oppervlakteanalyse", sub: "BGT oppervlakken",         leeg: false },
   { nr: 6,  label: "Diepteligging",      sub: "Dwarsprofiel & bodem",     leeg: false },
   { nr: 7,  label: "Machine locatie",    sub: "Boormachine & bentoniet",  leeg: false },
-  { nr: 8,  label: "Eindontwerp",        sub: "Overzicht read-only",      leeg: false },
-  { nr: 9,  label: "AI optimalisatie",   sub: "Kruisingen & advies",      leeg: true  },
-  { nr: 10, label: "Pre-scan",           sub: "Tekeningen",               leeg: true  },
-  { nr: 11, label: "Contactpersonen",    sub: "KLIC contacten",           leeg: true  },
-  { nr: 12, label: "Exporteren",         sub: "Rapport & coördinaten",    leeg: true  },
+  { nr: 8,  label: "3D ontwerp",         sub: "CesiumJS visualisatie",    leeg: false },
+  { nr: 9,  label: "Eindontwerp",        sub: "Overzicht read-only",      leeg: false },
+  { nr: 10, label: "AI optimalisatie",   sub: "Kruisingen & advies",      leeg: true  },
+  { nr: 11, label: "Pre-scan",           sub: "Tekeningen",               leeg: true  },
+  { nr: 12, label: "Contactpersonen",    sub: "KLIC contacten",           leeg: true  },
+  { nr: 13, label: "Exporteren",         sub: "Rapport & coördinaten",    leeg: true  },
 ];
 
 // Sub-stappen voor stap 5 — zichtbaar als stap 5 actief is
