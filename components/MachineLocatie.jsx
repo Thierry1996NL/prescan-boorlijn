@@ -136,67 +136,91 @@ export default function MachineLocatie({project,onSave}){
         try{kaart.fitBounds(L.latLngBounds(boorCoords).pad(0.25),{maxZoom:16});}catch{}
       }
 
-      // Machine-rechthoek lagen
+      // Machine-rechthoek lagen — gedeelde drag-state voor schone event-afhandeling
       const machLagen={};
-      const machMarkers={};
-      Object.keys(MACHINE_CONFIG).forEach(key=>{
-        machLagen[key]=null; // start leeg — aangemaakt bij eerste update
-        machMarkers[key]=null;
+      const machDotMarkers={};
+      const machLabelMarkers={};
+      Object.keys(MACHINE_CONFIG).forEach(key=>{machLagen[key]=null;machDotMarkers[key]=null;machLabelMarkers[key]=null;});
+
+      // Gedeelde drag-state (1 handler op de kaart)
+      const ds={active:false,key:null,startLL:null,startCenterRD:null,lengte:0,breedte:0,bear:0};
+      kaart.on("mousemove",(e)=>{
+        if(!ds.active)return;
+        const sRD=latLngNaarRD(ds.startLL.lat,ds.startLL.lng);
+        const dRD=latLngNaarRD(e.latlng.lat,e.latlng.lng);
+        const nc={x:ds.startCenterRD.x+(dRD.x-sRD.x),y:ds.startCenterRD.y+(dRD.y-sRD.y)};
+        machLagen[ds.key]?.setLatLngs(maakRechthoekCoords(nc,ds.lengte,ds.breedte,ds.bear));
+        const[lo,la]=rdNaarLatLng(nc.x,nc.y);
+        machDotMarkers[ds.key]?.setLatLng([la,lo]);
+        machLabelMarkers[ds.key]?.setLatLng([la,lo]);
+      });
+      kaart.on("mouseup",(e)=>{
+        if(!ds.active)return;
+        ds.active=false;
+        kaart.dragging.enable();
+        kaart._container.style.cursor="";
+        const sRD=latLngNaarRD(ds.startLL.lat,ds.startLL.lng);
+        const dRD=latLngNaarRD(e.latlng.lat,e.latlng.lng);
+        const nc={x:ds.startCenterRD.x+(dRD.x-sRD.x),y:ds.startCenterRD.y+(dRD.y-sRD.y)};
+        setMachines(prev=>({...prev,[ds.key]:{...prev[ds.key],centerRD:nc}}));
       });
 
       function updateRechthoek(key,centerRD,lengte,breedte,bear,zoomNaar=false,rotDeg=0){
-        if(machLagen[key]){try{kaart.removeLayer(machLagen[key]);}catch{}}
-        if(machMarkers[key]){try{kaart.removeLayer(machMarkers[key]);}catch{}}
+        // Verwijder oude lagen
+        [machLagen,machDotMarkers,machLabelMarkers].forEach(obj=>{
+          if(obj[key]){try{kaart.removeLayer(obj[key]);}catch{}obj[key]=null;}
+        });
         if(!centerRD)return;
 
-        const coords=maakRechthoekCoords(centerRD,lengte,breedte,bear);
         const cfg=MACHINE_CONFIG[key];
+        const coords=maakRechthoekCoords(centerRD,lengte,breedte,bear);
+        const[lo,la]=rdNaarLatLng(centerRD.x,centerRD.y);
 
+        // 1. Polygoon — sleepbaar via mousedown
         machLagen[key]=L.polygon(coords,{
           color:cfg.kleur,weight:4,opacity:1,
           fillColor:cfg.kleurFill,fillOpacity:0.45,
           interactive:true,
         }).addTo(kaart);
+        machLagen[key].on("mousedown",(e)=>{
+          L.DomEvent.stop(e);
+          kaart.dragging.disable();
+          kaart._container.style.cursor="grabbing";
+          Object.assign(ds,{active:true,key,startLL:e.latlng,startCenterRD:{...centerRD},lengte,breedte,bear});
+        });
 
-        const[lng,lat]=rdNaarLatLng(centerRD.x,centerRD.y);
-        // Counter-rotatie: label staat altijd rechtop, naast het punt
+        // 2. Dot IN het midden van de rechthoek
+        machDotMarkers[key]=L.circleMarker([la,lo],{
+          radius:8,fillColor:cfg.kleur,fillOpacity:1,
+          color:"white",weight:2.5,interactive:false,zIndexOffset:500,
+        }).addTo(kaart);
+
+        // 3. Label — counter-geroteerd, naast het midden
+        const rot=`rotate(${-rotDeg}deg)`;
         const labelIcon=L.divIcon({
-          html:`<div style="transform:rotate(${-rotDeg}deg);transform-origin:left center;display:inline-flex;align-items:center;gap:6px;pointer-events:none">
-            <div style="width:12px;height:12px;border-radius:50%;background:${cfg.kleur};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);flex-shrink:0"></div>
+          html:`<div style="transform:${rot};transform-origin:8px 50%;display:inline-flex;align-items:center;gap:5px;pointer-events:none">
+            <div style="width:0;height:0"></div>
             <div style="background:white;color:${cfg.kleur};border:2px solid ${cfg.kleur};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.3)">${cfg.icon} ${lengte}×${breedte}m</div>
           </div>`,
-          className:"",iconSize:[120,20],iconAnchor:[6,6],
+          className:"",iconSize:[1,1],iconAnchor:[0,0],
         });
-
-        machMarkers[key]=L.marker([lat,lng],{draggable:true,icon:labelIcon,zIndexOffset:600}).addTo(kaart);
-        machMarkers[key].on("drag",(e)=>{
-          const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
-          const c=maakRechthoekCoords(rd,lengte,breedte,bear);
-          machLagen[key]?.setLatLngs(c);
-        });
-        machMarkers[key].on("dragend",(e)=>{
-          const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
-          setMachines(prev=>({...prev,[key]:{...prev[key],centerRD:rd}}));
-        });
+        machLabelMarkers[key]=L.marker([la,lo],{icon:labelIcon,interactive:false,zIndexOffset:550}).addTo(kaart);
 
         if(zoomNaar){
-          try{kaart.fitBounds(machLagen[key].getBounds().pad(3),{maxZoom:19,animate:true});}catch{}
+          try{kaart.fitBounds(machLagen[key].getBounds().pad(4),{maxZoom:19,animate:true});}catch{}
         }
       }
       kaart._updateRechthoek=updateRechthoek;
 
-      // Klik op kaart = plaatsen in plaatsModus
+      // Klik op kaart = plaatsen (kaart staat al Noord-omhoog, geen rotatie-offset)
       kaart.on("click",(e)=>{
         const key=plaatsModusRef.current;
         if(!key)return;
         const rd=latLngNaarRD(e.latlng.lat,e.latlng.lng);
-        const currentMachines=machinesRef.current??{};
-        const m=currentMachines[key]??{lengte:6,breedte:3};
-        // Noord-omhoog modus bij plaatsen → rotDeg is 0, herstel na placement
+        const m=machinesRef.current?.[key]??{lengte:6,breedte:3};
         updateRechthoek(key,rd,m.lengte,m.breedte,bearingRef.current??0,true,0);
         setMachines(prev=>{const n={...prev,[key]:{...prev[key],centerRD:rd}};machinesRef.current=n;return n;});
         setPlaatsModus(null);
-        // Herstel rotatie als die aan stond voor plaatsen
         if(prevGeroteerdRef.current){setTimeout(()=>setGeroteerd(true),500);}
       });
 
