@@ -203,6 +203,14 @@ export default function Stap8_3D({ project }) {
       });
       viewerRef.current = viewer;
 
+      // Entity-groepen voor laag-toggles
+      viewer._boorlijnEntities = [];
+      viewer._klicEntities     = [];
+      viewer._machineEntities  = [];
+      const addBoor    = e => { const r=viewer.entities.add(e); viewer._boorlijnEntities.push(r); return r; };
+      const addKlic    = e => { const r=viewer.entities.add(e); viewer._klicEntities.push(r);     return r; };
+      const addMachine = e => { const r=viewer.entities.add(e); viewer._machineEntities.push(r);  return r; };
+
       // Terrein via scene.setTerrain (nieuwe API)
       if (ionToken) {
         try {
@@ -240,7 +248,7 @@ export default function Stap8_3D({ project }) {
         const sorted = [...dp].sort((a,b)=>a.afstand-b.afstand);
 
         // Oppervlak-lijn — geclamped, altijd op maaiveld
-        viewer.entities.add({
+        addBoor({
           name:"Boorlijn maaiveld",
           polyline:{
             positions: C.Cartesian3.fromDegreesArray(
@@ -263,7 +271,7 @@ export default function Stap8_3D({ project }) {
           });
 
           // Ondergrondse buis — gloeiend oranje, gestippeld achter terrein
-          viewer.entities.add({
+          addBoor({
             name:"Boorlijn diepteprofiel",
             polyline:{
               positions: C.Cartesian3.fromDegreesArrayHeights(bore3DPts),
@@ -286,7 +294,7 @@ export default function Stap8_3D({ project }) {
             const mvH=napNaarCesium(interpoleerHoogte(pp,pt.afstand));
             const boorH=napNaarCesium(interpoleerHoogte(pp,pt.afstand)-pt.diepte);
             if(pt.diepte < 0.1)return;
-            viewer.entities.add({ polyline:{
+            addBoor({ polyline:{
               positions:C.Cartesian3.fromDegreesArrayHeights([lng,lat,boorH,lng,lat,mvH]),
               width:1.5,
               material:new C.PolylineDashMaterialProperty({
@@ -294,7 +302,7 @@ export default function Stap8_3D({ project }) {
               }),
             }});
             // Diepte-label
-            viewer.entities.add({ position:C.Cartesian3.fromDegrees(lng,lat,boorH-1),
+            addBoor({ position:C.Cartesian3.fromDegrees(lng,lat,boorH-1),
               label:{text:`-${pt.diepte.toFixed(1)}m\n${(interpoleerHoogte(pp,pt.afstand)-pt.diepte).toFixed(2)}m NAP`,
                 font:"bold 11px sans-serif",fillColor:C.Color.WHITE,
                 outlineColor:C.Color.BLACK,outlineWidth:2,
@@ -310,12 +318,12 @@ export default function Stap8_3D({ project }) {
         const [sLat,sLng]=boorCoords[0],[eLat,eLng]=boorCoords[boorCoords.length-1];
         const startH=napNaarCesium(ahnProfiel?.profielPunten?.[0]?.hoogte??0);
         const eindeH=napNaarCesium(ahnProfiel?.profielPunten?.[ahnProfiel.profielPunten.length-1]?.hoogte??0);
-        viewer.entities.add({position:C.Cartesian3.fromDegrees(sLng,sLat,startH+5),
+        addBoor({position:C.Cartesian3.fromDegrees(sLng,sLat,startH+5),
           point:{pixelSize:12,color:C.Color.fromCssColorString("#16a34a"),outlineColor:C.Color.WHITE,outlineWidth:2},
           label:{text:"S",font:"bold 14px sans-serif",fillColor:C.Color.fromCssColorString("#16a34a"),
             outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
             verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-8)}});
-        viewer.entities.add({position:C.Cartesian3.fromDegrees(eLng,eLat,eindeH+5),
+        addBoor({position:C.Cartesian3.fromDegrees(eLng,eLat,eindeH+5),
           point:{pixelSize:12,color:C.Color.fromCssColorString("#dc2626"),outlineColor:C.Color.WHITE,outlineWidth:2},
           label:{text:"E",font:"bold 14px sans-serif",fillColor:C.Color.fromCssColorString("#dc2626"),
             outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,
@@ -357,7 +365,7 @@ export default function Stap8_3D({ project }) {
           });
 
           // 3D box — lage opake rand, subtiele fill
-          viewer.entities.add({
+          addMachine({
             name:`${cfg.icon} ${cfg.label}`,
             polygon:{
               hierarchy: new C.PolygonHierarchy(corners),
@@ -371,7 +379,7 @@ export default function Stap8_3D({ project }) {
             }
           });
           // Label boven de box
-          viewer.entities.add({
+          addMachine({
             position:C.Cartesian3.fromDegrees(lo,la,bestH+cfg.hoogte+3),
             label:{
               text:`${cfg.icon} ${cfg.label}\n${m.lengte}×${m.breedte}m`,
@@ -406,7 +414,7 @@ export default function Stap8_3D({ project }) {
                 lijnen.forEach(lijn=>{
                   const pts=lijn.flatMap(([lo,la])=>[lo,la,napNaarCesium(0.5)]);
                   if(pts.length<6)return;
-                  viewer.entities.add({ polyline:{
+                  addKlic({ polyline:{
                     positions:C.Cartesian3.fromDegreesArrayHeights(pts),
                     width:3, clampToGround:true,
                     material:C.Color.fromCssColorString(kleur),
@@ -531,24 +539,35 @@ export default function Stap8_3D({ project }) {
 
   useEffect(() => {
     const v=viewerRef.current; if(!v)return;
+
+    // Boorlijn, KLIC, Machines — entity show/hide
+    v._boorlijnEntities?.forEach(e=>{ e.show=lagen.boorlijn; });
+    v._klicEntities?.forEach(e=>{     e.show=lagen.klic; });
+    v._machineEntities?.forEach(e=>{  e.show=lagen.machines; });
+
+    // OSM 3D gebouwen (Ion)
     if(v._osmTileset) v._osmTileset.show = lagen.gebouwen && !lagen.fotorealistisch;
+
+    // Google fotorealistisch
     if(v._googleTileset){
       v._googleTileset.show = lagen.fotorealistisch;
       v.scene.globe.show = !lagen.fotorealistisch;
-      // Verberg/toon alle imagery layers individueel
       for(let i=0;i<v.imageryLayers.length;i++) v.imageryLayers.get(i).show=!lagen.fotorealistisch;
     }
     if(lagen.fotorealistisch && v._osmTileset) v._osmTileset.show = false;
-    // Overpass toggle
-    if(lagen.overpass && v._overpassEntities?.length===0){
+
+    // Overpass — laden bij aanzetten, verwijderen bij uitzetten
+    if(lagen.overpass && (v._overpassEntities?.length??0)===0){
       setOverpassStatus("laden");
       v._laadOverpass?.(setOverpassStatus);
     }
-    if(!lagen.overpass && v._overpassEntities?.length>0){
+    if(!lagen.overpass && (v._overpassEntities?.length??0)>0){
       v._overpassEntities.forEach(e=>{try{v.entities.remove(e);}catch{}});
       v._overpassEntities=[];
       setOverpassStatus(null);
     }
+    // Overpass entiteiten tonen/verbergen zonder herladen
+    v._overpassEntities?.forEach(e=>{ e.show=lagen.overpass; });
   }, [lagen]);
 
   const slaTokenOp = () => {
