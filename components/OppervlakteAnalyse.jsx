@@ -483,8 +483,6 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
         }
       });
 
-      });
-
       // Filterbox
       if(box)L.rectangle([[box.lat1,box.lng1],[box.lat2,box.lng2]],{color:"#6b7280",weight:2,fillOpacity:0,interactive:false}).addTo(kaart);
 
