@@ -206,7 +206,7 @@ export default function ProjectDetailPagina() {
       // ── Stap 1: Projectinformatie ──────────────────────────────
       case 1:
         return (
-          <div className="max-w-2xl">
+          <div className="max-w-2xl space-y-0">
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-semibold text-gray-800">Projectgegevens</h2>
@@ -297,6 +297,7 @@ export default function ProjectDetailPagina() {
 
           {/* ── Boring configurator ── */}
           <BoringConfigurator />
+        </div>
         );
 
       // ── Stap 2: Ontwerp inladen ────────────────────────────────
