@@ -293,11 +293,10 @@ export default function ProjectDetailPagina() {
                 </div>
               </div>
             )}
-          </div>
 
-          {/* ── Boring configurator ── */}
-          <BoringConfigurator />
-        </div>
+            {/* ── Boring configurator ── */}
+            <BoringConfigurator />
+          </div>
         );
 
       // ── Stap 2: Ontwerp inladen ────────────────────────────────
