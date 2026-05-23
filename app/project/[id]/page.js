@@ -12,6 +12,7 @@ const OntwerpKaart  = dynamic(() => import("@/components/OntwerpKaart"),  { ssr:
 const Diepteligging    = dynamic(() => import("@/components/Diepteligging"),    { ssr: false });
 const MachineLocatie   = dynamic(() => import("@/components/MachineLocatie"),   { ssr: false });
 const Stap8_3D         = dynamic(() => import("@/components/Stap8_3D"),         { ssr: false });
+import BoringConfigurator from "@/components/BoringConfigurator";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -293,6 +294,9 @@ export default function ProjectDetailPagina() {
               </div>
             )}
           </div>
+
+          {/* ── Boring configurator ── */}
+          <BoringConfigurator />
         );
 
       // ── Stap 2: Ontwerp inladen ────────────────────────────────
