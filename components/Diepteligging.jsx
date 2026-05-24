@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import KlicAchtergrond from "@/components/KlicAchtergrond";
+import { BoorLabelSVG } from "@/components/BoorLabel";
 
 // ─── Geometry helpers ─────────────────────────────────────────────
 function afstandM(p1,p2){const R=6371000,dLat=(p2[0]-p1[0])*Math.PI/180,dLng=(p2[1]-p1[1])*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(p1[0]*Math.PI/180)*Math.cos(p2[0]*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
@@ -225,20 +226,20 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
 
         {/* Boorpad klikzone */}
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={10} opacity={0} style={{cursor:"copy"}} onClick={handleBoorpadKlik}/>
-        {/* Buiswand buitenkant */}
-        <polyline points={boorPolyline} fill="none" stroke="#f9731640" strokeWidth={tubeStrokeW} strokeLinecap="round"/>
-        {/* Buisas (middellijn) */}
-        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={Math.max(1.5, tubeStrokeW * 0.15)} strokeDasharray="10,5" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
-        {/* Buiswand boven en onder */}
-        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="none" strokeLinecap="round" opacity={0.6}
-          style={{transform:`translateY(-${tubeStrokeW/2}px)`, display:"none"}}/>
-        {/* Diameter label middenin de boor */}
+        {/* Tube: gevulde band op schaal van boring diameter */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={tubeStrokeW} strokeLinecap="round" opacity={0.18}/>
+        {/* Buiswand */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={tubeStrokeW} strokeLinecap="round" opacity={0} fill="none"
+          stroke="#f97316" style={{filter:"none"}}/>
+        {/* Centerline */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={Math.max(1.5, tubeStrokeW * 0.12)} strokeDasharray="8,4" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
+        {/* Ø-label midden op de boor */}
         {boringD && boorWaypoints.length >= 2 && (() => {
           const mid = boorWaypoints[Math.floor(boorWaypoints.length / 2)];
           return (
             <g>
-              <rect x={xP(mid.afstand)-22} y={yP(mid.hoogte)-9} width={44} height={14} rx={3}
-                    fill="white" fillOpacity={0.88} stroke="#f97316" strokeWidth={0.8}/>
+              <rect x={xP(mid.afstand)-24} y={yP(mid.hoogte)-8} width={48} height={13} rx={3}
+                    fill="white" fillOpacity={0.9} stroke="#f97316" strokeWidth={0.8}/>
               <text x={xP(mid.afstand)} y={yP(mid.hoogte)+1.5} textAnchor="middle"
                     fontSize={8} fill="#ea580c" fontWeight="700">Ø{boringD}mm</text>
             </g>
@@ -302,6 +303,7 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         <text x={M.l-42} y={H/2} fontSize={10} fill="#6b7280" transform={`rotate(-90,${M.l-42},${H/2})`} textAnchor="middle">Hoogte (m NAP)</text>
         <text x={W/2} y={H-2} textAnchor="middle" fontSize={10} fill="#6b7280">Afstand langs boorlijn (m)</text>
         <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="#e5e7eb" strokeWidth={1}/>
+        {boringD && <BoorLabelSVG boringConfig={{boringD, items:[]}} x={W-180} y={8}/>}
       </svg>
     </div>
   );

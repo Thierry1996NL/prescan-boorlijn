@@ -1,4 +1,5 @@
 "use client";
+import BoorLabel from "@/components/BoorLabel";
 import { useEffect, useRef, useState } from "react";
 
 // ─── BGT oppervlak typen ─────────────────────────────────────────
@@ -1074,6 +1075,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         {/* ── Kaart ──────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative">
           <div ref={mapRef} className="w-full h-full"/>
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} />
         </div>
       </div>
 

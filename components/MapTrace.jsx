@@ -1,4 +1,5 @@
 "use client";
+import BoorLabel from "@/components/BoorLabel";
 import { useEffect, useRef, useState } from "react";
 
 // ─── RD New → WGS84 ──────────────────────────────────────────────
@@ -798,6 +799,9 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       {/* ── Kaart ────────────────────────────────────────────────── */}
       <div className="flex-1 relative min-w-0">
         <div ref={mapRef} className="w-full h-full rounded-xl border border-gray-200 overflow-hidden shadow-sm" />
+
+        {/* Versleepbaar boring-label */}
+        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} />
 
         {/* Laadspinner over kaart */}
         {isLaden && (
