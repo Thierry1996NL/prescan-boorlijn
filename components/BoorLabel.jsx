@@ -120,7 +120,7 @@ function ContentChip({label}){
 // ─── HTML BoorLabel (Leaflet kaarten stap 4 5 7 8) ───────────────────────────
 export default function BoorLabel({
   boringConfig, boorlengte, traceGeojson, leafletMapRef,
-  initialPos, initialAnchor, projectId, step,
+  initialPos, initialAnchor, projectId, step, locked = false,
 }) {
   const DEF_LPOS   = initialPos   ?? {x:16,y:16};
   const DEF_ANCHOR = initialAnchor ?? {x:240,y:160};
@@ -136,6 +136,7 @@ export default function BoorLabel({
   useEffect(()=>{ if(projectId&&step) savePos(projectId,step,{lPos,anchor}); },[lPos,anchor]);
 
   function onLabelDown(e) {
+    if(locked)return;
     if(e.target.closest("[data-anchor]"))return;
     e.stopPropagation();
     lDrag.current={sx:e.clientX-lPos.x,sy:e.clientY-lPos.y};
@@ -145,6 +146,7 @@ export default function BoorLabel({
   }
 
   function onAnchorDown(e) {
+    if(locked)return;
     e.stopPropagation();e.preventDefault();
     const map=leafletMapRef?.current;
     const container=map?.getContainer?.();
@@ -170,18 +172,22 @@ export default function BoorLabel({
   const connX=lPos.x+LW/2,connY=lPos.y+labelH;
 
   return(<>
-    <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:998,overflow:"visible"}}>
+    <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",
+                 pointerEvents: locked ? "none" : "none", // SVG is always pointer-events:none except anchor
+                 zIndex:998,overflow:"visible"}}>
       <line x1={connX} y1={connY} x2={anchor.x} y2={anchor.y}
             stroke="#F97316" strokeWidth={1.5} strokeDasharray="6,3" opacity={0.8}/>
-      <g data-anchor style={{pointerEvents:"all",cursor:"ew-resize"}} onMouseDown={onAnchorDown}>
+      <g data-anchor style={{pointerEvents: locked ? "none" : "all", cursor: locked ? "default" : "ew-resize"}}
+         onMouseDown={onAnchorDown}>
         <circle cx={anchor.x} cy={anchor.y} r={10} fill="#F97316" fillOpacity={0.12} stroke="#F97316" strokeWidth={1.5}/>
         <circle cx={anchor.x} cy={anchor.y} r={4} fill="#F97316" stroke="white" strokeWidth={2}/>
       </g>
     </svg>
     <div ref={labelRef} onMouseDown={onLabelDown} style={{
       position:"absolute",left:lPos.x,top:lPos.y,zIndex:999,width:LW,
-      cursor:"grab",userSelect:"none",touchAction:"none",
-      background:"white",border:"1.5px solid #FDBA74",
+      cursor: locked ? "default" : "grab",
+      userSelect:"none",touchAction:"none",
+      background:"white",border:`1.5px solid ${locked ? "#E5E7EB" : "#FDBA74"}`,
       borderRadius:8,boxShadow:"0 2px 10px rgba(0,0,0,0.13)",fontSize:10,
     }}>
       <div style={{display:"flex",alignItems:"center",gap:5,padding:"4px 8px",borderBottom:"1px solid #FEF3C7",background:"#FFFBEB",borderRadius:"6px 6px 0 0"}}>
@@ -217,7 +223,7 @@ export default function BoorLabel({
 }
 
 // ─── SVG BoorLabel (Diepteligging stap 6) ────────────────────────────────────
-export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPts, projectId, x:ix=680, y:iy=8 }) {
+export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPts, projectId, locked=false, x:ix=680, y:iy=8 }) {
   const DEF_LPOS = {x:ix,y:iy};
 
   const [lPos,   setLPos]   = useState(()=>{ const s=loadPos(projectId,"6"); return s?.lPos??DEF_LPOS; });
@@ -249,6 +255,7 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPt
   const connX=lPos.x+W/2,connY=lPos.y+H;
 
   function startLabel(e) {
+    if(locked)return;
     e.stopPropagation();e.preventDefault();
     const svg=e.currentTarget.ownerSVGElement;
     function move(ev){
@@ -262,6 +269,7 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPt
   }
 
   function startAnchor(e) {
+    if(locked)return;
     e.stopPropagation();e.preventDefault();
     const svg=e.currentTarget.ownerSVGElement;
     function move(ev){
@@ -310,12 +318,12 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPt
 
   return(<g>
     <line x1={connX} y1={connY} x2={anchor.x} y2={anchor.y} stroke="#f97316" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.8}/>
-    <g onMouseDown={startAnchor} style={{cursor:"ew-resize"}}>
+    <g onMouseDown={startAnchor} style={{cursor: locked ? "default" : "ew-resize"}}>
       <circle cx={anchor.x} cy={anchor.y} r={10} fill="#f97316" fillOpacity={0.12} stroke="#f97316" strokeWidth={1.5}/>
       <circle cx={anchor.x} cy={anchor.y} r={4} fill="#f97316" stroke="white" strokeWidth={2}/>
     </g>
-    <g onMouseDown={startLabel} style={{cursor:"grab"}}>
-      <rect x={lPos.x} y={lPos.y} width={W} height={H} rx={6} fill="white" stroke="#FDBA74" strokeWidth={1.5}
+    <g onMouseDown={startLabel} style={{cursor: locked ? "default" : "grab"}}>
+      <rect x={lPos.x} y={lPos.y} width={W} height={H} rx={6} fill="white" stroke={locked ? "#E5E7EB" : "#FDBA74"} strokeWidth={1.5}
             style={{filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.1))"}}/>
       <rect x={lPos.x} y={lPos.y} width={W} height={17} rx={6} fill="#FFFBEB"/>
       <rect x={lPos.x} y={lPos.y+11} width={W} height={6} fill="#FFFBEB"/>

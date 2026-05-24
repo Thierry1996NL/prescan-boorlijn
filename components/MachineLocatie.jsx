@@ -56,8 +56,9 @@ export default function MachineLocatie({project,onSave,boringConfig}){
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_7`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
   useEffect(() => {
-    try { localStorage.setItem(`boor_lock_${project?.id}_7`, JSON.stringify(locked)); } catch {}
+    try { localStorage.setItem(`boor_lock_${project?.id}_7`, JSON.stringify(locked)); lockedRef.current = locked; } catch {}
   }, [locked]);
+  const lockedRef = useRef(locked);
 
   const [boorCoords]=useState(()=>{
     try{const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[];}catch{return[];}
@@ -124,6 +125,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
       const kaart=L.map(mapRef.current,{crs,center,zoom:_ls?.z??15,maxZoom:22,zoomControl:true});
       kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave7({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
+      if(lockedRef.current){["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"].forEach(m=>{if(kaart[m])kaart[m].disable();});}
       setKaartInstantie(kaart);
 
       // Achtergrondlagen
@@ -404,7 +406,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
             transition:"transform 0.5s ease",transformOrigin:"center center"}}>
             <div ref={mapRef} style={{width:"100%",height:"100%"}}/>
           </div>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="7" initialPos={{x:16,y:60}}/>
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="7" locked={locked} initialPos={{x:16,y:60}}/>
           <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
           {plaatsModus&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">

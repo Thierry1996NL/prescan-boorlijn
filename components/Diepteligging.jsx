@@ -306,7 +306,7 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         <text x={M.l-42} y={H/2} fontSize={10} fill="#6b7280" transform={`rotate(-90,${M.l-42},${H/2})`} textAnchor="middle">Hoogte (m NAP)</text>
         <text x={W/2} y={H-2} textAnchor="middle" fontSize={10} fill="#6b7280">Afstand langs boorlijn (m)</text>
         <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="#e5e7eb" strokeWidth={1}/>
-        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} boorPadPts={boorPadSVGPts} x={W-170} y={8}/>}
+        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} boorPadPts={boorPadSVGPts} locked={locked} x={W-170} y={8}/>}
       </svg>
     </div>
   );
@@ -545,6 +545,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
       const kaart=L.map(mapRef.current,{crs,center,zoom:_ls?.z??14,maxZoom:22,zoomControl:true});
       kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave6({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
+      if(lockedRef.current){["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"].forEach(m=>{if(kaart[m])kaart[m].disable();});}
       setKaartInstantie(kaart); // triggert KlicAchtergrond component
 
       // ── Achtergrondlagen ──────────────────────────────────────
@@ -673,8 +674,9 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   const [locked,        setLocked]        = useState(() => {
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_6`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
+  const lockedRef = useRef(locked);
   useEffect(() => {
-    try { localStorage.setItem(`boor_lock_${project?.id}_6`, JSON.stringify(locked)); } catch {}
+    try { localStorage.setItem(`boor_lock_${project?.id}_6`, JSON.stringify(locked)); lockedRef.current = locked; } catch {}
   }, [locked]);
   const [opslaanStatus, setOpslaanStatus] = useState(null); // "ok" | "fout" | null
 

@@ -134,8 +134,9 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_4`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
   useEffect(() => {
-    try { localStorage.setItem(`boor_lock_${project?.id}_4`, JSON.stringify(locked)); } catch {}
+    try { localStorage.setItem(`boor_lock_${project?.id}_4`, JSON.stringify(locked)); lockedRef.current = locked; } catch {}
   }, [locked]);
+  const lockedRef = useRef(locked);
 
   // ── Kaartinstellingen localStorage ──────────────────────────────
   const mapLS4 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_4`)||'null'); } catch { return null; } };
@@ -229,6 +230,8 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       try { rdCrs = maakRdCrs(L); } catch(e) { console.warn("RD CRS:", e.message); }
       const kaart = L.map(mapRef.current, { ...(rdCrs ? { crs:rdCrs } : {}), center, zoom, maxZoom:22, zoomControl:true });
       kaartRef.current = kaart;
+      // Pas vergrendeling toe als map al gelocked was bij laden
+      if(lockedRef.current){["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"].forEach(m=>{if(kaart[m])kaart[m].disable();});}
       // Sla zoom/positie op bij elke verplaatsing
       kaart.on("moveend zoomend", () => { const c=kaart.getCenter(); mapSave4({z:kaart.getZoom(),c:[c.lat,c.lng]}); });
 
@@ -826,7 +829,7 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
         <div ref={mapRef} className="w-full h-full rounded-xl border border-gray-200 overflow-hidden shadow-sm" />
 
         {/* Versleepbaar boring-label */}
-        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="4" />
+        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="4" locked={locked} />
         <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
 
         {/* Laadspinner over kaart */}

@@ -310,8 +310,9 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_5`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
   useEffect(() => {
-    try { localStorage.setItem(`boor_lock_${project?.id}_5`, JSON.stringify(locked)); } catch {}
+    try { localStorage.setItem(`boor_lock_${project?.id}_5`, JSON.stringify(locked)); lockedRef.current = locked; } catch {}
   }, [locked]);
+  const lockedRef = useRef(locked);
   const actOvRef = useRef(s3.__overlays??[]);
   actOvRef.current = actieveOverlays;
 
@@ -367,6 +368,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
       const kaart=L.map(mapRef.current,{...(rdCrs?{crs:rdCrs}:{}),center,zoom:_ls?.z??pos?.zoom??14,maxZoom:22,zoomControl:true});
       kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave5({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
+      if(lockedRef.current){["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"].forEach(m=>{if(kaart[m])kaart[m].disable();});}
 
       // ── Esri via WMS+GridLayer: exacte WGS84 bbox per tile ─────────
       // Esri WMS ondersteunt EPSG:4326 (WGS84) maar NIET EPSG:28992.
@@ -1095,7 +1097,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         {/* ── Kaart ──────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative">
           <div ref={mapRef} className="w-full h-full"/>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="5" />
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="5" locked={locked} />
           <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
         </div>
       </div>
