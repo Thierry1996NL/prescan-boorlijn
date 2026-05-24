@@ -220,9 +220,6 @@ export default function ProjectDetailPagina() {
                   { label: "Opdrachtgever", waarde: project.opdrachtgever },
                   { label: "Locatie",       waarde: project.locatie },
                   { label: "Boorlengte",    waarde: project.boorlengte_m  ? `${project.boorlengte_m} m`     : null },
-                  { label: "Diameter",      waarde: project.diameter_mm   ? `Ø${project.diameter_mm} mm`    : null },
-                  { label: "Materiaal",     waarde: project.materiaal },
-                  { label: "Bodemtype",     waarde: project.bodemtype },
                   { label: "Status",        waarde: project.status },
                 ].map(({ label, waarde }, i) =>
                   waarde ? (
@@ -295,7 +292,7 @@ export default function ProjectDetailPagina() {
             )}
 
             {/* ── Boring configurator ── */}
-            <BoringConfigurator />
+            <BoringConfigurator projectId={id} initialConfig={project.boring_config} />
           </div>
         );
 
