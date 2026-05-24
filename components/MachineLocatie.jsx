@@ -80,8 +80,13 @@ export default function MachineLocatie({project,onSave,boringConfig}){
   });
 
   const [plaatsModus,setPlaatsModus]=useState(null); // "boormachine"|"bentoniet"|null
-  const [actieveAchtergrond,setActieveAchtergrond]=useState("luchtfoto");
-  const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
+  const mapLS7 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_7`)||'null'); } catch { return null; } };
+  const mapSave7 = (p) => { try { const SK=`map_s_${project?.id}_7`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls7 = mapLS7();
+  const [actieveAchtergrond,setActieveAchtergrond]=useState(_ls7?.ag??"luchtfoto");
+  const [actieveOverlays,setActieveOverlays]=useState(_ls7?.ov??{klic:true,kadaster:false,bgt:false});
+  useEffect(()=>{ mapSave7({ag:actieveAchtergrond}); },[actieveAchtergrond]);
+  useEffect(()=>{ mapSave7({ov:actieveOverlays}); },[actieveOverlays]);
   const [opslaanStatus,setOpslaanStatus]=useState(null);
 
   const plaatsModusRef=useRef(null);
@@ -114,8 +119,10 @@ export default function MachineLocatie({project,onSave,boringConfig}){
       if(!actief||!mapRef.current)return;
       const L=window.L;
       const crs=maakRdCrs(L);
-      const center=boorCoords[0]??[52.15,5.39];
-      const kaart=L.map(mapRef.current,{crs,center,zoom:15,maxZoom:22,zoomControl:true});
+      const _ls=mapLS7();
+      const center=_ls?.c??boorCoords[0]??[52.15,5.39];
+      const kaart=L.map(mapRef.current,{crs,center,zoom:_ls?.z??15,maxZoom:22,zoomControl:true});
+      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave7({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
       setKaartInstantie(kaart);
 

@@ -496,8 +496,13 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
     }catch{return null;}
   });
   const [klicKruisingen,setKlicKruisingen]=useState([]);
-  const [actieveAchtergrond,setActieveAchtergrond]=useState("standaard");
-  const [actieveOverlays,setActieveOverlays]=useState({klic:true,kadaster:false,bgt:false});
+  const mapLS6 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_6`)||'null'); } catch { return null; } };
+  const mapSave6 = (p) => { try { const SK=`map_s_${project?.id}_6`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls6 = mapLS6();
+  const [actieveAchtergrond,setActieveAchtergrond]=useState(_ls6?.ag??"standaard");
+  const [actieveOverlays,setActieveOverlays]=useState(_ls6?.ov??{klic:true,kadaster:false,bgt:false});
+  useEffect(()=>{ mapSave6({ag:actieveAchtergrond}); },[actieveAchtergrond]);
+  useEffect(()=>{ mapSave6({ov:actieveOverlays}); },[actieveOverlays]);
   const [kaartInstantie,setKaartInstantie]=useState(null);
   const profielRef=useRef([]); // voor kaart-labels met NAP waarde
   boorCoordRef.current=boorCoords;
@@ -535,8 +540,10 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
       await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js");
       await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js");
       if(!actief||!mapRef.current)return;
-      const L=window.L,crs=maakRdCrs(L),center=boorCoordRef.current[0]??[52.15,5.39];
-      const kaart=L.map(mapRef.current,{crs,center,zoom:14,maxZoom:22,zoomControl:true});
+      const L=window.L,crs=maakRdCrs(L),_ls=mapLS6();
+      const center=_ls?.c??boorCoordRef.current[0]??[52.15,5.39];
+      const kaart=L.map(mapRef.current,{crs,center,zoom:_ls?.z??14,maxZoom:22,zoomControl:true});
+      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave6({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
       setKaartInstantie(kaart); // triggert KlicAchtergrond component
 

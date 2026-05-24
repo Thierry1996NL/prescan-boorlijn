@@ -93,7 +93,11 @@ export default function Stap8_3D({ project, boringConfig }) {
   useEffect(() => {
     try { localStorage.setItem(`boor_lock_${project?.id}_8`, JSON.stringify(locked)); } catch {}
   }, [locked]);
-  const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, bag3d:true });
+  const mapLS8 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_8`)||'null'); } catch { return null; } };
+  const mapSave8 = (p) => { try { const SK=`map_s_${project?.id}_8`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls8 = mapLS8();
+  const [lagen, setLagen] = useState(_ls8?.lagen ?? { boorlijn:true, klic:true, machines:true, bag3d:true });
+  useEffect(() => { mapSave8({lagen}); }, [lagen]);
   const [bag3dStatus, setBag3dStatus] = useState(null);
   const [bag3dTeller, setBag3dTeller] = useState(0);
 
@@ -337,7 +341,12 @@ export default function Stap8_3D({ project, boringConfig }) {
           .catch(e=>{console.error("3D BAG:",e.message);setBag3dStatus("fout");});
       }else{setBag3dStatus("leeg");}
 
-      // Camera fly-to
+      // Camera fly-to — herstel opgeslagen positie of vlieg naar boorlijn
+      const savedCam = mapLS8()?.cam;
+      if (savedCam) {
+        viewer.camera.setView({ destination: new C.Cartesian3(savedCam.x, savedCam.y, savedCam.z),
+          orientation: { heading:savedCam.h, pitch:savedCam.p, roll:savedCam.r } });
+      }
       viewer._vliegNaarBoor=()=>{
         if(!boorCoords.length)return;
         const mid=boorCoords[Math.floor(boorCoords.length/2)];
@@ -350,7 +359,12 @@ export default function Stap8_3D({ project, boringConfig }) {
         viewer.camera.flyTo({destination:C.Cartesian3.fromDegrees(mid[1],mid[0],600),
           orientation:{heading:C.Math.toRadians(0),pitch:C.Math.toRadians(-90),roll:0},duration:1.5});
       };
-      viewer._vliegNaarBoor();
+      if (!savedCam) viewer._vliegNaarBoor();
+      // Sla camerapositie op bij bewegen
+      viewer.camera.moveEnd.addEventListener(() => {
+        const cam = viewer.camera; const pos = cam.position;
+        mapSave8({ cam:{ x:pos.x, y:pos.y, z:pos.z, h:cam.heading, p:cam.pitch, r:cam.roll } });
+      });
       setStatus("klaar");
     })().catch(e=>{console.error("Cesium:",e);setStatus("fout");});
     return()=>{actief=false;if(viewerRef.current){try{viewerRef.current.destroy();}catch{}viewerRef.current=null;}};

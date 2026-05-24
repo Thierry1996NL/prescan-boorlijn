@@ -299,8 +299,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const ondergrondOvRef   = useRef({});
 
   const s3=(() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
-  const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond??"brt_standaard");
-  const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays??[]);
+  const mapLS5 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_5`)||'null'); } catch { return null; } };
+  const mapSave5 = (p) => { try { const SK=`map_s_${project?.id}_5`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls5 = mapLS5();
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(_ls5?.ag ?? s3.__achtergrond ?? "brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(_ls5?.ov ?? s3.__overlays ?? []);
+  useEffect(() => { mapSave5({ag: actieveAchtergrond}); }, [actieveAchtergrond]);
+  useEffect(() => { mapSave5({ov: actieveOverlays}); }, [actieveOverlays]);
   const [locked,             setLocked]             = useState(() => {
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_5`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
@@ -357,8 +362,10 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
       const L=window.L;
       let rdCrs;try{rdCrs=maakRdCrs(L);}catch{}
       const pos=s3.__kaartPositie;
-      const center=pos?[pos.lat,pos.lng]:(boorCoords[0]??[52.15,5.39]);
-      const kaart=L.map(mapRef.current,{...(rdCrs?{crs:rdCrs}:{}),center,zoom:pos?.zoom??14,maxZoom:22,zoomControl:true});
+      const _ls=mapLS5();
+      const center=_ls?.c??(pos?[pos.lat,pos.lng]:(boorCoords[0]??[52.15,5.39]));
+      const kaart=L.map(mapRef.current,{...(rdCrs?{crs:rdCrs}:{}),center,zoom:_ls?.z??pos?.zoom??14,maxZoom:22,zoomControl:true});
+      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave5({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       kaartRef.current=kaart;
 
       // ── Esri via WMS+GridLayer: exacte WGS84 bbox per tile ─────────

@@ -308,8 +308,13 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const [ingeslagen,     setIngeslagen]       = useState(false);
   const [foutmelding,    setFoutmelding]      = useState(null);
   const [rdCursor,       setRdCursor]         = useState(null);
-  const [actieveAchtergrond, setActieveAchtergrond] = useState(opgeslagenInst.__achtergrond??"brt_standaard");
-  const [actieveOverlays,    setActieveOverlays]    = useState(opgeslagenInst.__overlays??[]);
+  const mapLS3 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_3`)||'null'); } catch { return null; } };
+  const mapSave3 = (p) => { try { const SK=`map_s_${project?.id}_3`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls3 = mapLS3();
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(_ls3?.ag ?? opgeslagenInst.__achtergrond ?? "brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(_ls3?.ov ?? opgeslagenInst.__overlays ?? []);
+  useEffect(() => { mapSave3({ag: actieveAchtergrond}); }, [actieveAchtergrond]);
+  useEffect(() => { mapSave3({ov: actieveOverlays}); }, [actieveOverlays]);
   const [vergrendeld,        setVergrendeld]         = useState({});
   const [resetConfirm,       setResetConfirm]        = useState(null);
   const [geselecteerdFeature,setGeselecteerdFeature] = useState(null);
@@ -340,8 +345,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       L.Icon.Default.mergeOptions({iconRetinaUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",iconUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",shadowUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"});
       const rdCrs=maakRdCrs(L);
       const pos=opgeslagenInst.__kaartPositie;
-      const kaart=L.map(mapElRef.current,{crs:rdCrs,zoomControl:true,preferCanvas:true,maxZoom:22}).setView(pos?.lat?[pos.lat,pos.lng]:[52.156,5.387],pos?.zoom??8);
+      const _ls=mapLS3();
+      const initCenter=_ls?.c??(pos?.lat?[pos.lat,pos.lng]:[52.156,5.387]);
+      const initZoom=_ls?.z??pos?.zoom??8;
+      const kaart=L.map(mapElRef.current,{crs:rdCrs,zoomControl:true,preferCanvas:true,maxZoom:22}).setView(initCenter,initZoom);
       kaartRef.current=kaart;
+      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave3({z:kaart.getZoom(),c:[c.lat,c.lng]});});
 
       // Cursor RD coords
       kaart.on("mousemove",e=>{

@@ -136,7 +136,16 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   useEffect(() => {
     try { localStorage.setItem(`boor_lock_${project?.id}_4`, JSON.stringify(locked)); } catch {}
   }, [locked]);
-  const [isLaden,        setIsLaden]        = useState(false);
+
+  // ── Kaartinstellingen localStorage ──────────────────────────────
+  const mapLS4 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_4`)||'null'); } catch { return null; } };
+  const mapSave4 = (p) => { try { const SK=`map_s_${project?.id}_4`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
+  const _ls4 = mapLS4();
+
+  const [actieveAchtergrond, setActieveAchtergrond] = useState(_ls4?.ag ?? s3.__achtergrond ?? "brt_standaard");
+  const [actieveOverlays,    setActieveOverlays]    = useState(_ls4?.ov ?? s3.__overlays    ?? []);
+  useEffect(() => { mapSave4({ag: actieveAchtergrond}); }, [actieveAchtergrond]);
+  useEffect(() => { mapSave4({ov: actieveOverlays}); }, [actieveOverlays]);  const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
   const [legendaOpen,    setLegendaOpen]    = useState(true);
   const [klicLagen,      setKlicLagen]      = useState([]);
@@ -210,16 +219,19 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       const L = await laadLeaflet();
       if (!actief || !mapRef.current) return;
 
-      // Startpositie vanuit stap 3
+      // Startpositie: localStorage → stap 3 positie → default
       const pos    = s3.__kaartPositie;
-      const center = pos ? [pos.lat, pos.lng] : [52.156, 5.387];
-      const zoom   = pos?.zoom ?? 13;
+      const _ls    = mapLS4();
+      const center = _ls?.c ?? (pos ? [pos.lat, pos.lng] : [52.156, 5.387]);
+      const zoom   = _ls?.z ?? pos?.zoom ?? 13;
 
       // RD New CRS — exact gelijk aan stap 3 (proj4leaflet vereist)
       let rdCrs;
       try { rdCrs = maakRdCrs(L); } catch(e) { console.warn("RD CRS:", e.message); }
       const kaart = L.map(mapRef.current, { ...(rdCrs ? { crs:rdCrs } : {}), center, zoom, maxZoom:22, zoomControl:true });
       kaartRef.current = kaart;
+      // Sla zoom/positie op bij elke verplaatsing
+      kaart.on("moveend zoomend", () => { const c=kaart.getCenter(); mapSave4({z:kaart.getZoom(),c:[c.lat,c.lng]}); });
 
       // Achtergrond/overlays vanuit state (al geïnitialiseerd vanuit s3)
       // Gebruik de state-waarden zodat alles consistent is
