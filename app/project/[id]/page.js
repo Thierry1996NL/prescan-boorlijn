@@ -558,6 +558,7 @@ export default function ProjectDetailPagina() {
         return (
           <OppervlakteAnalyse
             project={project}
+            boringConfig={boringConfig}
             onAnalyseOpgeslagen={async (resultaten) => {
               await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
             }}

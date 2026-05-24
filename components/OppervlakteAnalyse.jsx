@@ -288,7 +288,7 @@ const SUB_STAPPEN = [
   { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",kleur:"#3b82f6" },
   { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",      kleur:"#f97316" },
 ];
-export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
+export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, boringConfig }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
   const klicRef      = useRef([]);
@@ -510,7 +510,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen }) {
 
       // Boorlijn (vast)
       if(boorCoords.length>=2){
-        const lijn=L.polyline(boorCoords,{color:"#2563eb",weight:5,opacity:0.95,interactive:false}).addTo(kaart);
+        const boorGewicht = boringConfig?.boringD ? Math.max(4, Math.min(18, Math.round(boringConfig.boringD / 25))) : 5;
+        const lijn=L.polyline(boorCoords,{color:"#2563eb",weight:boorGewicht,opacity:0.95,interactive:false}).addTo(kaart);
         const mk=(nr,kleur)=>L.divIcon({className:"",html:`<div style="width:20px;height:20px;background:${kleur};border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white;box-shadow:0 1px 4px rgba(0,0,0,.4)">${nr}</div>`,iconSize:[20,20],iconAnchor:[10,10]});
         L.marker(boorCoords[0],{icon:mk("S","#15803d"),interactive:false}).addTo(kaart);
         L.marker(boorCoords[boorCoords.length-1],{icon:mk("E","#dc2626"),interactive:false}).addTo(kaart);

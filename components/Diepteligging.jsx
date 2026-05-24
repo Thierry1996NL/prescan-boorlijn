@@ -73,7 +73,7 @@ function berekenSegmenten(dieptePunten,profielPunten){
 }
 
 // ─── Dwarsprofiel SVG (2D interactief) ───────────────────────────
-function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave}){
+function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringD}){
   const svgRef=useRef(null);
   const dragRef=useRef(null);
 
@@ -96,6 +96,9 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
 
   const xP=d=>M.l+d/totM*plotW;
   const yP=h=>M.t+(hMax-h)/hSpan*plotH;
+
+  // Buisdiameter in SVG-pixels: boringD mm → meter → pixels op y-as
+  const tubeStrokeW = boringD ? Math.max(3, Math.min(28, (boringD / 1000) / hSpan * plotH)) : 3;
 
   // Boorpad: rechte lijnen ALLEEN tussen waypoints (geen curve door alle AHN-punten)
   const sortedWP=[...dieptePunten]
@@ -222,7 +225,25 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
 
         {/* Boorpad klikzone */}
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={10} opacity={0} style={{cursor:"copy"}} onClick={handleBoorpadKlik}/>
-        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={3} strokeDasharray="10,5" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
+        {/* Buiswand buitenkant */}
+        <polyline points={boorPolyline} fill="none" stroke="#f9731640" strokeWidth={tubeStrokeW} strokeLinecap="round"/>
+        {/* Buisas (middellijn) */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={Math.max(1.5, tubeStrokeW * 0.15)} strokeDasharray="10,5" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
+        {/* Buiswand boven en onder */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="none" strokeLinecap="round" opacity={0.6}
+          style={{transform:`translateY(-${tubeStrokeW/2}px)`, display:"none"}}/>
+        {/* Diameter label middenin de boor */}
+        {boringD && boorWaypoints.length >= 2 && (() => {
+          const mid = boorWaypoints[Math.floor(boorWaypoints.length / 2)];
+          return (
+            <g>
+              <rect x={xP(mid.afstand)-22} y={yP(mid.hoogte)-9} width={44} height={14} rx={3}
+                    fill="white" fillOpacity={0.88} stroke="#f97316" strokeWidth={0.8}/>
+              <text x={xP(mid.afstand)} y={yP(mid.hoogte)+1.5} textAnchor="middle"
+                    fontSize={8} fill="#ea580c" fontWeight="700">Ø{boringD}mm</text>
+            </g>
+          );
+        })()}
 
         {/* Segment labels: lengte + hoek op elke lijn */}
         {segmentLabels.map((sl,i)=>(
@@ -410,7 +431,7 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
 }
 
 // ─── Hoofd-component ──────────────────────────────────────────────
-export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
+export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,boringConfig}){
   const mapRef=useRef(null);
   const kaartRef=useRef(null);
   const basisLaagRef=useRef(null);
@@ -793,7 +814,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
           <span className="text-xs text-gray-400">{profielPunten.filter(p=>p.hoogte!==null).length} meetpunten · AHN4 · hover = positie op kaart</span>
         </div>
         <div className="p-3">
-          <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()}/>
+          <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringD={boringConfig?.boringD}/>
         </div>
       </div>
 

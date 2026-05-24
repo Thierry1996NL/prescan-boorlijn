@@ -78,7 +78,7 @@ function parseImkl(xml) {
 const KLIC_KLEUREN={"laagspanning":"#7B00AA","middenspanning":"#00CCFF","hoogspanning":"#FF4400","gasLageDruk":"#FFFF00","gasHogeDruk":"#FF0000","water":"#0000CC","datatransport":"#00CC00","rioolVrijverval":"#AA00CC","rioolOnderOverOfOnderdruk":"#AA00CC","warmte":"#FF6600","overig":"#888888"};
 
 // ════════════════════════════════════════════════════════════════════
-export default function Stap8_3D({ project }) {
+export default function Stap8_3D({ project, boringConfig }) {
   const containerRef = useRef(null);
   const viewerRef    = useRef(null);
 
@@ -195,7 +195,8 @@ export default function Stap8_3D({ project }) {
             const [la,lo]=positieOpLijn(boorCoords,p.afstand);
             return[lo,la,napH(p.hoogte-d)];
           });
-          addB({polyline:{positions:C.Cartesian3.fromDegreesArrayHeights(pts),width:7,
+          const cesiumBoorWidth = boringConfig?.boringD ? Math.max(5, Math.min(22, Math.round(boringConfig.boringD / 18))) : 7;
+          addB({polyline:{positions:C.Cartesian3.fromDegreesArrayHeights(pts),width:cesiumBoorWidth,
             material:new C.PolylineGlowMaterialProperty({glowPower:0.25,color:C.Color.fromCssColorString("#f97316")}),
             depthFailMaterial:new C.PolylineDashMaterialProperty({color:C.Color.fromCssColorString("#f97316").withAlpha(0.65),dashLength:16}),
             arcType:C.ArcType.NONE}});

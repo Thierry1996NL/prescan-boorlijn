@@ -47,7 +47,7 @@ const MACHINE_CONFIG={
 };
 
 // ─── Hoofd-component ──────────────────────────────────────────────
-export default function MachineLocatie({project,onSave}){
+export default function MachineLocatie({project,onSave,boringConfig}){
   const mapRef=useRef(null);
   const kaartRef=useRef(null);
   const [kaartInstantie,setKaartInstantie]=useState(null);
@@ -130,7 +130,8 @@ export default function MachineLocatie({project,onSave}){
 
       // Read-only boorlijn
       if(boorCoords.length>=2){
-        L.polyline(boorCoords,{color:"#f97316",weight:4,opacity:0.8,interactive:false}).addTo(kaart);
+        const boorGewicht = boringConfig?.boringD ? Math.max(4, Math.min(18, Math.round(boringConfig.boringD / 25))) : 4;
+        L.polyline(boorCoords,{color:"#f97316",weight:boorGewicht,opacity:0.8,interactive:false}).addTo(kaart);
         L.circleMarker(boorCoords[0],{radius:8,fillColor:"#16a34a",fillOpacity:1,color:"white",weight:2,interactive:false}).addTo(kaart);
         L.circleMarker(boorCoords[boorCoords.length-1],{radius:8,fillColor:"#dc2626",fillOpacity:1,color:"white",weight:2,interactive:false}).addTo(kaart);
         try{kaart.fitBounds(L.latLngBounds(boorCoords).pad(0.25),{maxZoom:16});}catch{}

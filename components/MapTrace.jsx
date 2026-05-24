@@ -109,7 +109,7 @@ const OVERLAYS = [
 ];
 
 // ════════════════════════════════════════════════════════════════
-export default function MapTrace({ project, onTraceOpgeslagen }) {
+export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const mapRef        = useRef(null);
   const kaartRef      = useRef(null);
   const polyRef       = useRef(null);
@@ -324,7 +324,8 @@ export default function MapTrace({ project, onTraceOpgeslagen }) {
     try {
       if (polyRef.current) { kaart.removeLayer(polyRef.current); polyRef.current = null; }
       if (pts.length < 2) return;
-      const lijn = L.polyline(pts, { color:"#2563eb", weight:5, opacity:0.9, zIndex:500 }).addTo(kaart);
+      const boorGewicht = boringConfig?.boringD ? Math.max(4, Math.min(18, Math.round(boringConfig.boringD / 25))) : 5;
+      const lijn = L.polyline(pts, { color:"#2563eb", weight:boorGewicht, opacity:0.9, zIndex:500 }).addTo(kaart);
       // Klik op lijn om punt in te voegen
       lijn.on("click", e => {
         L.DomEvent.stopPropagation(e);
