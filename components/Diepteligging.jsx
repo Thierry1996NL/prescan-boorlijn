@@ -75,7 +75,6 @@ function berekenSegmenten(dieptePunten,profielPunten){
 
 // ─── Dwarsprofiel SVG (2D interactief) ───────────────────────────
 function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringConfig,traceGeojson,locked=false}){
-  const boringD = boringConfig?.boringD;
   const svgRef=useRef(null);
   const dragRef=useRef(null);
 
@@ -98,9 +97,6 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
 
   const xP=d=>M.l+d/totM*plotW;
   const yP=h=>M.t+(hMax-h)/hSpan*plotH;
-
-  // Buisdiameter in SVG-pixels: boringD mm → meter → pixels op y-as
-  const tubeStrokeW = boringD ? Math.max(3, Math.min(28, (boringD / 1000) / hSpan * plotH)) : 3;
 
   // Boorpad: rechte lijnen ALLEEN tussen waypoints (geen curve door alle AHN-punten)
   const sortedWP=[...dieptePunten]
@@ -125,8 +121,9 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
     return{mx,my,len,hoek,kleur,pijl};
   });
   const boorPolyline=boorWaypoints.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
-  // SVG-coördinaten van boorpad voor leader-snapping
-  const boorPadSVGPts = boorWaypoints.map(p => ({x: xP(p.afstand), y: yP(p.hoogte)}));
+  const boorPadSVGPts=boorWaypoints.map(p=>({x:xP(p.afstand),y:yP(p.hoogte)}));
+  const boringD=boringConfig?.boringD;
+  const tubeStrokeW=boringD?Math.max(3,Math.min(28,(boringD/1000)/hSpan*plotH)):3;
   const maaiveldPts=geldig.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const vlakPts=`${xP(geldig[0].afstand)},${H-M.b} ${maaiveldPts} ${xP(geldig[geldig.length-1].afstand)},${H-M.b}`;
 
@@ -229,25 +226,12 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
 
         {/* Boorpad klikzone */}
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={10} opacity={0} style={{cursor:"copy"}} onClick={handleBoorpadKlik}/>
-        {/* Tube: gevulde band op schaal van boring diameter */}
+        {/* Tube band op schaal van boringdiameter */}
         <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={tubeStrokeW} strokeLinecap="round" opacity={0.18}/>
-        {/* Buiswand */}
-        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={tubeStrokeW} strokeLinecap="round" opacity={0} fill="none"
-          stroke="#f97316" style={{filter:"none"}}/>
-        {/* Centerline */}
-        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={Math.max(1.5, tubeStrokeW * 0.12)} strokeDasharray="8,4" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
-        {/* Ø-label midden op de boor */}
-        {boringD && boorWaypoints.length >= 2 && (() => {
-          const mid = boorWaypoints[Math.floor(boorWaypoints.length / 2)];
-          return (
-            <g>
-              <rect x={xP(mid.afstand)-24} y={yP(mid.hoogte)-8} width={48} height={13} rx={3}
-                    fill="white" fillOpacity={0.9} stroke="#f97316" strokeWidth={0.8}/>
-              <text x={xP(mid.afstand)} y={yP(mid.hoogte)+1.5} textAnchor="middle"
-                    fontSize={8} fill="#ea580c" fontWeight="700">Ø{boringD}mm</text>
-            </g>
-          );
-        })()}
+        {/* Middellijn */}
+        <polyline points={boorPolyline} fill="none" stroke="#f97316" strokeWidth={Math.max(1.5,tubeStrokeW*0.12)} strokeDasharray="8,4" strokeLinecap="round" onClick={handleBoorpadKlik} style={{cursor:"copy"}}/>
+        {/* Ø-label */}
+        {boringD&&boorWaypoints.length>=2&&(()=>{const mid=boorWaypoints[Math.floor(boorWaypoints.length/2)];return(<g><rect x={xP(mid.afstand)-24} y={yP(mid.hoogte)-8} width={48} height={13} rx={3} fill="white" fillOpacity={0.9} stroke="#f97316" strokeWidth={0.8}/><text x={xP(mid.afstand)} y={yP(mid.hoogte)+1.5} textAnchor="middle" fontSize={8} fill="#ea580c" fontWeight="700">Ø{boringD}mm</text></g>);})()}
 
         {/* Segment labels: lengte + hoek op elke lijn */}
         {segmentLabels.map((sl,i)=>(
@@ -306,7 +290,7 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         <text x={M.l-42} y={H/2} fontSize={10} fill="#6b7280" transform={`rotate(-90,${M.l-42},${H/2})`} textAnchor="middle">Hoogte (m NAP)</text>
         <text x={W/2} y={H-2} textAnchor="middle" fontSize={10} fill="#6b7280">Afstand langs boorlijn (m)</text>
         <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="#e5e7eb" strokeWidth={1}/>
-        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} boorPadPts={boorPadSVGPts} locked={locked} x={W-170} y={8}/>}
+        {boringD&&<BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} boorPadPts={boorPadSVGPts} locked={locked} x={W-170} y={8}/>}
       </svg>
     </div>
   );
@@ -496,13 +480,19 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
     }catch{return null;}
   });
   const [klicKruisingen,setKlicKruisingen]=useState([]);
-  const mapLS6 = () => { try { return JSON.parse(localStorage.getItem(`map_s_${project?.id}_6`)||'null'); } catch { return null; } };
-  const mapSave6 = (p) => { try { const SK=`map_s_${project?.id}_6`; const cur=JSON.parse(localStorage.getItem(SK)||'{}'); localStorage.setItem(SK,JSON.stringify({...cur,...p})); } catch {} };
-  const _ls6 = mapLS6();
+  // ── Kaartinstellingen localStorage ──────────────────────────────
+  const mapLS6=()=>{try{return JSON.parse(localStorage.getItem(`map_s_${project?.id}_6`)||'null');}catch{return null;}};
+  const mapSave6=(p)=>{try{const SK=`map_s_${project?.id}_6`;const cur=JSON.parse(localStorage.getItem(SK)||'{}');localStorage.setItem(SK,JSON.stringify({...cur,...p}));}catch{}};
+  const _ls6=mapLS6();
   const [actieveAchtergrond,setActieveAchtergrond]=useState(_ls6?.ag??"standaard");
   const [actieveOverlays,setActieveOverlays]=useState(_ls6?.ov??{klic:true,kadaster:false,bgt:false});
-  useEffect(()=>{ mapSave6({ag:actieveAchtergrond}); },[actieveAchtergrond]);
-  useEffect(()=>{ mapSave6({ov:actieveOverlays}); },[actieveOverlays]);
+  useEffect(()=>{mapSave6({ag:actieveAchtergrond});},[actieveAchtergrond]);
+  useEffect(()=>{mapSave6({ov:actieveOverlays});},[actieveOverlays]);
+
+  // ── Vergrendeling ────────────────────────────────────────────────
+  const [locked,setLocked]=useState(()=>{try{const s=localStorage.getItem(`boor_lock_${project?.id}_6`);return s?JSON.parse(s):false;}catch{return false;}});
+  const lockedRef=useRef(locked);
+  useEffect(()=>{try{localStorage.setItem(`boor_lock_${project?.id}_6`,JSON.stringify(locked));lockedRef.current=locked;}catch{};},[locked]);
   const [kaartInstantie,setKaartInstantie]=useState(null);
   const profielRef=useRef([]); // voor kaart-labels met NAP waarde
   boorCoordRef.current=boorCoords;
@@ -540,11 +530,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
       await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js");
       await ls("https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.js");
       if(!actief||!mapRef.current)return;
-      const L=window.L,crs=maakRdCrs(L),_ls=mapLS6();
-      const center=_ls?.c??boorCoordRef.current[0]??[52.15,5.39];
-      const kaart=L.map(mapRef.current,{crs,center,zoom:_ls?.z??14,maxZoom:22,zoomControl:true});
-      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave6({z:kaart.getZoom(),c:[c.lat,c.lng]});});
+      const L=window.L,crs=maakRdCrs(L);
+      const _lsMap=mapLS6();
+      const center=_lsMap?.c??boorCoordRef.current[0]??[52.15,5.39];
+      const kaart=L.map(mapRef.current,{crs,center,zoom:_lsMap?.z??14,maxZoom:22,zoomControl:true});
       kaartRef.current=kaart;
+      kaart.on("moveend zoomend",()=>{const c=kaart.getCenter();mapSave6({z:kaart.getZoom(),c:[c.lat,c.lng]});});
       if(lockedRef.current){["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"].forEach(m=>{if(kaart[m])kaart[m].disable();});}
       setKaartInstantie(kaart); // triggert KlicAchtergrond component
 
@@ -640,12 +631,6 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   },[]);
 
   useEffect(()=>{kaartRef.current?._updateBoorLaag?.(boorCoords);},[boorCoords]);
-
-  useEffect(()=>{
-    const map=kaartRef.current; if(!map)return;
-    ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"]
-      .forEach(m=>{if(map[m])locked?map[m].disable():map[m].enable();});
-  },[locked]);
   useEffect(()=>{ profielRef.current=profielPunten; },[profielPunten]);
   // Sync dieptepunten-markers op kaart — gebruik kaartInstantie (state) zodat
   // dit ALTIJD na Leaflet init triggert, ook bij eerste render
@@ -657,6 +642,11 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   useEffect(()=>{
     Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));
   },[actieveOverlays]);
+  useEffect(()=>{
+    const map=kaartRef.current;if(!map)return;
+    ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"]
+      .forEach(m=>{if(map[m])locked?map[m].disable():map[m].enable();});
+  },[locked]);
   // Na rotatieverandering: vertel Leaflet dat de container-grootte is gewijzigd
   // zodat tiles voor het volledige 200%×200% gebied geladen worden
   useEffect(()=>{
@@ -671,13 +661,6 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   },[boorCoords]);
 
   const [opslaanBezig,  setOpslaanBezig]  = useState(false);
-  const [locked,        setLocked]        = useState(() => {
-    try { const s = localStorage.getItem(`boor_lock_${project?.id}_6`); return s ? JSON.parse(s) : false; } catch { return false; }
-  });
-  const lockedRef = useRef(locked);
-  useEffect(() => {
-    try { localStorage.setItem(`boor_lock_${project?.id}_6`, JSON.stringify(locked)); lockedRef.current = locked; } catch {}
-  }, [locked]);
   const [opslaanStatus, setOpslaanStatus] = useState(null); // "ok" | "fout" | null
 
   const handleOpslaan = useCallback(async()=>{
@@ -830,6 +813,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
               }
             </div>
           </div>
+          <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
         </div>
       </div>
 
