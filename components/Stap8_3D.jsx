@@ -417,7 +417,7 @@ export default function Stap8_3D({ project, boringConfig }) {
         {/* Cesium container */}
         <div className="flex-1 min-w-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-black relative">
           <div ref={containerRef} style={{width:"100%",height:"100%"}}/>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} />
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} />
           {status==="laden"&&(
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10">
               <div className="text-center">
