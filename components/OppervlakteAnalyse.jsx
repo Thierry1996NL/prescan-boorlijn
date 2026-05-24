@@ -338,6 +338,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const [voortgang,  setVoortgang]  = useState(0);
   const [totaalPunten,setTotaalPunten]=useState(0);
   const [opgeslagen, setOpgeslagen] = useState(false);
+  const [opslaanBezig, setOpslaanBezig] = useState(false);
   const [stapGrootte,setStagGrootte]= useState(5);
   const [legendaOpen,setLegendaOpen]= useState(true);
   const [geselecteerdPunt, setGeselecteerdPunt] = useState(null);
@@ -900,6 +901,25 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 bg-orange-500 text-white hover:bg-orange-600">
                 {bezig?(<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</>):(<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>{analysePunten.length>0?"Heranalyseren":"Analyse uitvoeren"}</>)}
               </button>
+              {/* Opslaan knop */}
+              {analysePunten.length > 0 && (
+                <button
+                  onClick={async () => {
+                    if(opslaanBezig) return;
+                    setOpslaanBezig(true);
+                    try {
+                      await onAnalyseOpgeslagen?.(analysePunten).catch(console.error);
+                      setOpgeslagen(true); setTimeout(()=>setOpgeslagen(false), 3000);
+                    } finally { setOpslaanBezig(false); }
+                  }}
+                  disabled={opslaanBezig}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                  {opslaanBezig
+                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Opslaan…</>
+                    : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Opslaan</>
+                  }
+                </button>
+              )}
               {bezig&&(<><div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden"><div className="h-1.5 bg-orange-500 rounded-full transition-all" style={{width:`${voortgang}%`}}/></div><p className="text-xs text-gray-400 text-center">{voortgang}% · {Math.round(voortgang/100*totaalPunten)}/{totaalPunten}</p></>)}
               {opgeslagen&&<p className="text-xs text-green-600 text-center">✓ Opgeslagen</p>}
               <button onClick={testBgtQuery}

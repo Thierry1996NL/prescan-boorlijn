@@ -74,7 +74,7 @@ function berekenSegmenten(dieptePunten,profielPunten){
 }
 
 // ─── Dwarsprofiel SVG (2D interactief) ───────────────────────────
-function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringConfig,traceGeojson}){
+function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringConfig,traceGeojson,locked=false}){
   const boringD = boringConfig?.boringD;
   const svgRef=useRef(null);
   const dragRef=useRef(null);
@@ -842,7 +842,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
         <div className="p-3" style={{position:"relative"}}>
           <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)} style={{top:4,right:4}}/>
           <div style={locked?{pointerEvents:"none",userSelect:"none"}:{}}>
-            <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig} traceGeojson={project?.boortrace_geojson}/>
+            <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig} traceGeojson={project?.boortrace_geojson} locked={locked}/>
           </div>
         </div>
       </div>
