@@ -663,7 +663,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   },[boorCoords]);
 
   const [opslaanBezig,  setOpslaanBezig]  = useState(false);
-  const [locked,        setLocked]        = useState(false);
+  const [locked,        setLocked]        = useState(() => {
+    try { const s = localStorage.getItem(`boor_lock_${project?.id}_6`); return s ? JSON.parse(s) : false; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`boor_lock_${project?.id}_6`, JSON.stringify(locked)); } catch {}
+  }, [locked]);
   const [opslaanStatus, setOpslaanStatus] = useState(null); // "ok" | "fout" | null
 
   const handleOpslaan = useCallback(async()=>{

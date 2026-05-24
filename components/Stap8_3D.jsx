@@ -87,7 +87,12 @@ export default function Stap8_3D({ project, boringConfig }) {
   const [tokenInput, setTokenInput] = useState(ionToken);
   const [tokenSaved, setTokenSaved] = useState(false);
   const [status, setStatus] = useState("init");
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState(() => {
+    try { const s = localStorage.getItem(`boor_lock_${project?.id}_8`); return s ? JSON.parse(s) : false; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`boor_lock_${project?.id}_8`, JSON.stringify(locked)); } catch {}
+  }, [locked]);
   const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, bag3d:true });
   const [bag3dStatus, setBag3dStatus] = useState(null);
   const [bag3dTeller, setBag3dTeller] = useState(0);

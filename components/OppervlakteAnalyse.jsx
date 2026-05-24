@@ -301,7 +301,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const s3=(() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
   const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond??"brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays??[]);
-  const [locked,             setLocked]             = useState(false);
+  const [locked,             setLocked]             = useState(() => {
+    try { const s = localStorage.getItem(`boor_lock_${project?.id}_5`); return s ? JSON.parse(s) : false; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`boor_lock_${project?.id}_5`, JSON.stringify(locked)); } catch {}
+  }, [locked]);
   const actOvRef = useRef(s3.__overlays??[]);
   actOvRef.current = actieveOverlays;
 

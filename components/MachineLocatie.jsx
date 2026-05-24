@@ -52,7 +52,12 @@ export default function MachineLocatie({project,onSave,boringConfig}){
   const mapRef=useRef(null);
   const kaartRef=useRef(null);
   const [kaartInstantie,setKaartInstantie]=useState(null);
-  const [locked,setLocked]=useState(false);
+  const [locked,setLocked]=useState(() => {
+    try { const s = localStorage.getItem(`boor_lock_${project?.id}_7`); return s ? JSON.parse(s) : false; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`boor_lock_${project?.id}_7`, JSON.stringify(locked)); } catch {}
+  }, [locked]);
 
   const [boorCoords]=useState(()=>{
     try{const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[];}catch{return[];}

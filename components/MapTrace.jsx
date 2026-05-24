@@ -130,7 +130,12 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const [opgeslagen,     setOpgeslagen]     = useState(false);
   const [opslaat,        setOpslaat]        = useState(false);
   const [verwijdert,     setVerwijdert]     = useState(false);
-  const [locked,         setLocked]         = useState(false);
+  const [locked,         setLocked]         = useState(() => {
+    try { const s = localStorage.getItem(`boor_lock_${project?.id}_4`); return s ? JSON.parse(s) : false; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`boor_lock_${project?.id}_4`, JSON.stringify(locked)); } catch {}
+  }, [locked]);
   const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
   const [legendaOpen,    setLegendaOpen]    = useState(true);
