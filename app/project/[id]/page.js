@@ -14,6 +14,7 @@ const MachineLocatie   = dynamic(() => import("@/components/MachineLocatie"),   
 const Stap8_3D         = dynamic(() => import("@/components/Stap8_3D"),         { ssr: false });
 import BoringConfigurator from "@/components/BoringConfigurator";
 import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_COLORS } from "@/components/BoringSVG";
+import Eindontwerp from "@/components/Eindontwerp";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -603,86 +604,8 @@ export default function ProjectDetailPagina() {
         );
 
       // ── Stap 9: Eindontwerp ────────────────────────────────────
-      case 9: {
-        const bc9  = boringConfig;
-        const res9 = bc9?.items?.length ? computeBoring(bc9.items) : null;
-        const machine9 = BORING_MACHINES.find(m => m.id === bc9?.machine);
-        return (
-          <div className="space-y-5">
-            <p className="text-sm text-gray-500 max-w-2xl">Read-only overzicht van het volledige ontwerp.</p>
-            <div className="bg-white border border-gray-200 rounded-xl max-w-2xl">
-              <div className="px-5 py-3 border-b border-gray-100">
-                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Projectinformatie</h3>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {[
-                  { label: "Project",       waarde: project.naam },
-                  { label: "Opdrachtgever", waarde: project.opdrachtgever },
-                  { label: "Locatie",       waarde: project.locatie },
-                  { label: "Boorlengte",    waarde: project.boorlengte_m ? `${project.boorlengte_m} m`  : "—" },
-                  { label: "Status",        waarde: project.status       ?? "—" },
-                ].map(({ label, waarde }, i) => (
-                  <div key={i} className="flex items-start justify-between gap-6 px-5 py-2.5">
-                    <span className="text-xs text-gray-500 font-medium flex-shrink-0">{label}</span>
-                    <span className="text-xs text-gray-900 text-right">{waarde}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Boring configuratie samenvatting */}
-            {res9 && (
-              <div className="bg-white border border-gray-200 rounded-xl max-w-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boring & inhoud</h3>
-                </div>
-                <div className="flex gap-6 p-4 items-start">
-                  <div className="flex-shrink-0">
-                    <BoringSVG res={res9} customPos={bc9?.customPos ?? {}} size={160} showLabel={true}/>
-                  </div>
-                  <div className="flex-1 space-y-2 pt-1">
-                    {[
-                      ["Vereiste boring",   `Ø${res9.boringD} mm`],
-                      ["Productbundel",     `Ø${Math.round(res9.bundleD)} mm`],
-                      ["Machine",           machine9 ? `Vermeer ${machine9.model}` : "—"],
-                      ["Aantal items",      `${bc9.items.length}`],
-                    ].map(([k,v]) => (
-                      <div key={k} className="flex justify-between">
-                        <span className="text-xs text-gray-400">{k}</span>
-                        <span className="text-xs font-semibold text-gray-800">{v}</span>
-                      </div>
-                    ))}
-                    <div className="pt-1 border-t border-gray-100">
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {bc9.items.map((item, idx) => {
-                          const color = item.type === "mb" ? BORING_COLORS[idx % BORING_COLORS.length] : (BORING_CATS.find(c => c.items.some(i => i.label === item.label))?.color || "#6B7280");
-                          const label = item.type === "mb" ? `PE${item.dn}` : item.label;
-                          return (
-                            <div key={item.id} className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
-                              <div className="w-1.5 h-1.5 rounded-full" style={{background: color}}/>
-                              <span className="text-xs text-gray-600">{label}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden max-w-4xl">
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boorlijn & dwarsprofiel</h3>
-                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">read-only</span>
-              </div>
-              <div className="p-4 pointer-events-none opacity-90">
-                <MapTrace projectId={id} project={project} readOnly={true} onTraceOpgeslagen={() => {}} />
-              </div>
-            </div>
-          </div>
-        );
-      }
+      case 9:
+        return <Eindontwerp project={project} boringConfig={boringConfig} />;
 
       // ── Stap 10–13: Nog niet uitgewerkt ──────────────────────
       default:
