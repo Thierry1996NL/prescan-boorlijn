@@ -74,7 +74,7 @@ function berekenSegmenten(dieptePunten,profielPunten){
 }
 
 // ─── Dwarsprofiel SVG (2D interactief) ───────────────────────────
-function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringConfig}){
+function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen,totM,onHoverAfstand,onHoverLeave,boringConfig,traceGeojson}){
   const boringD = boringConfig?.boringD;
   const svgRef=useRef(null);
   const dragRef=useRef(null);
@@ -304,7 +304,7 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         <text x={M.l-42} y={H/2} fontSize={10} fill="#6b7280" transform={`rotate(-90,${M.l-42},${H/2})`} textAnchor="middle">Hoogte (m NAP)</text>
         <text x={W/2} y={H-2} textAnchor="middle" fontSize={10} fill="#6b7280">Afstand langs boorlijn (m)</text>
         <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="#e5e7eb" strokeWidth={1}/>
-        {boringD && <BoorLabelSVG boringConfig={boringConfig} x={W-170} y={8}/>}
+        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} x={W-170} y={8}/>}
       </svg>
     </div>
   );
@@ -817,7 +817,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
           <span className="text-xs text-gray-400">{profielPunten.filter(p=>p.hoogte!==null).length} meetpunten · AHN4 · hover = positie op kaart</span>
         </div>
         <div className="p-3">
-          <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig}/>
+          <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig} traceGeojson={project?.boortrace_geojson}/>
         </div>
       </div>
 

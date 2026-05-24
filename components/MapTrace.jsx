@@ -801,7 +801,7 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
         <div ref={mapRef} className="w-full h-full rounded-xl border border-gray-200 overflow-hidden shadow-sm" />
 
         {/* Versleepbaar boring-label */}
-        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} />
+        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} />
 
         {/* Laadspinner over kaart */}
         {isLaden && (

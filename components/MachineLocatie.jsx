@@ -384,7 +384,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
             transition:"transform 0.5s ease",transformOrigin:"center center"}}>
             <div ref={mapRef} style={{width:"100%",height:"100%"}}/>
           </div>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} initialPos={{x:16,y:60}}/>
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} initialPos={{x:16,y:60}}/>
           {plaatsModus&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
               <div className="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs font-semibold shadow border border-gray-200" style={{color:MACHINE_CONFIG[plaatsModus]?.kleur}}>
