@@ -1,5 +1,5 @@
 "use client";
-import BoorLabel from "@/components/BoorLabel";
+import BoorLabel, { LockButton } from "@/components/BoorLabel";
 import { useEffect, useRef, useState, useMemo } from "react";
 
 // ─── RD New → WGS84 ──────────────────────────────────────────────
@@ -87,6 +87,7 @@ export default function Stap8_3D({ project, boringConfig }) {
   const [tokenInput, setTokenInput] = useState(ionToken);
   const [tokenSaved, setTokenSaved] = useState(false);
   const [status, setStatus] = useState("init");
+  const [locked, setLocked] = useState(false);
   const [lagen, setLagen] = useState({ boorlijn:true, klic:true, machines:true, bag3d:true });
   const [bag3dStatus, setBag3dStatus] = useState(null);
   const [bag3dTeller, setBag3dTeller] = useState(0);
@@ -360,6 +361,13 @@ export default function Stap8_3D({ project, boringConfig }) {
     v._bag3dEntities?.forEach(e=>{e.show=lagen.bag3d;});
   },[lagen]);
 
+  // Vergrendeling CesiumJS
+  useEffect(()=>{
+    const ctrl=viewerRef.current?.scene?.screenSpaceCameraController; if(!ctrl)return;
+    ctrl.enableRotate=!locked;ctrl.enableZoom=!locked;
+    ctrl.enableTranslate=!locked;ctrl.enableTilt=!locked;ctrl.enableLook=!locked;
+  },[locked]);
+
   const herlaad=()=>{if(viewerRef.current){try{viewerRef.current.destroy();}catch{}viewerRef.current=null;}setStatus("init");setIonToken(tokenInput);};
 
   return(
@@ -417,7 +425,8 @@ export default function Stap8_3D({ project, boringConfig }) {
         {/* Cesium container */}
         <div className="flex-1 min-w-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-black relative">
           <div ref={containerRef} style={{width:"100%",height:"100%"}}/>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} />
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} projectId={project?.id} step="8" />
+          <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
           {status==="laden"&&(
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10">
               <div className="text-center">

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import KlicAchtergrond from "@/components/KlicAchtergrond";
-import { BoorLabelSVG } from "@/components/BoorLabel";
+import { BoorLabelSVG, LockButton } from "@/components/BoorLabel";
 
 // ─── Geometry helpers ─────────────────────────────────────────────
 function afstandM(p1,p2){const R=6371000,dLat=(p2[0]-p1[0])*Math.PI/180,dLng=(p2[1]-p1[1])*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(p1[0]*Math.PI/180)*Math.cos(p2[0]*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
@@ -632,6 +632,12 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   },[]);
 
   useEffect(()=>{kaartRef.current?._updateBoorLaag?.(boorCoords);},[boorCoords]);
+
+  useEffect(()=>{
+    const map=kaartRef.current; if(!map)return;
+    ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"]
+      .forEach(m=>{if(map[m])locked?map[m].disable():map[m].enable();});
+  },[locked]);
   useEffect(()=>{ profielRef.current=profielPunten; },[profielPunten]);
   // Sync dieptepunten-markers op kaart — gebruik kaartInstantie (state) zodat
   // dit ALTIJD na Leaflet init triggert, ook bij eerste render
@@ -657,6 +663,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
   },[boorCoords]);
 
   const [opslaanBezig,  setOpslaanBezig]  = useState(false);
+  const [locked,        setLocked]        = useState(false);
   const [opslaanStatus, setOpslaanStatus] = useState(null); // "ok" | "fout" | null
 
   const handleOpslaan = useCallback(async()=>{
@@ -818,8 +825,11 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave,bo
           <h3 className="text-sm font-semibold text-gray-900">⛰ Dwarsprofiel langs boorlijn</h3>
           <span className="text-xs text-gray-400">{profielPunten.filter(p=>p.hoogte!==null).length} meetpunten · AHN4 · hover = positie op kaart</span>
         </div>
-        <div className="p-3">
-          <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig} traceGeojson={project?.boortrace_geojson}/>
+        <div className="p-3" style={{position:"relative"}}>
+          <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)} style={{top:4,right:4}}/>
+          <div style={locked?{pointerEvents:"none",userSelect:"none"}:{}}>
+            <Dwarsprofiel profielPunten={profielPunten} dieptePunten={dieptePunten} setDieptePunten={setDieptePunten} klicKruisingen={klicKruisingen} totM={totM} onHoverAfstand={handleHoverAfstand} onHoverLeave={()=>kaartRef.current?._verwijderHoverMarker?.()} boringConfig={boringConfig} traceGeojson={project?.boortrace_geojson}/>
+          </div>
         </div>
       </div>
 

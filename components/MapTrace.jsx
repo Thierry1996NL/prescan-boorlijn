@@ -1,5 +1,5 @@
 "use client";
-import BoorLabel from "@/components/BoorLabel";
+import BoorLabel, { LockButton } from "@/components/BoorLabel";
 import { useEffect, useRef, useState } from "react";
 
 // ─── RD New → WGS84 ──────────────────────────────────────────────
@@ -130,6 +130,7 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const [opgeslagen,     setOpgeslagen]     = useState(false);
   const [opslaat,        setOpslaat]        = useState(false);
   const [verwijdert,     setVerwijdert]     = useState(false);
+  const [locked,         setLocked]         = useState(false);
   const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
   const [legendaOpen,    setLegendaOpen]    = useState(true);
@@ -301,6 +302,14 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       if (kaartRef.current) { kaartRef.current.remove(); kaartRef.current = null; }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Vergrendeling ────────────────────────────────────────────────
+  useEffect(() => {
+    const map = kaartRef.current;
+    if (!map) return;
+    const methods = ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"];
+    methods.forEach(m => { if(map[m]) locked ? map[m].disable() : map[m].enable(); });
+  }, [locked]);
 
   // ── Achtergrond en overlay wisselen ─────────────────────────────
   function wisselAchtergrond(id) {
@@ -801,7 +810,8 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
         <div ref={mapRef} className="w-full h-full rounded-xl border border-gray-200 overflow-hidden shadow-sm" />
 
         {/* Versleepbaar boring-label */}
-        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} />
+        <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="4" />
+        <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
 
         {/* Laadspinner over kaart */}
         {isLaden && (

@@ -1,5 +1,5 @@
 "use client";
-import BoorLabel from "@/components/BoorLabel";
+import BoorLabel, { LockButton } from "@/components/BoorLabel";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import KlicAchtergrond from "@/components/KlicAchtergrond";
 
@@ -52,6 +52,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
   const mapRef=useRef(null);
   const kaartRef=useRef(null);
   const [kaartInstantie,setKaartInstantie]=useState(null);
+  const [locked,setLocked]=useState(false);
 
   const [boorCoords]=useState(()=>{
     try{const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[];}catch{return[];}
@@ -245,6 +246,13 @@ export default function MachineLocatie({project,onSave,boringConfig}){
   useEffect(()=>{kaartRef.current?._wisselAchtergrond?.(actieveAchtergrond);},[actieveAchtergrond]);
   useEffect(()=>{Object.entries(actieveOverlays).forEach(([id,aan])=>kaartRef.current?._toggleOverlay?.(id,aan));},[actieveOverlays]);
 
+  // Vergrendeling
+  useEffect(()=>{
+    const map=kaartRef.current; if(!map)return;
+    ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"]
+      .forEach(m=>{if(map[m])locked?map[m].disable():map[m].enable();});
+  },[locked]);
+
   // Sync rotatie
   useEffect(()=>{
     kaartRef.current?._zetNoordPijlRotatie?.(geroteerd?rotatieDeg:0);
@@ -384,7 +392,8 @@ export default function MachineLocatie({project,onSave,boringConfig}){
             transition:"transform 0.5s ease",transformOrigin:"center center"}}>
             <div ref={mapRef} style={{width:"100%",height:"100%"}}/>
           </div>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} initialPos={{x:16,y:60}}/>
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="7" initialPos={{x:16,y:60}}/>
+          <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
           {plaatsModus&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
               <div className="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs font-semibold shadow border border-gray-200" style={{color:MACHINE_CONFIG[plaatsModus]?.kleur}}>

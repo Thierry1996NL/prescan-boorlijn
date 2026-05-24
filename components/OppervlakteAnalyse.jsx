@@ -1,5 +1,5 @@
 "use client";
-import BoorLabel from "@/components/BoorLabel";
+import BoorLabel, { LockButton } from "@/components/BoorLabel";
 import { useEffect, useRef, useState } from "react";
 
 // ─── BGT oppervlak typen ─────────────────────────────────────────
@@ -301,6 +301,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const s3=(() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
   const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond??"brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays??[]);
+  const [locked,             setLocked]             = useState(false);
   const actOvRef = useRef(s3.__overlays??[]);
   actOvRef.current = actieveOverlays;
 
@@ -545,6 +546,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
     })();
     return()=>{actief=false;if(kaartRef.current){kaartRef.current.remove();kaartRef.current=null;}};
   },[]);
+
+  // ── Vergrendeling ────────────────────────────────────────────────
+  useEffect(()=>{
+    const map=kaartRef.current; if(!map) return;
+    ["dragging","scrollWheelZoom","doubleClickZoom","boxZoom","keyboard","touchZoom"]
+      .forEach(m=>{if(map[m]) locked?map[m].disable():map[m].enable();});
+  },[locked]);
 
   // ── Teken analyse-punt markers op kaart ─────────────────────────
   useEffect(() => {
@@ -1075,7 +1083,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         {/* ── Kaart ──────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative">
           <div ref={mapRef} className="w-full h-full"/>
-          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} />
+          <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="5" />
+          <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
         </div>
       </div>
 
