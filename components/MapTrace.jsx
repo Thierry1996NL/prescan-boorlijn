@@ -145,12 +145,11 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const [actieveAchtergrond, setActieveAchtergrond] = useState(_ls4?.ag ?? s3.__achtergrond ?? "brt_standaard");
   const [actieveOverlays,    setActieveOverlays]    = useState(_ls4?.ov ?? s3.__overlays    ?? []);
   useEffect(() => { mapSave4({ag: actieveAchtergrond}); }, [actieveAchtergrond]);
-  useEffect(() => { mapSave4({ov: actieveOverlays}); }, [actieveOverlays]);  const [isLaden,        setIsLaden]        = useState(false);
+  useEffect(() => { mapSave4({ov: actieveOverlays}); }, [actieveOverlays]);
+  const [isLaden,        setIsLaden]        = useState(false);
   const [laadBericht,    setLaadBericht]    = useState("");
   const [legendaOpen,    setLegendaOpen]    = useState(true);
   const [klicLagen,      setKlicLagen]      = useState([]);
-  const [actieveAchtergrond, setActieveAchtergrond] = useState(s3.__achtergrond ?? "brt_standaard");
-  const [actieveOverlays,    setActieveOverlays]    = useState(s3.__overlays    ?? []);
   const actieveOverlaysRef = useRef(s3.__overlays ?? []);
 
   // Bestaand tracé uit project
