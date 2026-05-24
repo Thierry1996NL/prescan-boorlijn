@@ -125,6 +125,8 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
     return{mx,my,len,hoek,kleur,pijl};
   });
   const boorPolyline=boorWaypoints.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
+  // SVG-coördinaten van boorpad voor leader-snapping
+  const boorPadSVGPts = boorWaypoints.map(p => ({x: xP(p.afstand), y: yP(p.hoogte)}));
   const maaiveldPts=geldig.map(p=>`${xP(p.afstand)},${yP(p.hoogte)}`).join(" ");
   const vlakPts=`${xP(geldig[0].afstand)},${H-M.b} ${maaiveldPts} ${xP(geldig[geldig.length-1].afstand)},${H-M.b}`;
 
@@ -304,7 +306,7 @@ function Dwarsprofiel({profielPunten,dieptePunten,setDieptePunten,klicKruisingen
         <text x={M.l-42} y={H/2} fontSize={10} fill="#6b7280" transform={`rotate(-90,${M.l-42},${H/2})`} textAnchor="middle">Hoogte (m NAP)</text>
         <text x={W/2} y={H-2} textAnchor="middle" fontSize={10} fill="#6b7280">Afstand langs boorlijn (m)</text>
         <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="#e5e7eb" strokeWidth={1}/>
-        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} x={W-170} y={8}/>}
+        {boringD && <BoorLabelSVG boringConfig={boringConfig} traceGeojson={traceGeojson} boorPadPts={boorPadSVGPts} x={W-170} y={8}/>}
       </svg>
     </div>
   );

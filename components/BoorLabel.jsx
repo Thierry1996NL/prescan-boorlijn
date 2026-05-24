@@ -269,10 +269,11 @@ export default function BoorLabel({
   );
 }
 
+
 // ─── SVG BoorLabel (Diepteligging dwarsprofiel stap 6) ────────────────────────
-export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680, y:iy=8 }) {
+export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, boorPadPts, x:ix=680, y:iy=8 }) {
   const [lPos,   setLPos]   = useState({ x:ix, y:iy });
-  const [anchor, setAnchor] = useState({ x:ix-100, y:iy+80 });
+  const [anchor, setAnchor] = useState({ x:ix-80, y:iy+90 });
 
   const lengte = traceGeojson ? (traceLengteM(traceGeojson) ?? boorlengte) : boorlengte;
 
@@ -280,9 +281,8 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
   const { items=[], boringD } = boringConfig;
 
   const W = 150;
-  // Bereken hoogte dynamisch
-  const mbItems = items.filter(i=>i.type==="mb");
-  const dirItems = items.filter(i=>i.type!=="mb");
+  const mbItems   = items.filter(i=>i.type==="mb");
+  const dirItems  = items.filter(i=>i.type!=="mb");
   let contentRows = 0;
   mbItems.forEach(mb => { contentRows += 1 + (mb.contents?.length || 0); });
   contentRows += dirItems.length;
@@ -299,13 +299,26 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
 
   function startAnchor(e) {
     e.stopPropagation(); e.preventDefault();
-    const sx=e.clientX-anchor.x, sy=e.clientY-anchor.y;
-    const move = ev => setAnchor({x:ev.clientX-sx,y:ev.clientY-sy});
-    const up   = ()  => { window.removeEventListener("mousemove",move); window.removeEventListener("mouseup",up); };
+    const svg = e.currentTarget.ownerSVGElement;
+    function move(ev) {
+      if (svg && boorPadPts?.length >= 2) {
+        // SVG coordinate conversie (correct bij CSS-scaling)
+        const pt = svg.createSVGPoint();
+        pt.x = ev.clientX; pt.y = ev.clientY;
+        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+        const snapped = snapToPolyline(svgPt.x, svgPt.y, boorPadPts.map(p=>[p.x,p.y]));
+        setAnchor(snapped);
+      } else if (svg) {
+        const pt = svg.createSVGPoint();
+        pt.x = ev.clientX; pt.y = ev.clientY;
+        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+        setAnchor({x:svgPt.x, y:svgPt.y});
+      }
+    }
+    const up = () => { window.removeEventListener("mousemove",move); window.removeEventListener("mouseup",up); };
     window.addEventListener("mousemove",move); window.addEventListener("mouseup",up);
   }
 
-  // Render items als SVG tekst-rijen
   function renderItems() {
     const rows = [];
     let y = 60;
@@ -315,9 +328,7 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
         rows.push(
           <g key={`mb-${idx}`}>
             <circle cx={lPos.x+10} cy={lPos.y+y-3} r={3.5} fill={color}/>
-            <text x={lPos.x+17} y={lPos.y+y} fontSize={8} fontWeight="600" fill="#374151">
-              PE{item.dn} mantelbuis
-            </text>
+            <text x={lPos.x+17} y={lPos.y+y} fontSize={8} fontWeight="600" fill="#374151">PE{item.dn} mantelbuis</text>
           </g>
         );
         y += 12;
@@ -325,9 +336,7 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
           rows.push(
             <g key={`c-${idx}-${ci}`}>
               <circle cx={lPos.x+18} cy={lPos.y+y-3} r={2.5} fill={cableCat(c.label)}/>
-              <text x={lPos.x+24} y={lPos.y+y} fontSize={7.5} fill="#6B7280">
-                {shortLabel(c.label)}
-              </text>
+              <text x={lPos.x+24} y={lPos.y+y} fontSize={7.5} fill="#6B7280">{shortLabel(c.label)}</text>
             </g>
           );
           y += 11;
@@ -336,9 +345,7 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
         rows.push(
           <g key={`d-${idx}`}>
             <circle cx={lPos.x+10} cy={lPos.y+y-3} r={3} fill={color}/>
-            <text x={lPos.x+17} y={lPos.y+y} fontSize={8} fill="#374151">
-              {shortLabel(item.label)}
-            </text>
+            <text x={lPos.x+17} y={lPos.y+y} fontSize={8} fill="#374151">{shortLabel(item.label)}</text>
           </g>
         );
         y += 12;
@@ -349,31 +356,22 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
 
   return (
     <g>
-      {/* Leader */}
       <line x1={connX} y1={connY} x2={anchor.x} y2={anchor.y}
             stroke="#f97316" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.8}/>
-      {/* Ankerpunt — versleepbaar */}
       <g onMouseDown={startAnchor} style={{cursor:"ew-resize"}}>
-        <circle cx={anchor.x} cy={anchor.y} r={10}
-                fill="#f97316" fillOpacity={0.12} stroke="#f97316" strokeWidth={1.5}/>
-        <circle cx={anchor.x} cy={anchor.y} r={4}
-                fill="#f97316" stroke="white" strokeWidth={2}/>
+        <circle cx={anchor.x} cy={anchor.y} r={10} fill="#f97316" fillOpacity={0.12} stroke="#f97316" strokeWidth={1.5}/>
+        <circle cx={anchor.x} cy={anchor.y} r={4} fill="#f97316" stroke="white" strokeWidth={2}/>
       </g>
-
-      {/* Label achtergrond */}
       <g onMouseDown={startLabel} style={{cursor:"grab"}}>
         <rect x={lPos.x} y={lPos.y} width={W} height={H} rx={6}
               fill="white" stroke="#FDBA74" strokeWidth={1.5}
               style={{filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.1))"}}/>
-        {/* Header */}
         <rect x={lPos.x} y={lPos.y} width={W} height={17} rx={6} fill="#FFFBEB"/>
         <rect x={lPos.x} y={lPos.y+11} width={W} height={6} fill="#FFFBEB"/>
         <circle cx={lPos.x+11} cy={lPos.y+9} r={3.5} fill="#F97316"/>
         <text x={lPos.x+19} y={lPos.y+13} fontSize={8} fontWeight="700" fill="#B45309">Boring</text>
         <text x={lPos.x+W-6} y={lPos.y+13} fontSize={10} fill="#D1D5DB" textAnchor="end">⠿</text>
-        {/* Separator */}
         <line x1={lPos.x+6} y1={lPos.y+19} x2={lPos.x+W-6} y2={lPos.y+19} stroke="#FEF3C7" strokeWidth={1}/>
-        {/* Diameter */}
         <text x={lPos.x+8} y={lPos.y+30} fontSize={7} fill="#9CA3AF">Diameter</text>
         <text x={lPos.x+8} y={lPos.y+42} fontSize={12} fontWeight="800" fill="#1F2937">Ø{boringD} mm</text>
         {lengte && <>
@@ -381,12 +379,10 @@ export function BoorLabelSVG({ boringConfig, boorlengte, traceGeojson, x:ix=680,
           <text x={lPos.x+W/2+6} y={lPos.y+30} fontSize={7} fill="#9CA3AF">Lengte</text>
           <text x={lPos.x+W/2+6} y={lPos.y+42} fontSize={12} fontWeight="800" fill="#1F2937">{lengte} m</text>
         </>}
-        {/* Items */}
         {items.length > 0 && <>
           <line x1={lPos.x+6} y1={lPos.y+50} x2={lPos.x+W-6} y2={lPos.y+50} stroke="#F3F4F6"/>
           {renderItems()}
         </>}
-        {/* Koppelstip */}
         <circle cx={connX} cy={connY} r={4} fill="white" stroke="#F97316" strokeWidth={1.5}/>
       </g>
     </g>
