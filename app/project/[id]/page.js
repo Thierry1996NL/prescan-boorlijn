@@ -13,6 +13,7 @@ const Diepteligging    = dynamic(() => import("@/components/Diepteligging"),    
 const MachineLocatie   = dynamic(() => import("@/components/MachineLocatie"),   { ssr: false });
 const Stap8_3D         = dynamic(() => import("@/components/Stap8_3D"),         { ssr: false });
 import BoringConfigurator from "@/components/BoringConfigurator";
+import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_COLORS } from "@/components/BoringSVG";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -51,12 +52,22 @@ export default function ProjectDetailPagina() {
   const [uploadStatus,  setUploadStatus]  = useState({});
   const [uploadLaden,   setUploadLaden]   = useState({});
 
+  // boring configuratie (stap 1) — gedeeld met alle andere stappen
+  const [boringConfig, setBoringConfig] = useState(null);
+
   useEffect(() => { laadProject(); }, [id]);
 
   async function laadProject() {
     try {
       const data = await getProjectMetContext(id);
       setProject(data);
+      // Herstel boring configuratie uit opgeslagen JSON
+      if (data.boring_config) {
+        try {
+          const bc = typeof data.boring_config === "string" ? JSON.parse(data.boring_config) : data.boring_config;
+          setBoringConfig(bc);
+        } catch {}
+      }
       setBewerkData({
         naam:           data.naam           ?? "",
         opdrachtgever:  data.opdrachtgever  ?? "",
@@ -197,6 +208,87 @@ export default function ProjectDetailPagina() {
     catch { return []; }
   })();
 
+  // ── Boring info banner — getoond in stap 2 t/m 9 ─────────────
+  const BORING_MACHINES = [
+    {id:"d10x15",model:"D10x15 S3"},{id:"d20x22",model:"D20x22 S3"},
+    {id:"d23x30",model:"D23x30 S3"},{id:"d36x50",model:"D36x50 S3"},
+  ];
+
+  function BoringBanner({ showSVG = false }) {
+    if (!boringConfig?.boringD) return null;
+    const bc      = boringConfig;
+    const res     = bc.items?.length ? computeBoring(bc.items) : null;
+    const machine = BORING_MACHINES.find(m => m.id === bc.machine);
+
+    return (
+      <div className="bg-white border border-orange-200 rounded-xl mb-4 overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 bg-orange-50 border-b border-orange-100">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-orange-500"/>
+            <span className="text-xs font-semibold text-orange-700">Boring configuratie</span>
+          </div>
+          <div className="flex items-center gap-2 ml-2 flex-wrap">
+            <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">
+              Ø{bc.boringD} mm
+            </span>
+            {bc.items?.length > 0 && (
+              <span className="text-xs text-orange-600">{bc.items.length} item{bc.items.length !== 1 ? "s" : ""}</span>
+            )}
+            {machine && (
+              <span className="text-xs text-orange-600">· {machine.model}</span>
+            )}
+          </div>
+          <button onClick={() => setActieveStap(1)}
+                  className="ml-auto text-xs text-orange-500 hover:text-orange-700 underline">
+            Aanpassen →
+          </button>
+        </div>
+
+        {/* Items kleur-chips */}
+        {bc.items?.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-4 py-2.5">
+            {bc.items.map((item, idx) => {
+              if (item.type === "mb") {
+                const color = BORING_COLORS[idx % BORING_COLORS.length];
+                return (
+                  <div key={item.id} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-full px-2.5 py-1">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background: color}}/>
+                    <span className="text-xs text-gray-700 font-medium">PE{item.dn}</span>
+                    {item.contents.length > 0 && (
+                      <div className="flex gap-0.5 ml-0.5">
+                        {item.contents.map(c => {
+                          const cat = BORING_CATS.find(cc => cc.items.some(i => i.label === c.label));
+                          return <div key={c.id} className="w-1.5 h-1.5 rounded-full" style={{background: cat?.color || "#6B7280"}}/>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              const cat = BORING_CATS.find(c => c.items.some(i => i.label === item.label));
+              return (
+                <div key={item.id} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-full px-2.5 py-1">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background: cat?.color || "#6B7280"}}/>
+                  <span className="text-xs text-gray-700">{item.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Dwarsdoorsnede (alleen als showSVG=true) */}
+        {showSVG && res && (
+          <div className="border-t border-orange-100 py-3 px-4">
+            <p className="text-xs text-gray-500 font-medium mb-2">Dwarsdoorsnede boring</p>
+            <div className="flex justify-center">
+              <BoringSVG res={res} customPos={bc.customPos ?? {}} size={180} showLabel={true}/>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  Stap content
   // ═══════════════════════════════════════════════════════════════
@@ -292,7 +384,7 @@ export default function ProjectDetailPagina() {
             )}
 
             {/* ── Boring configurator ── */}
-            <BoringConfigurator projectId={id} initialConfig={project.boring_config} />
+            <BoringConfigurator projectId={id} initialConfig={project.boring_config} onConfigChange={setBoringConfig} />
           </div>
         );
 
@@ -450,11 +542,15 @@ export default function ProjectDetailPagina() {
       // ── Stap 4: Boorlijn tekenen ───────────────────────────────
       case 4:
         return (
-          <MapTrace
-            projectId={id}
-            project={project}
-            onTraceOpgeslagen={handleTraceOpgeslagen}
-          />
+          <div>
+            <BoringBanner />
+            <MapTrace
+              projectId={id}
+              project={project}
+              boringConfig={boringConfig}
+              onTraceOpgeslagen={handleTraceOpgeslagen}
+            />
+          </div>
         );
 
       // ── Stap 5: Oppervlakteanalyse ─────────────────────────────
@@ -471,29 +567,45 @@ export default function ProjectDetailPagina() {
       // ── Stap 6: Diepteligging ──────────────────────────────────
       case 6:
         return (
-          <Diepteligging
-            project={project}
-            onSave={async (updates) => {
-              await updateProject(id, updates);
-            }}
-          />
+          <div>
+            <BoringBanner showSVG={true} />
+            <Diepteligging
+              project={project}
+              boringConfig={boringConfig}
+              onSave={async (updates) => {
+                await updateProject(id, updates);
+              }}
+            />
+          </div>
         );
 
       // ── Stap 7: Machine & bentonietlocatie ─────────────────────
       case 7:
         return (
-          <MachineLocatie
-            project={project}
-            onSave={async (updates) => { await updateProject(id, updates); }}
-          />
+          <div>
+            <BoringBanner />
+            <MachineLocatie
+              project={project}
+              boringConfig={boringConfig}
+              onSave={async (updates) => { await updateProject(id, updates); }}
+            />
+          </div>
         );
 
       // ── Stap 8: 3D Ontwerp ─────────────────────────────────────
       case 8:
-        return <Stap8_3D project={project} />;
+        return (
+          <div>
+            <BoringBanner />
+            <Stap8_3D project={project} boringConfig={boringConfig} />
+          </div>
+        );
 
       // ── Stap 9: Eindontwerp ────────────────────────────────────
-      case 9:
+      case 9: {
+        const bc9  = boringConfig;
+        const res9 = bc9?.items?.length ? computeBoring(bc9.items) : null;
+        const machine9 = BORING_MACHINES.find(m => m.id === bc9?.machine);
         return (
           <div className="space-y-5">
             <p className="text-sm text-gray-500 max-w-2xl">Read-only overzicht van het volledige ontwerp.</p>
@@ -507,8 +619,6 @@ export default function ProjectDetailPagina() {
                   { label: "Opdrachtgever", waarde: project.opdrachtgever },
                   { label: "Locatie",       waarde: project.locatie },
                   { label: "Boorlengte",    waarde: project.boorlengte_m ? `${project.boorlengte_m} m`  : "—" },
-                  { label: "Diameter",      waarde: project.diameter_mm  ? `Ø${project.diameter_mm} mm` : "—" },
-                  { label: "Materiaal",     waarde: project.materiaal    ?? "—" },
                   { label: "Status",        waarde: project.status       ?? "—" },
                 ].map(({ label, waarde }, i) => (
                   <div key={i} className="flex items-start justify-between gap-6 px-5 py-2.5">
@@ -518,6 +628,48 @@ export default function ProjectDetailPagina() {
                 ))}
               </div>
             </div>
+
+            {/* Boring configuratie samenvatting */}
+            {res9 && (
+              <div className="bg-white border border-gray-200 rounded-xl max-w-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boring & inhoud</h3>
+                </div>
+                <div className="flex gap-6 p-4 items-start">
+                  <div className="flex-shrink-0">
+                    <BoringSVG res={res9} customPos={bc9?.customPos ?? {}} size={160} showLabel={true}/>
+                  </div>
+                  <div className="flex-1 space-y-2 pt-1">
+                    {[
+                      ["Vereiste boring",   `Ø${res9.boringD} mm`],
+                      ["Productbundel",     `Ø${Math.round(res9.bundleD)} mm`],
+                      ["Machine",           machine9 ? `Vermeer ${machine9.model}` : "—"],
+                      ["Aantal items",      `${bc9.items.length}`],
+                    ].map(([k,v]) => (
+                      <div key={k} className="flex justify-between">
+                        <span className="text-xs text-gray-400">{k}</span>
+                        <span className="text-xs font-semibold text-gray-800">{v}</span>
+                      </div>
+                    ))}
+                    <div className="pt-1 border-t border-gray-100">
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {bc9.items.map((item, idx) => {
+                          const color = item.type === "mb" ? BORING_COLORS[idx % BORING_COLORS.length] : (BORING_CATS.find(c => c.items.some(i => i.label === item.label))?.color || "#6B7280");
+                          const label = item.type === "mb" ? `PE${item.dn}` : item.label;
+                          return (
+                            <div key={item.id} className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
+                              <div className="w-1.5 h-1.5 rounded-full" style={{background: color}}/>
+                              <span className="text-xs text-gray-600">{label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden max-w-4xl">
               <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
                 <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Boorlijn & dwarsprofiel</h3>
@@ -529,6 +681,7 @@ export default function ProjectDetailPagina() {
             </div>
           </div>
         );
+      }
 
       // ── Stap 10–13: Nog niet uitgewerkt ──────────────────────
       default:
