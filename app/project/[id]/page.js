@@ -15,6 +15,7 @@ const Stap8_3D         = dynamic(() => import("@/components/Stap8_3D"),         
 import BoringConfigurator from "@/components/BoringConfigurator";
 import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_COLORS } from "@/components/BoringSVG";
 import Eindontwerp from "@/components/Eindontwerp";
+import PrescanBot from "@/components/PrescanBot";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -655,6 +656,15 @@ export default function ProjectDetailPagina() {
         <div className="flex-1 p-6 overflow-auto">
           {renderStap()}
         </div>
+
+        {/* AI-assistent — altijd beschikbaar per stap */}
+        {actieveStap >= 1 && actieveStap <= 9 && (
+          <PrescanBot
+            stap={actieveStap}
+            project={project}
+            boringConfig={boringConfig}
+          />
+        )}
       </main>
     </div>
   );
