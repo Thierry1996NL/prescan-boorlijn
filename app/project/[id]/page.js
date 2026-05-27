@@ -16,6 +16,7 @@ import BoringConfigurator from "@/components/BoringConfigurator";
 import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_COLORS } from "@/components/BoringSVG";
 import Eindontwerp from "@/components/Eindontwerp";
 import PrescanBot from "@/components/PrescanBot";
+import PrescanAnalyse from "@/components/PrescanAnalyse";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -655,6 +656,14 @@ export default function ProjectDetailPagina() {
         {/* Content */}
         <div className="flex-1 p-6 overflow-auto">
           {renderStap()}
+          {/* AI Analyse box — per stap */}
+          {actieveStap >= 1 && actieveStap <= 9 && (
+            <PrescanAnalyse
+              stap={actieveStap}
+              project={project}
+              boringConfig={boringConfig}
+            />
+          )}
         </div>
 
         {/* AI-assistent — altijd beschikbaar per stap */}

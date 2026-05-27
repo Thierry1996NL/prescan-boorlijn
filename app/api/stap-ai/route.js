@@ -1,65 +1,165 @@
-// app/api/stap-ai/route.js — Groq LLM met stap-context en kennisbank
+// app/api/stap-ai/route.js — Groq LLM met stap-context, kennisbank en automatische analyses
 // Vereist: GROQ_API_KEY in Vercel environment variables
-// Gratis model: llama-3.1-8b-instant | Beter model: llama-3.3-70b-versatile
 
-const GROQ_MODEL = "llama-3.3-70b-versatile"; // verander naar "llama-3.1-8b-instant" voor snelheid
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
-// ─── Stap-specifieke system prompts ──────────────────────────────────────────
+// ─── Chat prompts (voor vragen) ───────────────────────────────────────────────
 const STAP_PROMPTS = {
   1: `Je helpt bij boring-configuratie voor HDD. Geef advies over:
 - Vereiste boordiameter: SIKB-norm = bundel × 1.5, vulgraad mantelbuis max 40%
 - Machineselectie op basis van bodemtype, diameter en stangenrek
 - PE SDR-klassen, wanddiktes, treksterkte
 - Mantelbuis dimensionering voor kabeltrekking`,
-
   2: `Je helpt bij het laden van KLIC en leidingontwerpen. Geef advies over:
 - Bestandsformaten: GML, DXF, GeoJSON, KML, ZIP
 - NEN-1775 kleuren: LS=paars, MS=cyaan, Gas=geel, Water=donkerblauw, Data=groen
-- Kwaliteitscontrole KLIC-meldingen
-- Ontbrekende dieptegegevens signaleren`,
-
-  3: `Je helpt bij het interpreteren van KLIC-lagen en conflicten. Geef advies over:
-- Vrijwaringszones per leidingtype (CROW 500)
-- Risicoklassering: Rood/Oranje/Groen
-- Minimale kruisingshoeken en afstanden
-- NEN-1775 standaard interpretatie`,
-
-  4: `Je helpt bij het plannen van het boortracé. Geef advies over:
-- Minimale inslaghoek: 8-12° in zand, max 20°
-- Minimale afstand bebouwing: 3× boordiameter, min 1.5m
-- Stuurcapaciteit machine vs. boogstraal
-- Obstakelomleiding: watergangen, wegen, bomen`,
-
-  5: `Je helpt bij BGT-oppervlakteanalyse. Geef advies over:
-- Risiconiveaus: gesloten verharding=hoog, groen=laag, water=hoog
-- Vergunningsvereisten per oppervlaktetype
-- CROW 500 eisen per situatie
-- Asbest en verontreinigingsrisico's`,
-
-  6: `Je helpt bij diepteligging en dwarsprofiel. Geef advies over:
-- AHN4 hoogtedata en NAP-waarden
-- Minimale dekking boven KLIC: gas≥1.0m, water≥1.0m, LS≥0.6m
-- Max segment-hoek in zand: ~20°, klei: ~15°
-- Grondwaterstand en NAP-berekeningen`,
-
-  7: `Je helpt bij machineplaatsing en logistiek. Geef advies over:
-- Benodigde ruimte: boormachine + werkzone minimum 6×3m
-- Bentoniet verbruik: 200-400 liter per boormeter (zand)
-- Minimum afstand bentonietput tot woning: 10m
-- BLVC-maatregelen en verkeersregelaars`,
-
-  8: `Je helpt bij 3D-ontwerp interpretatie. Geef advies over:
-- Ruimtelijke conflicten identificeren in 3D
-- Minimale verticale afstanden
-- CesiumJS export en data-levering
-- Controle op kruisingsdetails`,
-
-  9: `Je helpt bij afronding en rapportage. Geef advies over:
-- Volledigheid checklist prescan
-- CROW 500, SIKB, NEN-1775 normencheck
-- Rapportage-eisen opdrachtgever
-- Export en bestandslevering`,
+- Kwaliteitscontrole KLIC-meldingen, ontbrekende dieptegegevens`,
+  3: `Je helpt bij interpreteren van KLIC-lagen en conflicten. Vrijwaringszones (CROW 500), risicoklassering Rood/Oranje/Groen, kruisingshoeken.`,
+  4: `Je helpt bij plannen van het boortracé. Inslaghoeken 8-20°, afstand bebouwing, stuurcapaciteit machine.`,
+  5: `Je helpt bij BGT-oppervlakteanalyse. Risiconiveaus, vergunningsvereisten, CROW 500.`,
+  6: `Je helpt bij diepteligging en dwarsprofiel. AHN4 data, NAP-waarden, minimale dekking boven KLIC, segmenthoeken.`,
+  7: `Je helpt bij machineplaatsing en logistiek. Ruimtebehoefte, bentoniet verbruik, BLVC-maatregelen.`,
+  8: `Je helpt bij 3D-ontwerp interpretatie. Ruimtelijke conflicten, minimale afstanden, export.`,
+  9: `Je helpt bij afronding en rapportage. Volledigheid, CROW 500/SIKB/NEN-1775 check, exportformaten.`,
 };
+
+// ─── Analyse prompts (voor automatische stap-analyse) ────────────────────────
+const ANALYSE_PROMPTS = {
+  1: (ctx) => `Analyseer de boring-configuratie hieronder en geef een beknopte technische beoordeling.
+Gebruik dit format per punt: ✅ Goed | ⚠️ Aandachtspunt | ❌ Probleem
+
+Beoordeel:
+1. **Boordiameter** — Is Ø${ctx.boringD ?? "onbekend"}mm correct voor de productbundel? (SIKB: bundel × 1.5)
+2. **Vulgraad** — Is de vulgraad van de mantelbuizen ≤ 40%?
+3. **Machine** — Is ${ctx.machine ?? "geen machine geselecteerd"} geschikt voor Ø${ctx.boringD ?? "?"}mm en bodemtype ${ctx.bodemtype ?? "onbekend"}?
+4. **Inhoud** — ${ctx.items ?? "geen items"} — zijn dit gangbare combinaties?
+5. **Aandachtspunten** — Benoem max 2 risico's of verbeterpunten.
+
+Wees kort en direct. Max 5 regels per punt.`,
+
+  2: (ctx) => `Analyseer welke KLIC-typen beschikbaar zijn voor dit project en geef een compleetheidscheck.
+
+Beschikbare KLIC-data: ${ctx.klicBeschikbaar ?? "geen"}
+Project locatie: ${ctx.locatie ?? "onbekend"}
+
+Beoordeel:
+1. **Volledigheid** — Zijn alle relevante leidingtypen aanwezig? (LS, MS, Gas, Water, Tele, Riool)
+2. **Ontbrekende data** — Wat ontbreekt mogelijk nog?
+3. **Risico** — Wat is het risico van ontbrekende leidingdata voor dit tracé?
+
+Gebruik: ✅ aanwezig | ⚠️ aandachtspunt | ❌ ontbreekt/risico. Max 5 regels per punt.`,
+
+  3: (ctx) => `Analyseer de KLIC-kruisingen voor dit boortracé.
+
+Kruisingen gevonden: ${ctx.klicKruisingen ?? "onbekend"}
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Bodemtype: ${ctx.bodemtype ?? "onbekend"}
+
+Beoordeel per aanwezig leidingtype:
+1. **Risicoklassering** — Rood/Oranje/Groen per kruising (CROW 500 vrijwaringszones)
+2. **Kritieke kruisingen** — Welke verdienen extra aandacht?
+3. **Aanbeveling** — Concrete actiepunten voor risicovolle kruisingen.
+
+Gebruik ✅ ⚠️ ❌. Beknopt.`,
+
+  4: (ctx) => `Analyseer het boortracé en beoordeel de haalbaarheid.
+
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Richting: ${ctx.richting ?? "onbekend"}
+Machine: ${ctx.machine ?? "onbekend"}
+Boordiameter: Ø${ctx.boringD ?? "?"}mm
+Bodemtype: ${ctx.bodemtype ?? "onbekend"}
+
+Beoordeel:
+1. **Haalbaarheid** — Is dit tracé haalbaar voor de geselecteerde machine?
+2. **Stangenrek** — Is de tracélengte binnen het bereik van de machine?
+3. **Richting** — Zijn er aandachtspunten bij de gekozen richting?
+4. **Risico's** — Maximaal 2 tracé-gerelateerde risico's.
+
+✅ ⚠️ ❌. Beknopt per punt.`,
+
+  5: (ctx) => `Analyseer de BGT-oppervlakteanalyse voor dit boortracé.
+
+Oppervlaktypen langs tracé: ${ctx.bgtSamenvatting ?? "niet beschikbaar"}
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+
+Beoordeel:
+1. **Risiconiveau** — Wat is het overall risico van het tracé (CROW 500)?
+2. **Vergunningen** — Welke vergunningen zijn waarschijnlijk nodig?
+3. **Schaderisico** — Herstelkosten en schaderisico per oppervlaktetype.
+4. **Aanbeveling** — Kan het tracé worden geoptimaliseerd?
+
+✅ ⚠️ ❌. Max 4 regels per punt.`,
+
+  6: (ctx) => `Analyseer de diepteligging en het dwarsprofiel.
+
+Max diepte: ${ctx.maxDiepte ?? "onbekend"}
+Maaiveld: ${ctx.napMin ?? "?"} tot ${ctx.napMax ?? "?"} m NAP
+Dieptepunten: ${ctx.aantalDieptePunten ?? 0}
+KLIC kruisingen: ${ctx.klicKruisingen ?? 0}
+Bodemtype: ${ctx.bodemtype ?? "onbekend"}
+
+Beoordeel:
+1. **Diepte** — Is ${ctx.maxDiepte ?? "?"}m diepte acceptabel voor dit bodemtype?
+2. **Segmenthoeken** — Zijn de hoeken haalbaar voor de machine?
+3. **KLIC dekking** — Is er voldoende vrije ruimte boven KLIC-leidingen?
+4. **NAP-waarden** — Zijn er grondwater- of stabiliteitsproblemen te verwachten?
+
+✅ ⚠️ ❌. Max 4 regels per punt.`,
+
+  7: (ctx) => `Analyseer de machine- en bentonietlocatie.
+
+Machine: ${ctx.machine ?? "onbekend"}
+Machine afmeting: ${ctx.machineAfm ?? "onbekend"}
+Bentoniet put: ${ctx.bentonietAfm ?? "onbekend"}
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Bodemtype: ${ctx.bodemtype ?? "onbekend"}
+
+Beoordeel:
+1. **Ruimtebehoefte** — Is de opgegeven ruimte voldoende voor veilig werken?
+2. **Bentoniet** — Schat het bentonietverbruik (200-400 L/m in zand) voor dit tracé.
+3. **Logistiek** — Aandachtspunten voor aanvoer en afvoer.
+4. **Veiligheid** — BLVC of verkeersmaatregelen nodig?
+
+✅ ⚠️ ❌. Beknopt.`,
+
+  8: (ctx) => `Analyseer het 3D-ontwerp en geef een ruimtelijke beoordeling.
+
+Boordiameter: Ø${ctx.boringD ?? "?"}mm
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Max diepte: ${ctx.maxDiepte ?? "onbekend"}
+KLIC kruisingen: ${ctx.klicKruisingen ?? 0}
+
+Beoordeel:
+1. **Ruimtelijke conflicten** — Zijn er 3D-conflicten te verwachten op basis van de data?
+2. **Verticale vrije ruimte** — Voldoende dekking boven kabels en leidingen?
+3. **Horizontale vrije ruimte** — Laterale afstanden tot obstakels?
+4. **Aandachtspunten** — Top 2 ruimtelijke risico's.
+
+✅ ⚠️ ❌. Beknopt.`,
+
+  9: (ctx) => `Doe een volledigheidscheck voor deze HDD-prescan.
+
+Project: ${ctx.projectNaam ?? "onbekend"}
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Boring: Ø${ctx.boringD ?? "?"}mm | Machine: ${ctx.machine ?? "?"}
+KLIC data: ${ctx.klicBeschikbaar ?? "?"}
+Dieptedata: ${ctx.heeftDiepte ?? "nee"}
+BGT analyse: ${ctx.heeftBGT ?? "nee"}
+Machine locatie: ${ctx.heeftMachine ?? "nee"}
+
+Beoordeel elke stap op volledigheid:
+1. Projectinformatie & Boring ✅/⚠️/❌
+2. KLIC data geladen ✅/⚠️/❌
+3. Boorlijn getekend ✅/⚠️/❌
+4. Oppervlakteanalyse ✅/⚠️/❌
+5. Diepteligging ✅/⚠️/❌
+6. Machine locatie ✅/⚠️/❌
+7. **Overall oordeel** — Is deze prescan klaar voor aanbesteding?
+
+Geef een duidelijk eindconclusie.`,
+};
+
 
 // ─── Project context samenstellen ────────────────────────────────────────────
 function projectContext(project, boringConfig) {
@@ -105,72 +205,63 @@ function kennisbankContext(kennisbank) {
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
+
 export async function POST(request) {
   try {
-    const { berichten, stap, project, boringConfig, kennisbank } = await request.json();
-    const stapPrompt = STAP_PROMPTS[stap] ?? STAP_PROMPTS[1];
+    const { berichten, stap, project, boringConfig, kennisbank, analyseer, analyseContext } = await request.json();
     const stapNamen = ["","Boring configuratie","Ontwerp inladen","Ontwerp bekijken","Boorlijn tekenen","Oppervlakteanalyse","Diepteligging","Machine locatie","3D ontwerp","Eindontwerp"];
-
-    const systemPrompt = `Je bent een gespecialiseerde HDD-prescan assistent voor PrescanAI (Horizontaal Gestuurd Boren).
-Je werkt nu in **Stap ${stap}: ${stapNamen[stap] ?? ""}**.
-
-${stapPrompt}
-
-## Gedragsregels
-- Antwoord ALTIJD in het Nederlands
-- Wees concreet: gebruik getallen, normen (CROW 500, SIKB, NEN-1775, BRL SIKB 7000)
-- Doe berekeningen als het relevant is
-- Houd antwoorden beknopt (max 3-4 alinea's) tenzij uitleg nodig is
-- Zeg eerlijk als je het niet weet
-${projectContext(project, boringConfig)}
-${kennisbankContext(kennisbank)}`;
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return Response.json({ error: "GROQ_API_KEY niet ingesteld. Ga naar Vercel → Settings → Environment Variables." }, { status: 500 });
     }
 
-    const groqMessages = [
-      { role: "system", content: systemPrompt },
-      ...berichten,
-    ];
+    let systemPrompt, messages;
+
+    if (analyseer) {
+      const analyseFn = ANALYSE_PROMPTS[stap] ?? ANALYSE_PROMPTS[1];
+      const analyseBericht = analyseFn(analyseContext ?? {});
+      systemPrompt = `Je bent een gespecialiseerde HDD-prescan expert voor PrescanAI.
+Je doet een technische analyse van stap ${stap}: ${stapNamen[stap] ?? ""}.
+Antwoord ALTIJD in het Nederlands. Gebruik ✅ ⚠️ ❌ voor beoordelingen.
+Wees concreet en beknopt. Gebruik normen: CROW 500, SIKB, NEN-1775.
+${projectContext(project, boringConfig)}
+${kennisbankContext(kennisbank ?? [])}`;
+      messages = [{ role: "user", content: analyseBericht }];
+    } else {
+      const stapPrompt = STAP_PROMPTS[stap] ?? STAP_PROMPTS[1];
+      systemPrompt = `Je bent een gespecialiseerde HDD-prescan assistent voor PrescanAI.
+Je werkt nu in **Stap ${stap}: ${stapNamen[stap] ?? ""}**.
+${stapPrompt}
+Antwoord ALTIJD in het Nederlands. Wees concreet, gebruik normen (CROW 500, SIKB, NEN-1775).
+${projectContext(project, boringConfig)}
+${kennisbankContext(kennisbank ?? [])}`;
+      messages = berichten ?? [];
+    }
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        messages: groqMessages,
-        max_tokens: 1024,
-        temperature: 0.7,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        max_tokens: analyseer ? 800 : 1024,
+        temperature: analyseer ? 0.3 : 0.7,
         stream: true,
       }),
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      // Rate limit handling
       if (response.status === 429) {
         const retryAfter = response.headers.get("retry-after") ?? "60";
-        return Response.json({
-          error: `Rate limit bereikt. Wacht ${retryAfter} seconden en probeer opnieuw. (Groq gratis: 30 req/min)`,
-          rateLimited: true,
-          retryAfter: parseInt(retryAfter),
-        }, { status: 429 });
+        return Response.json({ error: `Rate limit. Wacht ${retryAfter}s.`, rateLimited: true, retryAfter: parseInt(retryAfter) }, { status: 429 });
       }
       return Response.json({ error: err.error?.message ?? "Groq API fout" }, { status: 500 });
     }
 
-    // Stream OpenAI-formaat door naar client
     return new Response(response.body, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-      },
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
     });
 
   } catch (err) {
