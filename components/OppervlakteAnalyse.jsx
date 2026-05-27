@@ -349,7 +349,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const [zipNaam,     setZipNaam]     = useState(null);
   const [zipBezig,    setZipBezig]    = useState(false);
   const [zipFout,     setZipFout]     = useState(null);
+  const [zipBestanden, setZipBestanden] = useState([]); // [{naam, features:[]}]
+  const [zipPanelOpen, setZipPanelOpen] = useState(false);
+  const [zipLaagAan,   setZipLaagAan]   = useState(false);
+  const [zipFilter,    setZipFilter]    = useState(new Set()); // verborgen labels
   const zipInputRef = useRef(null);
+  const zipLaagRef  = useRef(null);
 
   const boorCoords = (() => {
     try { const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[]; } catch { return []; }
@@ -723,14 +728,17 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
 
   // ── Hoofd ZIP import functie ───────────────────────────────────────
   async function importeerBgtZip(file) {
-    setZipBezig(true); setZipFout(null); setZipFeatures(null);
+    setZipBezig(true); setZipFout(null); setZipFeatures(null); setZipBestanden([]);
+    setZipLaagAan(false);
+    if (zipLaagRef.current && kaartRef.current) { kaartRef.current.removeLayer(zipLaagRef.current); zipLaagRef.current = null; }
     try {
       const JSZip = await laadJSZip();
       const zip = await JSZip.loadAsync(file);
       const alleFeatures = [];
-      const gmlBestanden = Object.keys(zip.files).filter(n => n.endsWith(".gml") || n.endsWith(".GML"));
+      const bestandenInfo = [];
+      const gmlBestanden = Object.keys(zip.files).filter(n => n.toLowerCase().endsWith(".gml"));
       if (!gmlBestanden.length) {
-        setZipFout("Geen GML-bestanden gevonden in de ZIP. Download de BGT als CityGML van PDOK.");
+        setZipFout("Geen GML-bestanden gevonden. Download de BGT als CityGML van PDOK.");
         return;
       }
       for (const naam of gmlBestanden) {
@@ -738,19 +746,99 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         const basNaam = naam.split("/").pop().replace(/\.gml$/i,"");
         const feats = parseerGml(tekst, basNaam);
         alleFeatures.push(...feats);
+        if (feats.length > 0) {
+          // Tellen per oppervlaktype
+          const tellingen = {};
+          feats.forEach(f => { const k = f.oppervlak.label; tellingen[k] = (tellingen[k]||0)+1; });
+          bestandenInfo.push({ naam: basNaam, aantalFeatures: feats.length, typen: tellingen });
+        }
       }
       if (!alleFeatures.length) {
-        setZipFout("ZIP bevat GML-bestanden maar geen leesbare polygonen. Probeer het CityGML-formaat van PDOK.");
+        setZipFout("ZIP bevat GML maar geen leesbare polygonen. Probeer het CityGML-formaat van PDOK.");
         return;
       }
       setZipFeatures(alleFeatures);
+      setZipBestanden(bestandenInfo);
       setZipNaam(`${file.name} (${alleFeatures.length} polygonen)`);
-      console.log(`[BGT ZIP] ${gmlBestanden.length} GML-bestanden, ${alleFeatures.length} polygonen geladen`);
+      setZipPanelOpen(true); // open panel automatisch
     } catch (e) {
       setZipFout("ZIP fout: " + e.message);
     } finally {
       setZipBezig(false);
     }
+  }
+
+  // ── BGT ZIP laag op de Leaflet kaart tonen/verbergen ──────────────
+  function toggleZipLaag() {
+    const map = kaartRef.current;
+    if (!map || !window.L || !zipFeatures?.length) return;
+    const L = window.L;
+
+    if (zipLaagRef.current) {
+      map.removeLayer(zipLaagRef.current);
+      zipLaagRef.current = null;
+      setZipLaagAan(false);
+      return;
+    }
+
+    const zichtbareFeatures = zipFeatures.filter(f => !zipFilter.has(f.oppervlak.label));
+    const geoJson = {
+      type: "FeatureCollection",
+      features: zichtbareFeatures.map(f => ({
+        type: "Feature",
+        geometry: f.geometry,
+        properties: { label: f.oppervlak.label, kleur: f.oppervlak.kleur },
+      })),
+    };
+
+    const laag = L.geoJSON(geoJson, {
+      style: feat => ({
+        fillColor: feat.properties.kleur,
+        fillOpacity: 0.35,
+        color: feat.properties.kleur,
+        weight: 1.5,
+        opacity: 0.85,
+      }),
+      onEachFeature: (feat, layer) => {
+        layer.bindTooltip(feat.properties.label, { permanent: false, direction: "top", className: "bgt-tooltip" });
+      },
+    });
+
+    laag.addTo(map);
+    zipLaagRef.current = laag;
+    setZipLaagAan(true);
+  }
+
+  // ── Filter toggle: verberg/toon een laagtype op de kaart ──────────
+  function toggleZipFilter(label) {
+    const nieuw = new Set(zipFilter);
+    if (nieuw.has(label)) nieuw.delete(label); else nieuw.add(label);
+    setZipFilter(nieuw);
+    // Laag herbouwen als die aan staat
+    if (zipLaagRef.current && kaartRef.current) {
+      kaartRef.current.removeLayer(zipLaagRef.current);
+      zipLaagRef.current = null;
+      setZipLaagAan(false);
+      setTimeout(() => toggleZipLaagMet(nieuw), 50);
+    }
+  }
+
+  function toggleZipLaagMet(filter) {
+    const map = kaartRef.current;
+    if (!map || !window.L || !zipFeatures?.length) return;
+    const L = window.L;
+    const zichtbaar = zipFeatures.filter(f => !filter.has(f.oppervlak.label));
+    if (!zichtbaar.length) return;
+    const laag = L.geoJSON({
+      type:"FeatureCollection",
+      features: zichtbaar.map(f => ({ type:"Feature", geometry:f.geometry, properties:{label:f.oppervlak.label,kleur:f.oppervlak.kleur} })),
+    }, {
+      style: feat => ({ fillColor:feat.properties.kleur, fillOpacity:0.35, color:feat.properties.kleur, weight:1.5, opacity:0.85 }),
+      onEachFeature: (feat,layer) => layer.bindTooltip(feat.properties.label,{permanent:false,direction:"top"}),
+    });
+    laag.addTo(map);
+    zipLaagRef.current = laag;
+    setZipLaagAan(true);
   }
 
   async function voerAnalyseUit(){
@@ -1042,33 +1130,90 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
             {/* BGT ZIP Import */}
             <div className="px-4 py-3 border-b border-gray-100">
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">BGT data importeren</div>
-              {/* ZIP import knop */}
+              {/* Upload zone */}
               <div
                 onClick={() => !zipBezig && zipInputRef.current?.click()}
                 onDragOver={e=>{e.preventDefault();e.currentTarget.style.background="#FFF7ED";}}
                 onDragLeave={e=>{e.currentTarget.style.background="";}}
                 onDrop={e=>{e.preventDefault();e.currentTarget.style.background="";const f=e.dataTransfer.files[0];if(f)importeerBgtZip(f);}}
-                className="w-full border-2 border-dashed border-orange-200 rounded-lg p-3 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-colors"
-                style={{background: zipFeatures ? "#ECFDF5" : undefined, borderColor: zipFeatures ? "#6EE7B7" : undefined}}
+                className="w-full border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors"
+                style={{background:zipFeatures?"#ECFDF5":"white", borderColor:zipFeatures?"#6EE7B7":"#FED7AA"}}
               >
                 {zipBezig
                   ? <div className="flex items-center justify-center gap-2 text-xs text-orange-600"><div className="w-3 h-3 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"/>GML bestanden verwerken...</div>
                   : zipFeatures
-                  ? <div className="text-xs text-green-700 font-medium">✅ {zipNaam}</div>
+                  ? <div className="text-xs text-green-700 font-semibold">✅ {zipNaam}</div>
                   : <div>
                       <div className="text-xs font-semibold text-gray-600 mb-1">📦 BGT ZIP importeren</div>
-                      <div className="text-xs text-gray-400">Download van <span className="text-orange-500">pdok.nl/lv/bgt</span><br/>Sleep ZIP hier of klik</div>
+                      <div className="text-xs text-gray-400">Download van <span className="text-orange-500 font-medium">pdok.nl/lv/bgt</span><br/>Sleep ZIP hier of klik om te kiezen</div>
                     </div>
                 }
                 <input ref={zipInputRef} type="file" accept=".zip" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)importeerBgtZip(f);e.target.value="";}}/>
               </div>
-              {zipFout && <p className="text-xs text-red-600 mt-1">❌ {zipFout}</p>}
-              {zipFeatures && (
-                <button onClick={()=>{setZipFeatures(null);setZipNaam(null);setZipFout(null);}} className="mt-1 w-full text-xs text-gray-400 hover:text-red-500 transition-colors">
-                  × ZIP verwijderen → terugschakelen naar live API
-                </button>
-              )}
-              {zipFeatures && <p className="text-xs text-green-600 mt-1">✓ Analyse gebruikt nu lokale BGT data — geen API calls nodig</p>}
+              {zipFout && <p className="text-xs text-red-600 mt-2 p-2 bg-red-50 rounded-lg">❌ {zipFout}</p>}
+
+              {/* Actieknoppen na import */}
+              {zipFeatures && (<>
+                <div className="flex gap-2 mt-2">
+                  {/* Bestanden bekijken */}
+                  <button onClick={()=>setZipPanelOpen(v=>!v)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium border rounded-lg transition-colors"
+                    style={{background:zipPanelOpen?"#EFF6FF":"white", borderColor:zipPanelOpen?"#93C5FD":"#E5E7EB", color:zipPanelOpen?"#1D4ED8":"#374151"}}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    {zipBestanden.length} bestanden
+                  </button>
+                  {/* Toon op kaart */}
+                  <button onClick={toggleZipLaag}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium border rounded-lg transition-colors"
+                    style={{background:zipLaagAan?"#ECFDF5":"white", borderColor:zipLaagAan?"#6EE7B7":"#E5E7EB", color:zipLaagAan?"#059669":"#374151"}}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                    {zipLaagAan?"Verberg":"Toon op kaart"}
+                  </button>
+                </div>
+
+                {/* Bestanden panel */}
+                {zipPanelOpen && (
+                  <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-blue-100 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-blue-800">📦 GML-bestanden in ZIP</span>
+                      <span className="text-xs text-blue-600">{zipFeatures.length} polygonen totaal</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {zipBestanden.map((b,i) => (
+                        <div key={i} className="px-3 py-2 border-b border-blue-100 last:border-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-blue-900 font-mono">{b.naam}.gml</span>
+                            <span className="text-xs text-blue-600">{b.aantalFeatures}×</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries(b.typen).map(([label, n]) => {
+                              const kleur = BGT_ZIP_TYPEN[Object.keys(BGT_ZIP_TYPEN).find(k=>BGT_ZIP_TYPEN[k].label===label)]?.kleur ?? "#9ca3af";
+                              const verborgen = zipFilter.has(label);
+                              return (
+                                <button key={label} onClick={()=>toggleZipFilter(label)}
+                                  title={verborgen?"Toon op kaart":"Verberg van kaart"}
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-opacity"
+                                  style={{background:verborgen?"#F3F4F6":kleur+"20",border:`1px solid ${verborgen?"#E5E7EB":kleur}`,color:verborgen?"#9CA3AF":kleur,opacity:verborgen?0.5:1}}>
+                                  <div style={{width:6,height:6,borderRadius:"50%",background:verborgen?"#9CA3AF":kleur}}/>
+                                  {label} ({n})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-xs text-green-600">✓ Gebruikt lokale BGT data</p>
+                  <button onClick={()=>{setZipFeatures(null);setZipNaam(null);setZipFout(null);setZipBestanden([]);setZipPanelOpen(false);if(zipLaagRef.current&&kaartRef.current){kaartRef.current.removeLayer(zipLaagRef.current);zipLaagRef.current=null;}setZipLaagAan(false);}}
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors">
+                    × ZIP verwijderen
+                  </button>
+                </div>
+              </>)}
             </div>
             {/* Analyse knop */}
             <div className="px-4 py-3 border-b border-gray-100 space-y-2">
