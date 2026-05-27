@@ -46,29 +46,10 @@ async function extractTekst(file) {
     return await file.text();
   }
   if (naam.endsWith(".docx")) {
-    // DOCX is een ZIP met XML — probeer tekst te extraheren zonder library
-    try {
-      const { unzipSync, strFromU8 } = await import("fflate");
-      const buf = await file.arrayBuffer();
-      const files = unzipSync(new Uint8Array(buf));
-      const wordDoc = files["word/document.xml"];
-      if (wordDoc) {
-        const xml = strFromU8(wordDoc);
-        // Verwijder XML tags, houd tekst over
-        const tekst = xml
-          .replace(/<w:p[ >]/g, "\n")
-          .replace(/<[^>]+>/g, "")
-          .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
-          .replace(/\n{3,}/g, "\n\n").trim();
-        return tekst || `[DOCX leeg of niet leesbaar: ${file.name}]`;
-      }
-    } catch {
-      // fflate ook niet beschikbaar — geef instructie
-    }
-    return `[DOCX niet ondersteund zonder installatie]\nTip: sla het document op als .txt en upload opnieuw.\nBestand: ${file.name}`;
+    return `[DOCX niet ondersteund]\nTip: open in Word → Opslaan als → Tekst (.txt) en upload opnieuw.\nBestand: ${file.name}`;
   }
   if (naam.endsWith(".pdf")) {
-    return `[PDF niet ondersteund — exporteer naar .txt]\nBestand: ${file.name}`;
+    return `[PDF niet ondersteund]\nTip: open in Adobe/browser → Afdrukken → Opslaan als PDF → of kopieer tekst naar .txt\nBestand: ${file.name}`;
   }
   return `[Niet-ondersteund formaat: ${file.name}]\nOndersteuning: TXT, MD, CSV`;
 }
@@ -95,7 +76,7 @@ function KennisbankPaneel({kennisbank, onAdd, onVerwijder, onOpslaan, kleur, ops
       <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:8}}>📚 Kennisbank</div>
       <p style={{fontSize:11,color:"#6B7280",margin:"0 0 10px"}}>
         Upload documenten die de assistent gebruikt als context: CROW 500, machine specs, normen, projectdocumentatie.
-        <br/>Ondersteund: <strong>TXT, MD, CSV</strong> · DOCX via fflate indien beschikbaar
+        <br/>Ondersteund: <strong>TXT, MD, CSV</strong> · DOCX/PDF: exporteer naar .txt
       </p>
 
       {/* Upload zone */}
