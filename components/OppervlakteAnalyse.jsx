@@ -655,54 +655,168 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   }
 
   // ── BGT GML oppervlak-classificatie ────────────────────────────────
+  // ── Uitgebreide BGT-typen met subcategorieën ──────────────────────
   const BGT_ZIP_TYPEN = {
-    "gesloten verharding":  { label:"Gesloten verharding",  kleur:"#6b7280", risico:"hoog" },
-    "open verharding":      { label:"Open verharding",       kleur:"#f59e0b", risico:"middel" },
-    "half verhard":         { label:"Half verhard",          kleur:"#fbbf24", risico:"laag" },
-    "onverhard":            { label:"Onverhard",             kleur:"#d97706", risico:"laag" },
-    "groenvoorziening":     { label:"Groenvoorziening",      kleur:"#16a34a", risico:"laag" },
-    "bos":                  { label:"Groenvoorziening",      kleur:"#15803d", risico:"laag" },
-    "water":                { label:"Water",                 kleur:"#2563eb", risico:"hoog" },
-    "spoor":                { label:"Spoor",                 kleur:"#dc2626", risico:"hoog" },
-    "overig":               { label:"Overig terrein",        kleur:"#9ca3af", risico:"laag" },
+    // Verharding
+    "rijbaan":             { label:"Rijbaan",            hoofd:"Verharding",   kleur:"#4B5563", risico:"hoog" },
+    "gesloten verharding": { label:"Gesloten verharding", hoofd:"Verharding",   kleur:"#6B7280", risico:"hoog" },
+    "open verharding":     { label:"Open verharding",    hoofd:"Verharding",   kleur:"#F59E0B", risico:"middel" },
+    "half verhard":        { label:"Half verhard",       hoofd:"Verharding",   kleur:"#FCD34D", risico:"laag" },
+    "onverhard":           { label:"Onverhard",          hoofd:"Terrein",      kleur:"#92400E", risico:"laag" },
+    "erf":                 { label:"Erf",                hoofd:"Terrein",      kleur:"#D97706", risico:"middel" },
+    "zand":                { label:"Zand/Grond",         hoofd:"Terrein",      kleur:"#B45309", risico:"laag" },
+    // Fiets/voetpad
+    "fietspad":            { label:"Fietspad",           hoofd:"Verharding",   kleur:"#EF4444", risico:"middel" },
+    "voetpad":             { label:"Voetpad/Trottoir",   hoofd:"Verharding",   kleur:"#FB923C", risico:"laag" },
+    "parkeren":            { label:"Parkeerterrein",     hoofd:"Verharding",   kleur:"#7C3AED", risico:"hoog" },
+    // Groen
+    "grasland":            { label:"Grasland/Weide",     hoofd:"Groen",        kleur:"#86EFAC", risico:"laag" },
+    "groenvoorziening":    { label:"Groenvoorziening",   hoofd:"Groen",        kleur:"#16A34A", risico:"laag" },
+    "bos":                 { label:"Bos",                hoofd:"Groen",        kleur:"#15803D", risico:"laag" },
+    "heide":               { label:"Heide/Natuur",       hoofd:"Groen",        kleur:"#A78BFA", risico:"laag" },
+    "agrarisch":           { label:"Agrarisch",          hoofd:"Groen",        kleur:"#65A30D", risico:"laag" },
+    "moeras":              { label:"Moeras/Rietland",    hoofd:"Groen",        kleur:"#0D9488", risico:"hoog" },
+    // Water
+    "water":               { label:"Water",              hoofd:"Water",        kleur:"#2563EB", risico:"hoog" },
+    "sloot":               { label:"Sloot/Greppel",      hoofd:"Water",        kleur:"#3B82F6", risico:"hoog" },
+    "oever":               { label:"Oever/Talud",        hoofd:"Water",        kleur:"#60A5FA", risico:"middel" },
+    // Spoor/infra
+    "spoor":               { label:"Spoor",              hoofd:"Infra",        kleur:"#DC2626", risico:"hoog" },
+    "kunstwerk":           { label:"Kunstwerk (brug/tunnel)", hoofd:"Infra",   kleur:"#1E3A5F", risico:"hoog" },
+    // Bebouwing
+    "gebouw":              { label:"Gebouw/Pand",        hoofd:"Bebouwing",    kleur:"#374151", risico:"hoog" },
+    "overig":              { label:"Overig terrein",     hoofd:"Overig",       kleur:"#9CA3AF", risico:"laag" },
   };
 
-  function bgtZipClassificeer(elementNaam, propertiesText) {
-    const n = elementNaam.toLowerCase().replace(/^bgt_?/,"");
-    const p = propertiesText.toLowerCase();
-    if (n.includes("water") || p.includes("water") || p.includes("sloot")) return BGT_ZIP_TYPEN["water"];
-    if (n.includes("spoor") || p.includes("spoor") || p.includes("trein")) return BGT_ZIP_TYPEN["spoor"];
-    if (p.includes("gesloten")) return BGT_ZIP_TYPEN["gesloten verharding"];
-    if (p.includes("open verh")) return BGT_ZIP_TYPEN["open verharding"];
-    if (p.includes("half verh")) return BGT_ZIP_TYPEN["half verhard"];
-    if (p.includes("onverhard") || p.includes("zand") || p.includes("grond")) return BGT_ZIP_TYPEN["onverhard"];
-    if (p.includes("groen") || p.includes("gras") || p.includes("berm") || p.includes("tuin") || p.includes("bos") || p.includes("heide")) return BGT_ZIP_TYPEN["groenvoorziening"];
-    if (n.includes("weg") || n.includes("ondersteunend")) return BGT_ZIP_TYPEN["gesloten verharding"];
-    if (n.includes("begroeid") || n.includes("groen")) return BGT_ZIP_TYPEN["groenvoorziening"];
-    if (n.includes("onbegroeid")) return BGT_ZIP_TYPEN["onverhard"];
+  // ── Haal een specifieke property op uit een XML element ───────────
+  function getXmlProp(el, ...localNames) {
+    if (!el) return null;
+    const all = el.getElementsByTagName("*");
+    for (const node of all) {
+      const ln = node.localName ?? "";
+      for (const name of localNames) {
+        if (ln === name || ln.endsWith(":" + name) || ln.includes(name)) {
+          const v = node.textContent.trim();
+          if (v && v.length < 200) return v;
+        }
+      }
+    }
+    return null;
+  }
+
+  // ── Nauwkeurige BGT-classificatie: elementnaam EERST, dan properties ──
+  function bgtZipClassificeer(elementNaam, propertiesText, featureEl) {
+    const naam = elementNaam.toLowerCase().replace(/^bgt_?/,"").replace(/\.gml.*$/,"");
+
+    // ── Water ────────────────────────────────────────────────────────
+    if (naam.includes("waterdeel") && !naam.includes("ondersteunend")) {
+      const type = getXmlProp(featureEl, "typeWaterdeel","bgt-typeWaterdeel","plus-typeWaterdeel") ?? "";
+      if (/greppel|droge|sloot/.test(type)) return BGT_ZIP_TYPEN["sloot"];
+      return BGT_ZIP_TYPEN["water"];
+    }
+    if (naam.includes("ondersteunendwaterdeel") || naam.includes("oever")) return BGT_ZIP_TYPEN["oever"];
+
+    // ── Spoor ────────────────────────────────────────────────────────
+    if (naam.includes("spoor")) return BGT_ZIP_TYPEN["spoor"];
+
+    // ── Gebouw/Pand ──────────────────────────────────────────────────
+    if (naam.includes("pand") || naam.includes("gebouw") || naam.includes("overigbouwwerk"))
+      return BGT_ZIP_TYPEN["gebouw"];
+
+    // ── Kunstwerken (brug, tunnel, viaduct, duiker) ──────────────────
+    if (naam.includes("kunstwerk") || naam.includes("tunneldeel") || naam.includes("overbrugging"))
+      return BGT_ZIP_TYPEN["kunstwerk"];
+
+    // ── Scheiding (muur, hek) ────────────────────────────────────────
+    if (naam.includes("scheiding")) return BGT_ZIP_TYPEN["kunstwerk"];
+
+    // ── Wegdeel: kijk naar function + fysiek voorkomen ───────────────
+    if (naam.includes("wegdeel") && !naam.includes("ondersteunend")) {
+      const func    = (getXmlProp(featureEl,"functieWegdeel","bgt-functieWegdeel","plus-functieWegdeel") ?? "").toLowerCase();
+      const fysiek  = (getXmlProp(featureEl,"fysiekVoorkomenWegdeel","bgt-fysiekVoorkomenWegdeel","plus-fysiekVoorkomenWegdeel") ?? "").toLowerCase();
+      // Rijbanen
+      if (/autosnelweg|autoweg|regionale weg|lokale weg|rijbaan/.test(func))
+        return fysiek.includes("open") ? BGT_ZIP_TYPEN["open verharding"] : BGT_ZIP_TYPEN["rijbaan"];
+      if (func.includes("fiets")) return BGT_ZIP_TYPEN["fietspad"];
+      if (/voetpad|trottoir|voetganger/.test(func)) return BGT_ZIP_TYPEN["voetpad"];
+      if (/parkeer|ov-baan/.test(func)) return BGT_ZIP_TYPEN["parkeren"];
+      // Fysiek voorkomen als function niet duidelijk
+      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
+      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
+      if (fysiek.includes("onverhard")) return BGT_ZIP_TYPEN["onverhard"];
+      return BGT_ZIP_TYPEN["gesloten verharding"];
+    }
+
+    // ── Ondersteunend wegdeel (berm, fietsstrook) ────────────────────
+    if (naam.includes("ondersteunendwegdeel")) {
+      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenOndersteunendWegdeel","bgt-fysiekVoorkomenOndersteunendWegdeel","plus-fysiekVoorkomenOndersteunendWegdeel") ?? "").toLowerCase();
+      if (fysiek.includes("groen") || fysiek.includes("berm") || fysiek.includes("gras")) return BGT_ZIP_TYPEN["groenvoorziening"];
+      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
+      if (fysiek.includes("onverhard") || fysiek.includes("zand")) return BGT_ZIP_TYPEN["onverhard"];
+      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
+      return BGT_ZIP_TYPEN["onverhard"]; // berm default
+    }
+
+    // ── Onbegroeid terrein ───────────────────────────────────────────
+    if (naam.includes("onbegroeid")) {
+      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenOnbegroeidTerreindeel","bgt-fysiekVoorkomenOnbegroeidTerreindeel","plus-fysiekVoorkomenOnbegroeidTerreindeel") ?? "").toLowerCase();
+      if (fysiek.includes("erf"))       return BGT_ZIP_TYPEN["erf"];
+      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
+      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
+      if (fysiek.includes("zand") || fysiek.includes("grond")) return BGT_ZIP_TYPEN["zand"];
+      if (fysiek.includes("onverhard")) return BGT_ZIP_TYPEN["onverhard"];
+      return BGT_ZIP_TYPEN["onverhard"];
+    }
+
+    // ── Begroeid terrein ─────────────────────────────────────────────
+    if (naam.includes("begroeid") || naam.includes("groen")) {
+      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenBegroeidTerreindeel","bgt-fysiekVoorkomenBegroeidTerreindeel","plus-fysiekVoorkomenBegroeidTerreindeel") ?? "").toLowerCase();
+      if (/loofbos|naaldbos|gemengd bos|bos/.test(fysiek)) return BGT_ZIP_TYPEN["bos"];
+      if (/heide|struikgewas/.test(fysiek))                 return BGT_ZIP_TYPEN["heide"];
+      if (/moeras|rietland|moerasvegetatie/.test(fysiek))   return BGT_ZIP_TYPEN["moeras"];
+      if (/grasland|weide|gras/.test(fysiek))               return BGT_ZIP_TYPEN["grasland"];
+      if (/boomteelt|fruitteelt|akkerbouw|landbouw/.test(fysiek)) return BGT_ZIP_TYPEN["agrarisch"];
+      return BGT_ZIP_TYPEN["groenvoorziening"];
+    }
+
     return BGT_ZIP_TYPEN["overig"];
   }
 
-  // ── GML parser: extraheer features met polygonen in WGS84 ──────────
+  // ── GML parser: extraheer features met polygonen + metadata ───────
   function parseerGml(gmlText, bestandsnaam) {
     const features = [];
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(gmlText, "text/xml");
-      // Alle Polygon elementen vinden
-      const polygonen = doc.getElementsByTagNameNS("http://www.opengis.net/gml", "Polygon");
-      const polygonen32 = doc.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "Polygon");
-      const allePolygonen = [...polygonen, ...polygonen32];
+      const polygonen = [
+        ...doc.getElementsByTagNameNS("http://www.opengis.net/gml", "Polygon"),
+        ...doc.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "Polygon"),
+      ];
 
-      for (const poly of allePolygonen) {
-        // Haal parent feature element op
+      for (const poly of polygonen) {
+        // Haal parent feature op (4 niveaus omhoog: Polygon < exterior/geom-prop < geometry < Feature)
         const featureEl = poly.parentElement?.parentElement?.parentElement?.parentElement;
         const elementNaam = featureEl?.localName ?? bestandsnaam ?? "onbekend";
-        // Alle tekst van het feature element voor oppervlak-classificatie
-        const propertiesText = featureEl?.textContent ?? "";
-        const oppervlak = bgtZipClassificeer(elementNaam, propertiesText);
 
-        // Haal posList op — lees srsDimension (2=XY, 3=XYZ)
+        // Classificeer met nauwkeurige functie (geeft featureEl mee)
+        const oppervlak = bgtZipClassificeer(elementNaam, featureEl?.textContent ?? "", featureEl);
+
+        // Extraheer nuttige properties voor popup
+        const subtype = getXmlProp(featureEl,
+          "fysiekVoorkomenWegdeel","bgt-fysiekVoorkomenWegdeel","plus-fysiekVoorkomenWegdeel",
+          "functieWegdeel","bgt-functieWegdeel","plus-functieWegdeel",
+          "fysiekVoorkomenOnbegroeidTerreindeel","bgt-fysiekVoorkomenOnbegroeidTerreindeel",
+          "fysiekVoorkomenBegroeidTerreindeel","bgt-fysiekVoorkomenBegroeidTerreindeel",
+          "typeWaterdeel","bgt-typeWaterdeel","plus-typeWaterdeel",
+          "type","bgt-type","plus-type"
+        );
+        const bronhouder = getXmlProp(featureEl, "bronhouder");
+        const inOnderzoek = getXmlProp(featureEl, "inOnderzoek");
+
+        // posList parsen — srsDimension 2 of 3
         const posListEls = [
           ...poly.getElementsByTagNameNS("http://www.opengis.net/gml", "posList"),
           ...poly.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "posList"),
@@ -710,26 +824,31 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         if (!posListEls.length) continue;
 
         const posEl = posListEls[0];
-        // srsDimension: 2 = X Y per punt, 3 = X Y Z per punt
         const srsDim = parseInt(posEl.getAttribute("srsDimension") ?? "2");
         const stap = isNaN(srsDim) ? 2 : Math.max(2, srsDim);
-
         const nummers = posEl.textContent.trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
         if (nummers.length < 2 * stap) continue;
 
-        // RD New → WGS84 GeoJSON [lng, lat]
-        // GML EPSG:28992: X = Easting (~0–300000), Y = Northing (~280000–630000)
         const ring = [];
         for (let i = 0; i <= nummers.length - stap; i += stap) {
-          const rdX = nummers[i];      // Easting
-          const rdY = nummers[i + 1];  // Northing
-          // Sanity: geldige RD New coördinaten voor Nederland
+          const rdX = nummers[i], rdY = nummers[i + 1];
           if (rdX < -7000 || rdX > 400000 || rdY < 289000 || rdY > 629000) continue;
           const [lat, lng] = rdNaarWgs84(rdX, rdY);
-          ring.push([lng, lat]); // GeoJSON: [lng, lat]
+          ring.push([lng, lat]);
         }
         if (ring.length < 3) continue;
-        features.push({ oppervlak, geometry: { type: "Polygon", coordinates: [ring] } });
+
+        features.push({
+          oppervlak,
+          geometry: { type: "Polygon", coordinates: [ring] },
+          meta: {
+            bestand: bestandsnaam,
+            element: elementNaam,
+            subtype: subtype ?? null,
+            bronhouder: bronhouder ?? null,
+            inOnderzoek: inOnderzoek === "true",
+          },
+        });
       }
     } catch (e) {
       console.warn("GML parse fout:", e.message);
@@ -792,44 +911,87 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   }
 
   // ── BGT ZIP laag op de Leaflet kaart tonen/verbergen ──────────────
+  function bouwGeoJsonLaag(features, filter) {
+    const L = window.L;
+    const zichtbaar = features.filter(f => !filter.has(f.oppervlak.label));
+    if (!zichtbaar.length) return null;
+
+    const laag = L.geoJSON({
+      type: "FeatureCollection",
+      features: zichtbaar.map(f => ({
+        type: "Feature",
+        geometry: f.geometry,
+        properties: {
+          label:      f.oppervlak.label,
+          hoofd:      f.oppervlak.hoofd ?? "",
+          risico:     f.oppervlak.risico ?? "",
+          kleur:      f.oppervlak.kleur,
+          subtype:    f.meta?.subtype ?? null,
+          bestand:    f.meta?.bestand ?? "",
+          element:    f.meta?.element ?? "",
+          bronhouder: f.meta?.bronhouder ?? "",
+          inOnderzoek: f.meta?.inOnderzoek ?? false,
+        },
+      })),
+    }, {
+      style: feat => ({
+        fillColor:   feat.properties.kleur,
+        fillOpacity: 0.35,
+        color:       feat.properties.kleur,
+        weight:      1.5,
+        opacity:     0.85,
+      }),
+      onEachFeature: (feat, layer) => {
+        const p = feat.properties;
+        // Hover tooltip
+        layer.bindTooltip(
+          `<strong>${p.label}</strong>${p.subtype ? `<br/><span style="font-size:10px;color:#6B7280">${p.subtype}</span>` : ""}`,
+          { permanent: false, direction: "top", className: "bgt-tooltip" }
+        );
+        // Klik popup met alle details
+        layer.on("click", function(e) {
+          const RISICO_KLEUR = { hoog:"#DC2626", middel:"#F59E0B", laag:"#16A34A" };
+          const rk = RISICO_KLEUR[p.risico] ?? "#9CA3AF";
+          window.L.popup({ maxWidth: 280 })
+            .setLatLng(e.latlng)
+            .setContent(`
+              <div style="font-family:system-ui,sans-serif;font-size:12px;min-width:200px">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                  <div style="width:12px;height:12px;border-radius:3px;background:${p.kleur};flex-shrink:0"></div>
+                  <strong style="font-size:13px;color:#1F2937">${p.label}</strong>
+                </div>
+                ${p.hoofd ? `<div style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">${p.hoofd}</div>` : ""}
+                ${p.subtype ? `<div style="background:#F9FAFB;border-radius:4px;padding:4px 7px;margin-bottom:6px;font-size:11px;color:#374151">📌 ${p.subtype}</div>` : ""}
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10px;color:#6B7280">Risico:</span>
+                  <span style="font-size:10px;font-weight:700;color:${rk}">${p.risico ? p.risico.charAt(0).toUpperCase()+p.risico.slice(1) : "—"}</span>
+                </div>
+                <div style="border-top:1px solid #F3F4F6;padding-top:6px;margin-top:2px">
+                  <div style="font-size:10px;color:#9CA3AF">Bestand: ${p.bestand}.gml</div>
+                  ${p.bronhouder ? `<div style="font-size:10px;color:#9CA3AF">Bronhouder: ${p.bronhouder}</div>` : ""}
+                  ${p.inOnderzoek ? `<div style="font-size:10px;color:#DC2626;font-weight:600;margin-top:2px">⚠️ Object in onderzoek</div>` : ""}
+                </div>
+              </div>
+            `)
+            .openOn(kaartRef.current);
+          L.DomEvent.stopPropagation(e);
+        });
+      },
+    });
+    return laag;
+  }
+
   function toggleZipLaag() {
     const map = kaartRef.current;
     if (!map || !window.L || !zipFeatures?.length) return;
-    const L = window.L;
-
     if (zipLaagRef.current) {
       map.removeLayer(zipLaagRef.current);
       zipLaagRef.current = null;
       setZipLaagAan(false);
       return;
     }
-
-    const zichtbareFeatures = zipFeatures.filter(f => !zipFilter.has(f.oppervlak.label));
-    const geoJson = {
-      type: "FeatureCollection",
-      features: zichtbareFeatures.map(f => ({
-        type: "Feature",
-        geometry: f.geometry,
-        properties: { label: f.oppervlak.label, kleur: f.oppervlak.kleur },
-      })),
-    };
-
-    const laag = L.geoJSON(geoJson, {
-      style: feat => ({
-        fillColor: feat.properties.kleur,
-        fillOpacity: 0.35,
-        color: feat.properties.kleur,
-        weight: 1.5,
-        opacity: 0.85,
-      }),
-      onEachFeature: (feat, layer) => {
-        layer.bindTooltip(feat.properties.label, { permanent: false, direction: "top", className: "bgt-tooltip" });
-      },
-    });
-
-    laag.addTo(map);
-    zipLaagRef.current = laag;
-    setZipLaagAan(true);
+    const laag = bouwGeoJsonLaag(zipFeatures, zipFilter);
+    if (laag) { laag.addTo(map); zipLaagRef.current = laag; setZipLaagAan(true); }
   }
 
   // ── Filter toggle: verberg/toon een laagtype op de kaart ──────────
@@ -837,7 +999,6 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
     const nieuw = new Set(zipFilter);
     if (nieuw.has(label)) nieuw.delete(label); else nieuw.add(label);
     setZipFilter(nieuw);
-    // Laag herbouwen als die aan staat
     if (zipLaagRef.current && kaartRef.current) {
       kaartRef.current.removeLayer(zipLaagRef.current);
       zipLaagRef.current = null;
@@ -849,19 +1010,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   function toggleZipLaagMet(filter) {
     const map = kaartRef.current;
     if (!map || !window.L || !zipFeatures?.length) return;
-    const L = window.L;
-    const zichtbaar = zipFeatures.filter(f => !filter.has(f.oppervlak.label));
-    if (!zichtbaar.length) return;
-    const laag = L.geoJSON({
-      type:"FeatureCollection",
-      features: zichtbaar.map(f => ({ type:"Feature", geometry:f.geometry, properties:{label:f.oppervlak.label,kleur:f.oppervlak.kleur} })),
-    }, {
-      style: feat => ({ fillColor:feat.properties.kleur, fillOpacity:0.35, color:feat.properties.kleur, weight:1.5, opacity:0.85 }),
-      onEachFeature: (feat,layer) => layer.bindTooltip(feat.properties.label,{permanent:false,direction:"top"}),
-    });
-    laag.addTo(map);
-    zipLaagRef.current = laag;
-    setZipLaagAan(true);
+    const laag = bouwGeoJsonLaag(zipFeatures, filter);
+    if (laag) { laag.addTo(map); zipLaagRef.current = laag; setZipLaagAan(true); }
   }
 
   async function voerAnalyseUit(){
