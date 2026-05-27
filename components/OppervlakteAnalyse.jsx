@@ -634,12 +634,24 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   }
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
-  // ── RD New → [lat,lng] (geen Leaflet nodig, voor ZIP-analyse) ─────
+  // ── RD New (X,Y) → [lat,lng] WGS84 ──────────────────────────────
+  // Gebruikt proj4 als beschikbaar (meest nauwkeurig, zelfde als kaart)
+  // Valt terug op dezelfde formule als rdNaarLatLng in dit bestand
   function rdNaarWgs84(x, y) {
-    const dX=(x-155000)/100000, dY=(y-463000)/100000;
-    const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY)/3600;
-    const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.98999*dX*dY*dY-0.16348*dX*dX*dX)/3600;
-    return [lat, lng];
+    if (typeof window !== "undefined" && window.proj4) {
+      try {
+        const w = window.proj4("EPSG:28992", "EPSG:4326", [x, y]);
+        return [w[1], w[0]]; // proj4 geeft [lng,lat] → wij willen [lat,lng]
+      } catch {}
+    }
+    // Fallback: ZELFDE coëfficiënten als bestaande rdNaarLatLng functie
+    const dX = (x - 155000) / 100000;
+    const dY = (y - 463000) / 100000;
+    const N = 3235.65389*dY - 32.58297*dX*dX - 0.24750*dY*dY
+              - 0.84978*dX*dX*dY - 0.06550*dY*dY*dY;
+    const E = 5260.52916*dX + 105.94684*dX*dY + 2.45656*dX*dY*dY
+              - 0.81885*dX*dX*dX;
+    return [52.15517440 + N/3600, 5.38720621 + E/3600];
   }
 
   // ── BGT GML oppervlak-classificatie ────────────────────────────────
@@ -690,20 +702,31 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         const propertiesText = featureEl?.textContent ?? "";
         const oppervlak = bgtZipClassificeer(elementNaam, propertiesText);
 
-        // Haal posList op
+        // Haal posList op — lees srsDimension (2=XY, 3=XYZ)
         const posListEls = [
           ...poly.getElementsByTagNameNS("http://www.opengis.net/gml", "posList"),
           ...poly.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "posList"),
         ];
         if (!posListEls.length) continue;
-        const nummers = posListEls[0].textContent.trim().split(/\s+/).map(Number);
-        if (nummers.length < 6) continue;
 
-        // RD New coördinaten → WGS84 [lng, lat] voor GeoJSON
+        const posEl = posListEls[0];
+        // srsDimension: 2 = X Y per punt, 3 = X Y Z per punt
+        const srsDim = parseInt(posEl.getAttribute("srsDimension") ?? "2");
+        const stap = isNaN(srsDim) ? 2 : Math.max(2, srsDim);
+
+        const nummers = posEl.textContent.trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+        if (nummers.length < 2 * stap) continue;
+
+        // RD New → WGS84 GeoJSON [lng, lat]
+        // GML EPSG:28992: X = Easting (~0–300000), Y = Northing (~280000–630000)
         const ring = [];
-        for (let i = 0; i < nummers.length - 1; i += 2) {
-          const [lat, lng] = rdNaarWgs84(nummers[i], nummers[i+1]);
-          ring.push([lng, lat]);
+        for (let i = 0; i <= nummers.length - stap; i += stap) {
+          const rdX = nummers[i];      // Easting
+          const rdY = nummers[i + 1];  // Northing
+          // Sanity: geldige RD New coördinaten voor Nederland
+          if (rdX < -7000 || rdX > 400000 || rdY < 289000 || rdY > 629000) continue;
+          const [lat, lng] = rdNaarWgs84(rdX, rdY);
+          ring.push([lng, lat]); // GeoJSON: [lng, lat]
         }
         if (ring.length < 3) continue;
         features.push({ oppervlak, geometry: { type: "Polygon", coordinates: [ring] } });
