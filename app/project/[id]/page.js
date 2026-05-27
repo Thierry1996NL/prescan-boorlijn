@@ -659,6 +659,7 @@ export default function ProjectDetailPagina() {
           {/* AI Analyse box — per stap */}
           {actieveStap >= 1 && actieveStap <= 9 && (
             <PrescanAnalyse
+              key={actieveStap}
               stap={actieveStap}
               project={project}
               boringConfig={boringConfig}

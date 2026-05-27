@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 // ─── Stap configuratie ────────────────────────────────────────────────────────
 const STAP_CFG = {
@@ -127,25 +127,19 @@ function maakAnalyseContext(stap, project, boringConfig) {
 
 // ─── Hoofd component ──────────────────────────────────────────────────────────
 export default function PrescanAnalyse({ stap, project, boringConfig }) {
-  const [status,    setStatus]   = useState("idle"); // idle | laden | klaar | fout
+  const [status,    setStatus]   = useState("idle");
   const [tekst,     setTekst]    = useState("");
   const [streaming, setStreaming] = useState("");
   const [ingeklapt, setIngeklapt] = useState(false);
-  const heeftGedraaidRef = useRef(false);
 
   const cfg = STAP_CFG[stap] ?? STAP_CFG[1];
 
-  // Auto-start wanneer data beschikbaar is
+  // Start analyse zodra component mount (key={stap} zorgt voor remount per stap)
   useEffect(() => {
-    if (heeftGedraaidRef.current) return;
     const ctx = maakAnalyseContext(stap, project, boringConfig);
-    // Alleen starten als er relevante data is
-    const heeftData = ctx.boringD || ctx.traceLengte || ctx.maxDiepte || ctx.heeftBGT==="ja";
-    if (heeftData) {
-      heeftGedraaidRef.current = true;
-      startAnalyse(ctx);
-    }
-  }, [project, boringConfig]);
+    // Start altijd — elke stap heeft eigen analyse
+    startAnalyse(ctx);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function startAnalyse(ctx) {
     const analyseContext = ctx ?? maakAnalyseContext(stap, project, boringConfig);
