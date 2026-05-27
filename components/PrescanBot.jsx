@@ -194,7 +194,14 @@ export default function PrescanBot({stap, project, boringConfig}) {
           stap,
           project,
           boringConfig,
-          kennisbank: kennisbank.map(d => ({ naam: d.naam, tekst: d.tekst?.slice(0, 3000) })),
+          kennisbank: [
+            // Eigen project kennisbank
+            ...kennisbank.map(d => ({ naam: d.naam, tekst: d.tekst?.slice(0, 2000) })),
+            // Globale kennisbank uit instellingen
+            ...(() => { try { return JSON.parse(localStorage.getItem("prescan_globale_kennisbank") || "[]"); } catch { return []; } })()
+              .map(d => ({ naam: `[Globaal] ${d.naam}`, tekst: d.tekst?.slice(0, 2000) })),
+          ],
+          extraInstructie: (() => { try { return localStorage.getItem(`prescan_bot_prompt_${stap}`) ?? ""; } catch { return ""; } })(),
         }),
       });
 

@@ -208,7 +208,7 @@ function kennisbankContext(kennisbank) {
 
 export async function POST(request) {
   try {
-    const { berichten, stap, project, boringConfig, kennisbank, analyseer, analyseContext } = await request.json();
+    const { berichten, stap, project, boringConfig, kennisbank, analyseer, analyseContext, extraInstructie } = await request.json();
     const stapNamen = ["","Boring configuratie","Ontwerp inladen","Ontwerp bekijken","Boorlijn tekenen","Oppervlakteanalyse","Diepteligging","Machine locatie","3D ontwerp","Eindontwerp"];
 
     const apiKey = process.env.GROQ_API_KEY;
@@ -226,7 +226,7 @@ Je doet een technische analyse van stap ${stap}: ${stapNamen[stap] ?? ""}.
 Antwoord ALTIJD in het Nederlands. Gebruik ✅ ⚠️ ❌ voor beoordelingen.
 Wees concreet en beknopt. Gebruik normen: CROW 500, SIKB, NEN-1775.
 ${projectContext(project, boringConfig)}
-${kennisbankContext(kennisbank ?? [])}`;
+${kennisbankContext(kennisbank ?? [])}${extraInstructie ? `\n\n## Eigen instructies van gebruiker\n${extraInstructie}` : ""}`;
       messages = [{ role: "user", content: analyseBericht }];
     } else {
       const stapPrompt = STAP_PROMPTS[stap] ?? STAP_PROMPTS[1];
@@ -235,7 +235,7 @@ Je werkt nu in **Stap ${stap}: ${stapNamen[stap] ?? ""}**.
 ${stapPrompt}
 Antwoord ALTIJD in het Nederlands. Wees concreet, gebruik normen (CROW 500, SIKB, NEN-1775).
 ${projectContext(project, boringConfig)}
-${kennisbankContext(kennisbank ?? [])}`;
+${kennisbankContext(kennisbank ?? [])}${extraInstructie ? `\n\n## Eigen instructies van gebruiker\n${extraInstructie}` : ""}`;
       messages = berichten ?? [];
     }
 

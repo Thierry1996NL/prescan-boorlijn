@@ -152,7 +152,11 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
       const res = await fetch("/api/stap-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stap, project, boringConfig, analyseer: true, analyseContext }),
+        body: JSON.stringify({
+          stap, project, boringConfig, analyseer: true, analyseContext,
+          extraInstructie: (() => { try { return localStorage.getItem(`prescan_bot_prompt_${stap}`) ?? ""; } catch { return ""; } })(),
+          kennisbank: (() => { try { return JSON.parse(localStorage.getItem("prescan_globale_kennisbank") || "[]"); } catch { return []; } })(),
+        }),
       });
 
       if (!res.ok) {
