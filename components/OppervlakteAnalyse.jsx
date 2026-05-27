@@ -344,6 +344,13 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const [geselecteerdPunt, setGeselecteerdPunt] = useState(null);
   const [bgtDebug, setBgtDebug] = useState(null); // raw API response for debugging
 
+  // ── BGT ZIP import ────────────────────────────────────────────────
+  const [zipFeatures, setZipFeatures] = useState(null);
+  const [zipNaam,     setZipNaam]     = useState(null);
+  const [zipBezig,    setZipBezig]    = useState(false);
+  const [zipFout,     setZipFout]     = useState(null);
+  const zipInputRef = useRef(null);
+
   const boorCoords = (() => {
     try { const g=project?.boortrace_geojson;if(!g)return[];const p=typeof g==="string"?JSON.parse(g):g;return p.coordinates?.map(([lng,lat])=>[lat,lng])??[]; } catch { return []; }
   })();
@@ -622,6 +629,130 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   }
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
+  // ── RD New → [lat,lng] (geen Leaflet nodig, voor ZIP-analyse) ─────
+  function rdNaarWgs84(x, y) {
+    const dX=(x-155000)/100000, dY=(y-463000)/100000;
+    const lat=52.15517440+(3235.65389*dY-32.58297*dX*dX-0.24750*dY*dY-0.84978*dX*dX*dY)/3600;
+    const lng=5.38720621+(5260.52916*dX+105.94684*dX*dY+2.98999*dX*dY*dY-0.16348*dX*dX*dX)/3600;
+    return [lat, lng];
+  }
+
+  // ── BGT GML oppervlak-classificatie ────────────────────────────────
+  const BGT_ZIP_TYPEN = {
+    "gesloten verharding":  { label:"Gesloten verharding",  kleur:"#6b7280", risico:"hoog" },
+    "open verharding":      { label:"Open verharding",       kleur:"#f59e0b", risico:"middel" },
+    "half verhard":         { label:"Half verhard",          kleur:"#fbbf24", risico:"laag" },
+    "onverhard":            { label:"Onverhard",             kleur:"#d97706", risico:"laag" },
+    "groenvoorziening":     { label:"Groenvoorziening",      kleur:"#16a34a", risico:"laag" },
+    "bos":                  { label:"Groenvoorziening",      kleur:"#15803d", risico:"laag" },
+    "water":                { label:"Water",                 kleur:"#2563eb", risico:"hoog" },
+    "spoor":                { label:"Spoor",                 kleur:"#dc2626", risico:"hoog" },
+    "overig":               { label:"Overig terrein",        kleur:"#9ca3af", risico:"laag" },
+  };
+
+  function bgtZipClassificeer(elementNaam, propertiesText) {
+    const n = elementNaam.toLowerCase().replace(/^bgt_?/,"");
+    const p = propertiesText.toLowerCase();
+    if (n.includes("water") || p.includes("water") || p.includes("sloot")) return BGT_ZIP_TYPEN["water"];
+    if (n.includes("spoor") || p.includes("spoor") || p.includes("trein")) return BGT_ZIP_TYPEN["spoor"];
+    if (p.includes("gesloten")) return BGT_ZIP_TYPEN["gesloten verharding"];
+    if (p.includes("open verh")) return BGT_ZIP_TYPEN["open verharding"];
+    if (p.includes("half verh")) return BGT_ZIP_TYPEN["half verhard"];
+    if (p.includes("onverhard") || p.includes("zand") || p.includes("grond")) return BGT_ZIP_TYPEN["onverhard"];
+    if (p.includes("groen") || p.includes("gras") || p.includes("berm") || p.includes("tuin") || p.includes("bos") || p.includes("heide")) return BGT_ZIP_TYPEN["groenvoorziening"];
+    if (n.includes("weg") || n.includes("ondersteunend")) return BGT_ZIP_TYPEN["gesloten verharding"];
+    if (n.includes("begroeid") || n.includes("groen")) return BGT_ZIP_TYPEN["groenvoorziening"];
+    if (n.includes("onbegroeid")) return BGT_ZIP_TYPEN["onverhard"];
+    return BGT_ZIP_TYPEN["overig"];
+  }
+
+  // ── GML parser: extraheer features met polygonen in WGS84 ──────────
+  function parseerGml(gmlText, bestandsnaam) {
+    const features = [];
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(gmlText, "text/xml");
+      // Alle Polygon elementen vinden
+      const polygonen = doc.getElementsByTagNameNS("http://www.opengis.net/gml", "Polygon");
+      const polygonen32 = doc.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "Polygon");
+      const allePolygonen = [...polygonen, ...polygonen32];
+
+      for (const poly of allePolygonen) {
+        // Haal parent feature element op
+        const featureEl = poly.parentElement?.parentElement?.parentElement?.parentElement;
+        const elementNaam = featureEl?.localName ?? bestandsnaam ?? "onbekend";
+        // Alle tekst van het feature element voor oppervlak-classificatie
+        const propertiesText = featureEl?.textContent ?? "";
+        const oppervlak = bgtZipClassificeer(elementNaam, propertiesText);
+
+        // Haal posList op
+        const posListEls = [
+          ...poly.getElementsByTagNameNS("http://www.opengis.net/gml", "posList"),
+          ...poly.getElementsByTagNameNS("http://www.opengis.net/gml/3.2", "posList"),
+        ];
+        if (!posListEls.length) continue;
+        const nummers = posListEls[0].textContent.trim().split(/\s+/).map(Number);
+        if (nummers.length < 6) continue;
+
+        // RD New coördinaten → WGS84 [lng, lat] voor GeoJSON
+        const ring = [];
+        for (let i = 0; i < nummers.length - 1; i += 2) {
+          const [lat, lng] = rdNaarWgs84(nummers[i], nummers[i+1]);
+          ring.push([lng, lat]);
+        }
+        if (ring.length < 3) continue;
+        features.push({ oppervlak, geometry: { type: "Polygon", coordinates: [ring] } });
+      }
+    } catch (e) {
+      console.warn("GML parse fout:", e.message);
+    }
+    return features;
+  }
+
+  // ── JSZip dynamisch laden ──────────────────────────────────────────
+  async function laadJSZip() {
+    if (window.JSZip) return window.JSZip;
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => reject(new Error("JSZip kon niet worden geladen. Controleer internetverbinding."));
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── Hoofd ZIP import functie ───────────────────────────────────────
+  async function importeerBgtZip(file) {
+    setZipBezig(true); setZipFout(null); setZipFeatures(null);
+    try {
+      const JSZip = await laadJSZip();
+      const zip = await JSZip.loadAsync(file);
+      const alleFeatures = [];
+      const gmlBestanden = Object.keys(zip.files).filter(n => n.endsWith(".gml") || n.endsWith(".GML"));
+      if (!gmlBestanden.length) {
+        setZipFout("Geen GML-bestanden gevonden in de ZIP. Download de BGT als CityGML van PDOK.");
+        return;
+      }
+      for (const naam of gmlBestanden) {
+        const tekst = await zip.files[naam].async("string");
+        const basNaam = naam.split("/").pop().replace(/\.gml$/i,"");
+        const feats = parseerGml(tekst, basNaam);
+        alleFeatures.push(...feats);
+      }
+      if (!alleFeatures.length) {
+        setZipFout("ZIP bevat GML-bestanden maar geen leesbare polygonen. Probeer het CityGML-formaat van PDOK.");
+        return;
+      }
+      setZipFeatures(alleFeatures);
+      setZipNaam(`${file.name} (${alleFeatures.length} polygonen)`);
+      console.log(`[BGT ZIP] ${gmlBestanden.length} GML-bestanden, ${alleFeatures.length} polygonen geladen`);
+    } catch (e) {
+      setZipFout("ZIP fout: " + e.message);
+    } finally {
+      setZipBezig(false);
+    }
+  }
+
   async function voerAnalyseUit(){
     if(boorCoords.length<2){alert("Geen boorlijn. Teken eerst in stap 4.");return;}
     setBezig(true);setVoortgang(0);setGeselecteerdPunt(null);
@@ -629,21 +760,34 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
     setTotaalPunten(punten.length);
 
     try{
-      // Eén bulk-request voor de hele boorlijn bbox
-      const lats=boorCoords.map(c=>c[0]),lngs=boorCoords.map(c=>c[1]);
-      const bulkUrl=`/api/bgt?minLat=${Math.min(...lats)}&maxLat=${Math.max(...lats)}&minLng=${Math.min(...lngs)}&maxLng=${Math.max(...lngs)}&lat=${lats[0]}&lng=${lngs[0]}`;
-      setVoortgang(10);
-      const res=await fetch(bulkUrl);
-      const bulkData=await res.json();
-      setVoortgang(60);
-      const bgtFeatures=bulkData.features??[];
-      console.log(`[BGT bulk] ${bgtFeatures.length} features voor heel tracé (bron: ${bulkData._source})`);
+      let resultaten;
 
-      // Per punt: vind beste BGT-feature via prioriteit en afstand
-      const resultaten=punten.map((p,i)=>{
-        const opp=classificeerVoorPunt(p.lat,p.lng,bgtFeatures);
-        return{...p,oppervlak:opp,id:`ap_${i}`};
-      });
+      if (zipFeatures?.length) {
+        // ── ZIP-modus: lokale BGT polygonen gebruiken ──────────────
+        setVoortgang(20);
+        resultaten = punten.map((p, i) => {
+          // Zoek welke ZIP-polygon dit punt bevat (GeoJSON lng,lat volgorde)
+          const gevonden = zipFeatures.find(feat => ptInGeometry(p.lat, p.lng, feat.geometry));
+          const opp = gevonden ? gevonden.oppervlak : BGT_ZIP_TYPEN["overig"] ?? {label:"Overig",kleur:"#9ca3af"};
+          setVoortgang(20 + Math.round(i/punten.length*70));
+          return { ...p, oppervlak: opp, id:`ap_${i}` };
+        });
+      } else {
+        // ── Live API-modus: PDOK BGT API ──────────────────────────
+        const lats=boorCoords.map(c=>c[0]),lngs=boorCoords.map(c=>c[1]);
+        const bulkUrl=`/api/bgt?minLat=${Math.min(...lats)}&maxLat=${Math.max(...lats)}&minLng=${Math.min(...lngs)}&maxLng=${Math.max(...lngs)}&lat=${lats[0]}&lng=${lngs[0]}`;
+        setVoortgang(10);
+        const res=await fetch(bulkUrl);
+        const bulkData=await res.json();
+        setVoortgang(60);
+        const bgtFeatures=bulkData.features??[];
+        console.log(`[BGT bulk] ${bgtFeatures.length} features voor heel tracé (bron: ${bulkData._source})`);
+        resultaten=punten.map((p,i)=>{
+          const opp=classificeerVoorPunt(p.lat,p.lng,bgtFeatures);
+          return{...p,oppervlak:opp,id:`ap_${i}`};
+        });
+      }
+
       setVoortgang(90);
       setAnalysePunten(resultaten);
       await onAnalyseOpgeslagen?.(resultaten).catch(console.error);
@@ -895,11 +1039,42 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
               </div>
               <p className="text-xs text-gray-400 mt-1">~{boorCoords.length>=2?Math.round(totaalM/stapGrootte)+2:"-"} BGT-queries</p>
             </div>
+            {/* BGT ZIP Import */}
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">BGT data importeren</div>
+              {/* ZIP import knop */}
+              <div
+                onClick={() => !zipBezig && zipInputRef.current?.click()}
+                onDragOver={e=>{e.preventDefault();e.currentTarget.style.background="#FFF7ED";}}
+                onDragLeave={e=>{e.currentTarget.style.background="";}}
+                onDrop={e=>{e.preventDefault();e.currentTarget.style.background="";const f=e.dataTransfer.files[0];if(f)importeerBgtZip(f);}}
+                className="w-full border-2 border-dashed border-orange-200 rounded-lg p-3 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-colors"
+                style={{background: zipFeatures ? "#ECFDF5" : undefined, borderColor: zipFeatures ? "#6EE7B7" : undefined}}
+              >
+                {zipBezig
+                  ? <div className="flex items-center justify-center gap-2 text-xs text-orange-600"><div className="w-3 h-3 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"/>GML bestanden verwerken...</div>
+                  : zipFeatures
+                  ? <div className="text-xs text-green-700 font-medium">✅ {zipNaam}</div>
+                  : <div>
+                      <div className="text-xs font-semibold text-gray-600 mb-1">📦 BGT ZIP importeren</div>
+                      <div className="text-xs text-gray-400">Download van <span className="text-orange-500">pdok.nl/lv/bgt</span><br/>Sleep ZIP hier of klik</div>
+                    </div>
+                }
+                <input ref={zipInputRef} type="file" accept=".zip" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)importeerBgtZip(f);e.target.value="";}}/>
+              </div>
+              {zipFout && <p className="text-xs text-red-600 mt-1">❌ {zipFout}</p>}
+              {zipFeatures && (
+                <button onClick={()=>{setZipFeatures(null);setZipNaam(null);setZipFout(null);}} className="mt-1 w-full text-xs text-gray-400 hover:text-red-500 transition-colors">
+                  × ZIP verwijderen → terugschakelen naar live API
+                </button>
+              )}
+              {zipFeatures && <p className="text-xs text-green-600 mt-1">✓ Analyse gebruikt nu lokale BGT data — geen API calls nodig</p>}
+            </div>
             {/* Analyse knop */}
             <div className="px-4 py-3 border-b border-gray-100 space-y-2">
               <button onClick={voerAnalyseUit} disabled={bezig||boorCoords.length<2}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 bg-orange-500 text-white hover:bg-orange-600">
-                {bezig?(<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</>):(<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>{analysePunten.length>0?"Heranalyseren":"Analyse uitvoeren"}</>)}
+                {bezig?(<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</>):(<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>{zipFeatures?"Analyseer (ZIP)":analysePunten.length>0?"Heranalyseren":"Analyse uitvoeren"}</>)}
               </button>
               {/* Opslaan knop */}
               {analysePunten.length > 0 && (
