@@ -1,5 +1,6 @@
 "use client";
 import BoorLabel, { LockButton } from "@/components/BoorLabel";
+import BROlaag from "@/components/BROlaag";
 import { useEffect, useRef, useState } from "react";
 
 // ─── BGT oppervlak typen ─────────────────────────────────────────
@@ -282,12 +283,13 @@ const ONDERGROND_LAGEN = [
 
 // ─── Sub-stappen definitie ─────────────────────────────────────────────────
 const SUB_STAPPEN = [
-  { id:"5.1", label:"Oppervlakte",  emoji:"🛣️",  subtitel:"BGT verharding",    ondergrondId:null,       kleur:"#f97316" },
-  { id:"5.2", label:"GeoTOP",       emoji:"🧭",  subtitel:"3D Bodemopbouw",    ondergrondId:"geotop",   kleur:"#a855f7" },
-  { id:"5.3", label:"REGIS II",     emoji:"🧱",  subtitel:"Hydrogeologie",     ondergrondId:"regis",    kleur:"#06b6d4" },
-  { id:"5.4", label:"Bodemkaart",   emoji:"🌍",  subtitel:"1:50.000",          ondergrondId:"bodemkaart",kleur:"#84cc16" },
-  { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",kleur:"#3b82f6" },
-  { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",      kleur:"#f97316" },
+  { id:"5.1", label:"Oppervlakte",  emoji:"🛣️",  subtitel:"BGT verharding",    ondergrondId:null,          kleur:"#f97316" },
+  { id:"5.2", label:"GeoTOP",       emoji:"🧭",  subtitel:"3D Bodemopbouw",    ondergrondId:"geotop",      kleur:"#a855f7" },
+  { id:"5.3", label:"REGIS II",     emoji:"🧱",  subtitel:"Hydrogeologie",     ondergrondId:"regis",       kleur:"#06b6d4" },
+  { id:"5.4", label:"Bodemkaart",   emoji:"🌍",  subtitel:"1:50.000",          ondergrondId:"bodemkaart",  kleur:"#84cc16" },
+  { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",  kleur:"#3b82f6" },
+  { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",         kleur:"#f97316" },
+  { id:"5.7", label:"Geotechnisch", emoji:"🏗️",  subtitel:"BRO Sonderingen",   ondergrondId:null,          kleur:"#6B7280", isBRO:true },
 ];
 export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig }) {
   const mapRef       = useRef(null);
@@ -1633,8 +1635,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
               </div>
             )}
 
-            {/* ── 5.4 / 5.5 / 5.6 (WMS beschikbaar) ────────────── */}
-            {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
+            {/* ── 5.7 Geotechnisch (BRO) ──────────────────────────── */}
+            {actieveSubStap==="5.7"&&(
+              <div className="p-4 overflow-y-auto flex-1">
+                <BROlaag project={project} kaartRef={kaartRef}/>
+              </div>
+            )}
               <div className="p-4 space-y-3">
                 {/* Status kaart */}
                 <div className="rounded-xl border p-3 space-y-1.5" style={{borderColor:actOndergrondLaag.kleur+"44",background:actOndergrondLaag.kleur+"08"}}>
