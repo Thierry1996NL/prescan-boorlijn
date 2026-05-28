@@ -1,103 +1,103 @@
-// app/api/bro/route.js
-// BRO (Basisregistratie Ondergrond) — gratis, geen API key nodig
-// Fetcht sonderingen (CPT) en boorprofielen (BHR) nabij het boortracé
+// app/api/bro/route.js — BRO/Dinoloket data via PDOK WFS
+// Haalt CPT sonderingen, boorprofielen en peilbuizen op voor een bbox
+// Geen API key nodig — volledig gratis PDOK opendata
 
-const BRO_BASE = "https://publiek.broservices.nl";
+// PDOK WFS endpoints voor BRO puntdata
+const WFS_ENDPOINTS = {
+  cpt: [
+    // Nieuw service.pdok.nl (geprobeerd eerst)
+    "https://service.pdok.nl/bzk/bro-cpt/wfs/v1_0",
+    // Oud geodata.nationaalgeoregister.nl (fallback)
+    "https://geodata.nationaalgeoregister.nl/brocpt/wfs",
+  ],
+  bhr: [
+    "https://service.pdok.nl/bzk/bro-bhr/wfs/v1_0",
+    "https://geodata.nationaalgeoregister.nl/brobhr/wfs",
+  ],
+  gmw: [
+    "https://service.pdok.nl/bzk/bro-gmw/wfs/v1_0",
+    "https://geodata.nationaalgeoregister.nl/brogmw/wfs",
+  ],
+};
 
-// Voeg marge toe aan bbox (in graden, ~500m)
-function bboxMetMarge(minLat, maxLat, minLng, maxLng, margeM = 500) {
-  const dLat = margeM / 111000;
-  const dLng = margeM / (111000 * Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180));
-  return {
-    minLat: minLat - dLat, maxLat: maxLat + dLat,
-    minLng: minLng - dLng, maxLng: maxLng + dLng,
-  };
-}
+const TYPE_NAMES = {
+  cpt: ["brocpt:CPT", "cpt"],
+  bhr: ["brobhr:BHR", "bhr"],
+  gmw: ["brogmw:GMW", "gmw"],
+};
 
-async function fetchBROType(type, bbox, signal) {
-  // BRO verwacht bbox als: minx,miny,maxx,maxy (lng,lat volgorde)
-  const bboxStr = `${bbox.minLng.toFixed(6)},${bbox.minLat.toFixed(6)},${bbox.maxLng.toFixed(6)},${bbox.maxLat.toFixed(6)}`;
-  const endpoints = {
-    cpt:  `${BRO_BASE}/sr/cpt/v1/characteristics/searches?bbox=${bboxStr}`,
-    bhrp: `${BRO_BASE}/sr/bhrp/v1/characteristics/searches?bbox=${bboxStr}`,
-    bhrg: `${BRO_BASE}/sr/bhrg/v1/characteristics/searches?bbox=${bboxStr}`,
-  };
-  const url = endpoints[type];
-  if (!url) return [];
+async function wfsOpvragen(type, minLat, maxLat, minLng, maxLng, signal) {
+  const urls = WFS_ENDPOINTS[type] ?? [];
+  const typeNames = TYPE_NAMES[type] ?? [type];
+  const bbox = `${minLng},${minLat},${maxLng},${maxLat},EPSG:4326`;
 
-  try {
-    const res = await fetch(url, {
-      signal,
-      headers: { "Accept": "application/json" },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.features ?? []).map(f => ({
-      id:       f.properties?.broId ?? f.id ?? "?",
-      type,
-      lat:      f.geometry?.coordinates?.[1],
-      lng:      f.geometry?.coordinates?.[0],
-      diepte:   f.properties?.deliveredVerticalPosition?.offset ?? f.properties?.finalDepth ?? null,
-      datum:    f.properties?.registrationPeriod?.beginDate ?? f.properties?.deliveryDate ?? null,
-      kwaliteit: f.properties?.qualityClass ?? null,
-      naam:     f.properties?.objectIdAccountableParty ?? null,
-      bronhouder: f.properties?.deliveryAccountableParty ?? null,
-    })).filter(f => f.lat && f.lng);
-  } catch {
-    return [];
+  for (const baseUrl of urls) {
+    for (const typeName of typeNames) {
+      try {
+        const params = new URLSearchParams({
+          service: "WFS",
+          version: "2.0.0",
+          request: "GetFeature",
+          typeName,
+          count: "500",
+          outputFormat: "application/json",
+          bbox,
+        });
+        const res = await fetch(`${baseUrl}?${params}`, {
+          signal,
+          headers: { Accept: "application/json, application/geo+json" },
+        });
+        if (!res.ok) continue;
+        const text = await res.text();
+        if (!text || text.trim().startsWith("<")) continue; // XML error response
+        const json = JSON.parse(text);
+        const features = json.features ?? json.members ?? [];
+        if (features.length > 0 || json.numberMatched === 0) {
+          return features.map(f => ({
+            id:         f.properties?.broId ?? f.properties?.BRO_ID ?? f.id ?? "?",
+            type,
+            lat:        f.geometry?.coordinates?.[1],
+            lng:        f.geometry?.coordinates?.[0],
+            diepte:     f.properties?.["diepte"] ?? f.properties?.["einddiepte"] ?? f.properties?.["finalDepth"] ?? null,
+            datum:      f.properties?.["registratieTijdstip"] ?? f.properties?.["datumInvoer"] ?? null,
+            kwaliteit:  f.properties?.["kwaliteitsklasse"] ?? f.properties?.["kwaliteitsRegime"] ?? null,
+            bronhouder: f.properties?.["bronhouder"] ?? null,
+            naam:       f.properties?.["naam"] ?? f.properties?.["locatieBeschrijving"] ?? null,
+          })).filter(f => f.lat && f.lng);
+        }
+      } catch {}
+    }
   }
-}
-
-// Haal detail op voor één BRO-object (voor popup)
-async function fetchBRODetail(type, broId, signal) {
-  const paths = { cpt: "cpt", bhrp: "bhrp", bhrg: "bhrg" };
-  const path = paths[type];
-  if (!path) return null;
-
-  try {
-    const res = await fetch(`${BRO_BASE}/sr/${path}/v1/objects/${broId}`, {
-      signal,
-      headers: { "Accept": "application/json" },
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return [];
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const broId  = searchParams.get("broId");
-  const type   = searchParams.get("type");
-  const detail = searchParams.get("detail") === "true";
-
-  // Detail-request voor popup
-  if (detail && broId && type) {
-    const data = await fetchBRODetail(type, broId, request.signal);
-    return Response.json(data ?? { error: "Niet gevonden" });
-  }
-
-  // Zoek-request voor alle objecten nabij tracé
   const minLat = parseFloat(searchParams.get("minLat") ?? "0");
   const maxLat = parseFloat(searchParams.get("maxLat") ?? "0");
   const minLng = parseFloat(searchParams.get("minLng") ?? "0");
   const maxLng = parseFloat(searchParams.get("maxLng") ?? "0");
 
   if (!minLat || !maxLat) {
-    return Response.json({ error: "Geen coördinaten" }, { status: 400 });
+    return Response.json({ error: "Geen coördinaten meegegeven" }, { status: 400 });
   }
 
-  const bbox = bboxMetMarge(minLat, maxLat, minLng, maxLng, 600);
-  const [cptn, bhrp, bhrg] = await Promise.allSettled([
-    fetchBROType("cpt",  bbox, request.signal),
-    fetchBROType("bhrp", bbox, request.signal),
-    fetchBROType("bhrg", bbox, request.signal),
+  // Straal van ~800m rond het tracé
+  const marge = 0.008; // ~800m in graden
+  const bbox = {
+    minLat: minLat - marge, maxLat: maxLat + marge,
+    minLng: minLng - marge, maxLng: maxLng + marge,
+  };
+
+  const [cpt, bhr, gmw] = await Promise.allSettled([
+    wfsOpvragen("cpt", bbox.minLat, bbox.maxLat, bbox.minLng, bbox.maxLng, request.signal),
+    wfsOpvragen("bhr", bbox.minLat, bbox.maxLat, bbox.minLng, bbox.maxLng, request.signal),
+    wfsOpvragen("gmw", bbox.minLat, bbox.maxLat, bbox.minLng, bbox.maxLng, request.signal),
   ]);
 
   return Response.json({
-    cpt:  cptn.status  === "fulfilled" ? cptn.value  : [],
-    bhrp: bhrp.status === "fulfilled" ? bhrp.value : [],
-    bhrg: bhrg.status === "fulfilled" ? bhrg.value : [],
+    cpt:  cpt.status  === "fulfilled" ? cpt.value  : [],
+    bhr:  bhr.status  === "fulfilled" ? bhr.value  : [],
+    gmw:  gmw.status  === "fulfilled" ? gmw.value  : [],
   });
 }
