@@ -3,15 +3,16 @@ import { useState, useEffect } from "react";
 
 // ─── Stap configuratie ────────────────────────────────────────────────────────
 const STAP_CFG = {
-  1:{kleur:"#F97316",bg:"#FFF7ED",rand:"#FED7AA",icon:"⚙️",naam:"Boring configuratie"},
-  2:{kleur:"#7C3AED",bg:"#F5F3FF",rand:"#DDD6FE",icon:"📂",naam:"Ontwerp inladen"},
-  3:{kleur:"#0891B2",bg:"#ECFEFF",rand:"#A5F3FC",icon:"🗺️",naam:"KLIC overzicht"},
-  4:{kleur:"#1D4ED8",bg:"#EFF6FF",rand:"#BFDBFE",icon:"✏️",naam:"Boorlijn"},
-  5:{kleur:"#059669",bg:"#ECFDF5",rand:"#A7F3D0",icon:"🌿",naam:"Oppervlakteanalyse"},
-  6:{kleur:"#7C3AED",bg:"#F5F3FF",rand:"#DDD6FE",icon:"📊",naam:"Diepteligging"},
-  7:{kleur:"#0891B2",bg:"#ECFEFF",rand:"#A5F3FC",icon:"🚜",naam:"Machine locatie"},
-  8:{kleur:"#374151",bg:"#F9FAFB",rand:"#E5E7EB",icon:"🌐",naam:"3D ontwerp"},
-  9:{kleur:"#F97316",bg:"#FFF7ED",rand:"#FED7AA",icon:"📋",naam:"Eindontwerp check"},
+  1: {kleur:"#F97316",bg:"#FFF7ED",rand:"#FED7AA",icon:"⚙️", naam:"Boring configuratie"},
+  2: {kleur:"#7C3AED",bg:"#F5F3FF",rand:"#DDD6FE",icon:"📂", naam:"Ontwerp inladen"},
+  3: {kleur:"#0891B2",bg:"#ECFEFF",rand:"#A5F3FC",icon:"🗺️", naam:"KLIC overzicht"},
+  4: {kleur:"#1D4ED8",bg:"#EFF6FF",rand:"#BFDBFE",icon:"✏️", naam:"Boorlijn"},
+  5: {kleur:"#059669",bg:"#ECFDF5",rand:"#A7F3D0",icon:"🌿", naam:"Oppervlakteanalyse"},
+  6: {kleur:"#7C3AED",bg:"#F5F3FF",rand:"#DDD6FE",icon:"🪨", naam:"Ondergrondanalyse"},
+  7: {kleur:"#0891B2",bg:"#ECFEFF",rand:"#A5F3FC",icon:"📊", naam:"Dwarsprofiel"},
+  8: {kleur:"#0891B2",bg:"#ECFEFF",rand:"#A5F3FC",icon:"🚜", naam:"Machine locatie"},
+  9: {kleur:"#374151",bg:"#F9FAFB",rand:"#E5E7EB",icon:"🌐", naam:"3D ontwerp"},
+ 10: {kleur:"#F97316",bg:"#FFF7ED",rand:"#FED7AA",icon:"📋", naam:"Eindrapport & Export"},
 };
 
 // ─── Markdown renderer ────────────────────────────────────────────────────────

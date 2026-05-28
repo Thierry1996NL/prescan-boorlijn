@@ -17,10 +17,11 @@ const STAP_PROMPTS = {
   3: `Je helpt bij interpreteren van KLIC-lagen en conflicten. Vrijwaringszones (CROW 500), risicoklassering Rood/Oranje/Groen, kruisingshoeken.`,
   4: `Je helpt bij plannen van het boortracé. Inslaghoeken 8-20°, afstand bebouwing, stuurcapaciteit machine.`,
   5: `Je helpt bij BGT-oppervlakteanalyse. Risiconiveaus, vergunningsvereisten, CROW 500.`,
-  6: `Je helpt bij diepteligging en dwarsprofiel. AHN4 data, NAP-waarden, minimale dekking boven KLIC, segmenthoeken.`,
-  7: `Je helpt bij machineplaatsing en logistiek. Ruimtebehoefte, bentoniet verbruik, BLVC-maatregelen.`,
-  8: `Je helpt bij 3D-ontwerp interpretatie. Ruimtelijke conflicten, minimale afstanden, export.`,
-  9: `Je helpt bij afronding en rapportage. Volledigheid, CROW 500/SIKB/NEN-1775 check, exportformaten.`,
+  6: `Je helpt bij interpretatie van ondergrondgegevens (DINO Loket / BRO). Geef advies over BRO DGM/GeoTOP (laagopbouw), REGIS II (hydraulische eigenschappen, spoelingsverlies), geomorfologie (stuwwallen, veen, dekzand), bodemkaart, grondwaterstanden (opbarstrisico), AHN hoogtemodel.`,
+  7: `Je helpt bij diepteligging en dwarsprofiel. AHN4 data, NAP-waarden, minimale dekking boven KLIC, segmenthoeken.`,
+  8: `Je helpt bij machineplaatsing en logistiek. Ruimtebehoefte, bentoniet verbruik, BLVC-maatregelen.`,
+  9: `Je helpt bij 3D-ontwerp interpretatie. Ruimtelijke conflicten, minimale afstanden, export.`,
+ 10: `Je helpt bij afronding, rapportage en export. Volledigheidscheck prescan, CROW 500/SIKB/NEN-1775, exportformaten DXF/PDF/rapport.`,
 };
 
 // ─── Analyse prompts (voor automatische stap-analyse) ────────────────────────
@@ -91,7 +92,21 @@ Beoordeel:
 
 ✅ ⚠️ ❌. Max 4 regels per punt.`,
 
-  6: (ctx) => `Analyseer de diepteligging en het dwarsprofiel.
+  6: (ctx) => `Analyseer de beschikbare ondergrondgegevens (DINO Loket / BRO) voor dit boortracé.
+
+Tracélengte: ${ctx.traceLengte ?? "onbekend"}
+Bodemtype: ${ctx.bodemtype ?? "onbekend"}
+Locatie: ${ctx.locatie ?? "onbekend"}
+
+Beoordeel:
+1. **Geologische opbouw** — Welke risico's zijn te verwachten op basis van het bodemtype en de locatie (veen, klei, zand)?
+2. **Grondwater** — Wat is het verwachte opbarstrisico en welke invloed heeft dit op de boring?
+3. **Geomorfologie** — Zijn er bijzondere landvormen (stuwwallen, duinen, veengebieden) langs het tracé?
+4. **Aanbeveling** — Welke BRO-datasets zijn het meest kritisch voor dit project?
+
+✅ ⚠️ ❌. Max 4 regels per punt.`,
+
+  7: (ctx) => `Analyseer de diepteligging en het dwarsprofiel.
 
 Max diepte: ${ctx.maxDiepte ?? "onbekend"}
 Maaiveld: ${ctx.napMin ?? "?"} tot ${ctx.napMax ?? "?"} m NAP
@@ -107,7 +122,7 @@ Beoordeel:
 
 ✅ ⚠️ ❌. Max 4 regels per punt.`,
 
-  7: (ctx) => `Analyseer de machine- en bentonietlocatie.
+  8: (ctx) => `Analyseer de machine- en bentonietlocatie.
 
 Machine: ${ctx.machine ?? "onbekend"}
 Machine afmeting: ${ctx.machineAfm ?? "onbekend"}
@@ -123,7 +138,7 @@ Beoordeel:
 
 ✅ ⚠️ ❌. Beknopt.`,
 
-  8: (ctx) => `Analyseer het 3D-ontwerp en geef een ruimtelijke beoordeling.
+  9: (ctx) => `Analyseer het 3D-ontwerp en geef een ruimtelijke beoordeling.
 
 Boordiameter: Ø${ctx.boringD ?? "?"}mm
 Tracélengte: ${ctx.traceLengte ?? "onbekend"}
@@ -138,7 +153,7 @@ Beoordeel:
 
 ✅ ⚠️ ❌. Beknopt.`,
 
-  9: (ctx) => `Doe een volledigheidscheck voor deze HDD-prescan.
+ 10: (ctx) => `Doe een volledigheidscheck voor deze HDD-prescan.
 
 Project: ${ctx.projectNaam ?? "onbekend"}
 Tracélengte: ${ctx.traceLengte ?? "onbekend"}
@@ -153,12 +168,14 @@ Beoordeel elke stap op volledigheid:
 2. KLIC data geladen ✅/⚠️/❌
 3. Boorlijn getekend ✅/⚠️/❌
 4. Oppervlakteanalyse ✅/⚠️/❌
-5. Diepteligging ✅/⚠️/❌
-6. Machine locatie ✅/⚠️/❌
-7. **Overall oordeel** — Is deze prescan klaar voor aanbesteding?
+5. Ondergrondanalyse ✅/⚠️/❌
+6. Dwarsprofiel ✅/⚠️/❌
+7. Machine locatie ✅/⚠️/❌
+8. **Overall oordeel** — Is deze prescan klaar voor aanbesteding?
 
 Geef een duidelijk eindconclusie.`,
 };
+
 
 
 // ─── Project context samenstellen ────────────────────────────────────────────
@@ -209,7 +226,7 @@ function kennisbankContext(kennisbank) {
 export async function POST(request) {
   try {
     const { berichten, stap, project, boringConfig, kennisbank, analyseer, analyseContext, extraInstructie } = await request.json();
-    const stapNamen = ["","Boring configuratie","Ontwerp inladen","Ontwerp bekijken","Boorlijn tekenen","Oppervlakteanalyse","Diepteligging","Machine locatie","3D ontwerp","Eindontwerp"];
+    const stapNamen = ["","Boring configuratie","Ontwerp inladen","Ontwerp bekijken","Boorlijn tekenen","Oppervlakteanalyse","Ondergrondanalyse","Dwarsprofiel","Machine locatie","3D ontwerp","Eindrapport & Export"];
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
