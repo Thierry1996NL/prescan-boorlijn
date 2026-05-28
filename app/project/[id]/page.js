@@ -52,7 +52,11 @@ export default function ProjectDetailPagina() {
   const [uploadLaden,   setUploadLaden]   = useState({});
 
   // stap 6 – actieve sub-stap Ondergrondanalyse
+  // stap 6 – actieve sub-stap Ondergrondanalyse
   const [actieveSubStap6, setActieveSubStap6] = useState("5.2");
+
+  // boring configuratie (stap 1) — gedeeld met alle andere stappen
+  const [boringConfig, setBoringConfig] = useState(null);
 
   useEffect(() => { laadProject(); }, [id]);
 
