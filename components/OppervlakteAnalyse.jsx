@@ -704,88 +704,82 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
     return null;
   }
 
-  // ── Nauwkeurige BGT-classificatie: elementnaam EERST, dan properties ──
-  function bgtZipClassificeer(elementNaam, propertiesText, featureEl) {
-    const naam = elementNaam.toLowerCase().replace(/^bgt_?/,"").replace(/\.gml.*$/,"");
+  // ── Nauwkeurige BGT-classificatie: bestandsnaam EERST, dan properties ──
+  // ── BGT classificatie: bestandsnaam = type, tekst = subtype ─────────
+  // Simpel en robuust: bestandsnaam geeft het type, tekstzoeken geeft subtype
+  // Eigenschappen staan altijd VOOR de coördinaten in BGT GML, dus eerste 600 tekens
+  function bgtZipClassificeer(bestandsnaam, featureEl) {
+    const bn = bestandsnaam.toLowerCase();
+    // Eerste 600 tekens bevatten de properties, vóór de lange coördinatenreeksen
+    const raw = (featureEl?.textContent ?? "").slice(0, 600).toLowerCase();
 
-    // ── Water ────────────────────────────────────────────────────────
-    if (naam.includes("waterdeel") && !naam.includes("ondersteunend")) {
-      const type = getXmlProp(featureEl, "typeWaterdeel","bgt-typeWaterdeel","plus-typeWaterdeel") ?? "";
-      if (/greppel|droge|sloot/.test(type)) return BGT_ZIP_TYPEN["sloot"];
+    // ── Water ──────────────────────────────────────────────────────────
+    if (bn.includes("waterdeel") && !bn.includes("ondersteunend")) {
+      if (/greppel|droge sloot|droogvallend/.test(raw)) return BGT_ZIP_TYPEN["sloot"];
       return BGT_ZIP_TYPEN["water"];
     }
-    if (naam.includes("ondersteunendwaterdeel") || naam.includes("oever")) return BGT_ZIP_TYPEN["oever"];
+    if (bn.includes("ondersteunendwater") || bn.includes("oever")) return BGT_ZIP_TYPEN["oever"];
 
-    // ── Spoor ────────────────────────────────────────────────────────
-    if (naam.includes("spoor")) return BGT_ZIP_TYPEN["spoor"];
+    // ── Spoor ──────────────────────────────────────────────────────────
+    if (bn.includes("spoor")) return BGT_ZIP_TYPEN["spoor"];
 
-    // ── Gebouw/Pand ──────────────────────────────────────────────────
-    if (naam.includes("pand") || naam.includes("gebouw") || naam.includes("overigbouwwerk"))
-      return BGT_ZIP_TYPEN["gebouw"];
+    // ── Gebouwen ───────────────────────────────────────────────────────
+    if (bn.includes("pand") || bn.includes("bouwwerk")) return BGT_ZIP_TYPEN["gebouw"];
 
-    // ── Kunstwerken (brug, tunnel, viaduct, duiker) ──────────────────
-    if (naam.includes("kunstwerk") || naam.includes("tunneldeel") || naam.includes("overbrugging"))
-      return BGT_ZIP_TYPEN["kunstwerk"];
+    // ── Kunstwerken ────────────────────────────────────────────────────
+    if (bn.includes("kunstwerk") || bn.includes("overbrugging") || bn.includes("tunnel")) return BGT_ZIP_TYPEN["kunstwerk"];
+    if (bn.includes("scheiding")) return BGT_ZIP_TYPEN["kunstwerk"];
 
-    // ── Scheiding (muur, hek) ────────────────────────────────────────
-    if (naam.includes("scheiding")) return BGT_ZIP_TYPEN["kunstwerk"];
+    // ── Functioneel gebied → overig ────────────────────────────────────
+    if (bn.includes("functioneel")) return BGT_ZIP_TYPEN["overig"];
 
-    // ── Wegdeel: kijk naar function + fysiek voorkomen ───────────────
-    if (naam.includes("wegdeel") && !naam.includes("ondersteunend")) {
-      const func    = (getXmlProp(featureEl,"functieWegdeel","bgt-functieWegdeel","plus-functieWegdeel") ?? "").toLowerCase();
-      const fysiek  = (getXmlProp(featureEl,"fysiekVoorkomenWegdeel","bgt-fysiekVoorkomenWegdeel","plus-fysiekVoorkomenWegdeel") ?? "").toLowerCase();
-      // Rijbanen
-      if (/autosnelweg|autoweg|regionale weg|lokale weg|rijbaan/.test(func))
-        return fysiek.includes("open") ? BGT_ZIP_TYPEN["open verharding"] : BGT_ZIP_TYPEN["rijbaan"];
-      if (func.includes("fiets")) return BGT_ZIP_TYPEN["fietspad"];
-      if (/voetpad|trottoir|voetganger/.test(func)) return BGT_ZIP_TYPEN["voetpad"];
-      if (/parkeer|ov-baan/.test(func)) return BGT_ZIP_TYPEN["parkeren"];
-      // Fysiek voorkomen als function niet duidelijk
-      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
-      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
-      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
-      if (fysiek.includes("onverhard")) return BGT_ZIP_TYPEN["onverhard"];
+    // ── Wegdeel ────────────────────────────────────────────────────────
+    if (bn.includes("wegdeel") && !bn.includes("ondersteunend")) {
+      if (/autosnelweg|autoweg|regionale weg|lokale weg/.test(raw)) return BGT_ZIP_TYPEN["rijbaan"];
+      if (/fietspad|fietsstrook/.test(raw)) return BGT_ZIP_TYPEN["fietspad"];
+      if (/voetpad|trottoir|voetgangers/.test(raw)) return BGT_ZIP_TYPEN["voetpad"];
+      if (/parkeervlak|ov-baan/.test(raw)) return BGT_ZIP_TYPEN["parkeren"];
+      if (raw.includes("gesloten verharding")) return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (raw.includes("open verharding"))    return BGT_ZIP_TYPEN["open verharding"];
+      if (raw.includes("half verhard"))       return BGT_ZIP_TYPEN["half verhard"];
+      if (raw.includes("onverhard"))          return BGT_ZIP_TYPEN["onverhard"];
       return BGT_ZIP_TYPEN["gesloten verharding"];
     }
 
-    // ── Ondersteunend wegdeel (berm, fietsstrook) ────────────────────
-    if (naam.includes("ondersteunendwegdeel")) {
-      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenOndersteunendWegdeel","bgt-fysiekVoorkomenOndersteunendWegdeel","plus-fysiekVoorkomenOndersteunendWegdeel") ?? "").toLowerCase();
-      if (fysiek.includes("groen") || fysiek.includes("berm") || fysiek.includes("gras")) return BGT_ZIP_TYPEN["groenvoorziening"];
-      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
-      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
-      if (fysiek.includes("onverhard") || fysiek.includes("zand")) return BGT_ZIP_TYPEN["onverhard"];
-      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
-      return BGT_ZIP_TYPEN["onverhard"]; // berm default
+    // ── Ondersteunend wegdeel ──────────────────────────────────────────
+    if (bn.includes("ondersteunendweg")) {
+      if (/groenvoorzien|berm|gras/.test(raw)) return BGT_ZIP_TYPEN["groenvoorziening"];
+      if (raw.includes("gesloten verharding")) return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (raw.includes("open verharding"))     return BGT_ZIP_TYPEN["open verharding"];
+      if (/onverhard|zand/.test(raw))          return BGT_ZIP_TYPEN["onverhard"];
+      return BGT_ZIP_TYPEN["groenvoorziening"];
     }
 
-    // ── Onbegroeid terrein ───────────────────────────────────────────
-    if (naam.includes("onbegroeid")) {
-      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenOnbegroeidTerreindeel","bgt-fysiekVoorkomenOnbegroeidTerreindeel","plus-fysiekVoorkomenOnbegroeidTerreindeel") ?? "").toLowerCase();
-      if (fysiek.includes("erf"))       return BGT_ZIP_TYPEN["erf"];
-      if (fysiek.includes("gesloten"))  return BGT_ZIP_TYPEN["gesloten verharding"];
-      if (fysiek.includes("open"))      return BGT_ZIP_TYPEN["open verharding"];
-      if (fysiek.includes("half"))      return BGT_ZIP_TYPEN["half verhard"];
-      if (fysiek.includes("zand") || fysiek.includes("grond")) return BGT_ZIP_TYPEN["zand"];
-      if (fysiek.includes("onverhard")) return BGT_ZIP_TYPEN["onverhard"];
+    // ── Onbegroeid terrein ─────────────────────────────────────────────
+    if (bn.includes("onbegroeid")) {
+      if (raw.includes("erf"))                return BGT_ZIP_TYPEN["erf"];
+      if (raw.includes("gesloten verharding")) return BGT_ZIP_TYPEN["gesloten verharding"];
+      if (raw.includes("open verharding"))    return BGT_ZIP_TYPEN["open verharding"];
+      if (raw.includes("half verhard"))       return BGT_ZIP_TYPEN["half verhard"];
+      if (/onverhard|zand|grond/.test(raw))   return BGT_ZIP_TYPEN["zand"];
       return BGT_ZIP_TYPEN["onverhard"];
     }
 
-    // ── Begroeid terrein ─────────────────────────────────────────────
-    if (naam.includes("begroeid") || naam.includes("groen")) {
-      const fysiek = (getXmlProp(featureEl,"fysiekVoorkomenBegroeidTerreindeel","bgt-fysiekVoorkomenBegroeidTerreindeel","plus-fysiekVoorkomenBegroeidTerreindeel") ?? "").toLowerCase();
-      if (/loofbos|naaldbos|gemengd bos|bos/.test(fysiek)) return BGT_ZIP_TYPEN["bos"];
-      if (/heide|struikgewas/.test(fysiek))                 return BGT_ZIP_TYPEN["heide"];
-      if (/moeras|rietland|moerasvegetatie/.test(fysiek))   return BGT_ZIP_TYPEN["moeras"];
-      if (/grasland|weide|gras/.test(fysiek))               return BGT_ZIP_TYPEN["grasland"];
-      if (/boomteelt|fruitteelt|akkerbouw|landbouw/.test(fysiek)) return BGT_ZIP_TYPEN["agrarisch"];
+    // ── Begroeid terrein ───────────────────────────────────────────────
+    if (bn.includes("begroeid")) {
+      if (/loofbos|naaldbos|gemengd bos/.test(raw)) return BGT_ZIP_TYPEN["bos"];
+      if (/heide|struikgewas/.test(raw))             return BGT_ZIP_TYPEN["heide"];
+      if (/moeras|rietland/.test(raw))               return BGT_ZIP_TYPEN["moeras"];
+      if (/grasland agrar|weide|hooiland/.test(raw)) return BGT_ZIP_TYPEN["grasland"];
+      if (/grasland overig|plantsoen|groenvoorzien/.test(raw)) return BGT_ZIP_TYPEN["groenvoorziening"];
+      if (/boomteelt|fruitteelt|akkerbouw/.test(raw)) return BGT_ZIP_TYPEN["agrarisch"];
       return BGT_ZIP_TYPEN["groenvoorziening"];
     }
 
     return BGT_ZIP_TYPEN["overig"];
   }
 
-  // ── GML parser: extraheer features met polygonen + metadata ───────
+    // ── GML parser: extraheer features met polygonen + metadata ───────
   function parseerGml(gmlText, bestandsnaam) {
     const features = [];
     try {
@@ -797,12 +791,25 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
       ];
 
       for (const poly of polygonen) {
-        // Haal parent feature op (4 niveaus omhoog: Polygon < exterior/geom-prop < geometry < Feature)
-        const featureEl = poly.parentElement?.parentElement?.parentElement?.parentElement;
-        const elementNaam = featureEl?.localName ?? bestandsnaam ?? "onbekend";
-
-        // Classificeer met nauwkeurige functie (geeft featureEl mee)
-        const oppervlak = bgtZipClassificeer(elementNaam, featureEl?.textContent ?? "", featureEl);
+        // BGT CityGML structuur:
+        // CityModel > cityObjectMember > FeatureType > geometrieProp > Polygon
+        // Level 1 = geometrieProp, Level 2 = FeatureType (BegroeidTerreindeel etc.)
+        // Stap omhoog totdat we een element hebben dat DIRECT kind is van cityObjectMember
+        let featureEl = poly.parentElement?.parentElement ?? null; // niveau 2
+        if (featureEl) {
+          const ouderNaam = (featureEl.parentElement?.localName ?? "").toLowerCase();
+          // Als ouder geen cityObjectMember/featureMember is, zoek robuust door verder omhoog te gaan
+          if (!ouderNaam.includes("member") && !ouderNaam.includes("citymodel")) {
+            // Probeer niveau 3
+            const lvl3 = featureEl.parentElement;
+            if (lvl3 && !lvl3.localName?.toLowerCase().includes("citymodel")) {
+              featureEl = lvl3;
+            }
+          }
+        }
+        // Gebruik bestandsnaam als primaire type-indicatie (betrouwbaarder dan elementNaam door namespace-variaties)
+        // Classificeer op bestandsnaam (betrouwbaar) + featureEl tekst voor subtype
+        const oppervlak = bgtZipClassificeer(bestandsnaam, featureEl);
 
         // Extraheer nuttige properties voor popup
         const subtype = getXmlProp(featureEl,
