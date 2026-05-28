@@ -274,7 +274,7 @@ export default function BROlaag({ project, kaartRef }) {
                 </div>
                 <p style={{fontSize:11,color:"#374151",marginBottom:8,lineHeight:1.4}}>{m.beschrijving}</p>
                 <p style={{fontSize:10,color:"#6B7280",marginBottom:8,fontStyle:"italic"}}>{m.tip}</p>
-                <div style={{display:"flex",gap:6"}}>
+                <div style={{display:"flex",gap:6}}>
                   {m.dinoloketUrl&&<a href={m.dinoloketUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:10,padding:"4px 8px",background:m.kleur,color:"white",borderRadius:6,textDecoration:"none",fontWeight:600}}>🌐 DINOloket</a>}
                   {m.broloketUrl&&<a href={m.broloketUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:10,padding:"4px 8px",background:"#F9FAFB",color:m.kleur,border:`1px solid ${m.kleur}50`,borderRadius:6,textDecoration:"none",fontWeight:600}}>📥 BROloket</a>}
                   {m.atomUrl&&<a href={m.atomUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:10,padding:"4px 8px",background:"#F9FAFB",color:"#6B7280",border:"1px solid #E5E7EB",borderRadius:6,textDecoration:"none"}}>⬇ ATOM download</a>}
