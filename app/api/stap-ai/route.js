@@ -1,7 +1,7 @@
 // app/api/stap-ai/route.js — Groq LLM met stap-context, kennisbank en automatische analyses
 // Vereist: GROQ_API_KEY in Vercel environment variables
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "llama-3.1-8b-instant";
 
 // ─── Chat prompts (voor vragen) ───────────────────────────────────────────────
 const STAP_PROMPTS = {
@@ -256,17 +256,22 @@ ${kennisbankContext(kennisbank ?? [])}${extraInstructie ? `\n\n## Eigen instruct
       messages = berichten ?? [];
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
+
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
+      signal: controller.signal,
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
-        max_tokens: analyseer ? 800 : 1024,
+        max_tokens: analyseer ? 600 : 1024,
         temperature: analyseer ? 0.3 : 0.7,
         stream: true,
       }),
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -283,6 +288,9 @@ ${kennisbankContext(kennisbank ?? [])}${extraInstructie ? `\n\n## Eigen instruct
 
   } catch (err) {
     console.error("Stap-AI fout:", err);
+    if (err.name === "AbortError") {
+      return Response.json({ error: "Groq reageert niet (timeout). Probeer opnieuw." }, { status: 504 });
+    }
     return Response.json({ error: "Serverfout: " + err.message }, { status: 500 });
   }
 }

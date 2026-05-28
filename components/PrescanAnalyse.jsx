@@ -149,9 +149,13 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
     setStreaming("");
     setIngeklapt(false);
 
+    const controller = new AbortController();
+    const clientTimeout = setTimeout(() => controller.abort(), 30000); // 30s max
+
     try {
       const res = await fetch("/api/stap-ai", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stap, project, boringConfig, analyseer: true, analyseContext,
@@ -159,6 +163,7 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
           kennisbank: (() => { try { return JSON.parse(localStorage.getItem("prescan_globale_kennisbank") || "[]"); } catch { return []; } })(),
         }),
       });
+      clearTimeout(clientTimeout);
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -190,7 +195,12 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
       setTekst(antwoord || "Geen analyse beschikbaar.");
       setStatus("klaar");
     } catch (e) {
-      setTekst("❌ Verbindingsfout. Controleer je internetverbinding.");
+      clearTimeout(clientTimeout);
+      if (e.name === "AbortError") {
+        setTekst("⏱️ Analyse duurde te lang. Klik op Heranalyseer om opnieuw te proberen.");
+      } else {
+        setTekst("❌ Verbindingsfout. Controleer je internetverbinding.");
+      }
       setStatus("fout");
     } finally {
       setStreaming("");
