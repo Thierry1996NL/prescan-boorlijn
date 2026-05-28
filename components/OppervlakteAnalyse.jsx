@@ -1641,6 +1641,9 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                 <BROlaag project={project} kaartRef={kaartRef}/>
               </div>
             )}
+
+            {/* ── 5.4 / 5.5 / 5.6 (WMS beschikbaar) ────────────── */}
+            {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
               <div className="p-4 space-y-3">
                 {/* Status kaart */}
                 <div className="rounded-xl border p-3 space-y-1.5" style={{borderColor:actOndergrondLaag.kleur+"44",background:actOndergrondLaag.kleur+"08"}}>
