@@ -289,7 +289,7 @@ const SUB_STAPPEN = [
   { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",kleur:"#3b82f6" },
   { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",      kleur:"#f97316" },
 ];
-export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, boringConfig }) {
+export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
   const klicRef      = useRef([]);
@@ -344,7 +344,27 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   const [geselecteerdPunt, setGeselecteerdPunt] = useState(null);
   const [bgtDebug, setBgtDebug] = useState(null); // raw API response for debugging
 
-  // ── BGT ZIP import ────────────────────────────────────────────────
+  // ── Herstel BGT ZIP features uit project bij laden ────────────────
+  useEffect(() => {
+    if (!project?.bgt_zip_features || zipFeatures) return;
+    try {
+      const feats = JSON.parse(project.bgt_zip_features);
+      if (feats?.length) {
+        setZipFeatures(feats);
+        // Bestandsinfo herbouwen
+        const map = {};
+        feats.forEach(f => {
+          const b = f.meta?.bestand ?? "onbekend";
+          const l = f.oppervlak?.label ?? "Overig";
+          if (!map[b]) map[b] = { naam: b, aantalFeatures: 0, typen: {} };
+          map[b].aantalFeatures++;
+          map[b].typen[l] = (map[b].typen[l] || 0) + 1;
+        });
+        setZipBestanden(Object.values(map));
+        setZipNaam(`Hersteld uit project (${feats.length} polygonen)`);
+      }
+    } catch {}
+  }, [project?.bgt_zip_features]); // eslint-disable-line react-hooks/exhaustive-deps
   const [zipFeatures, setZipFeatures] = useState(null);
   const [zipNaam,     setZipNaam]     = useState(null);
   const [zipBezig,    setZipBezig]    = useState(false);
@@ -920,6 +940,16 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
   // ── BGT ZIP laag op de Leaflet kaart tonen/verbergen ──────────────
   function bouwGeoJsonLaag(features, filter) {
     const L = window.L;
+    const map = kaartRef.current;
+    if (!map) return null;
+
+    // Maak een BGT-pane aan met lage z-index (onder boorlijn en KLIC)
+    if (!map.getPane("bgtPane")) {
+      map.createPane("bgtPane");
+      map.getPane("bgtPane").style.zIndex = 250; // onder overlayPane (400) en tilePane (200)
+      map.getPane("bgtPane").style.pointerEvents = "auto";
+    }
+
     const zichtbaar = features.filter(f => !filter.has(f.oppervlak.label));
     if (!zichtbaar.length) return null;
 
@@ -941,6 +971,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
         },
       })),
     }, {
+      pane: "bgtPane", // eigen pane met lage z-index → boorlijn blijft erboven
       style: feat => ({
         fillColor:   feat.properties.kleur,
         fillOpacity: 0.35,
@@ -1354,29 +1385,72 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
                 {/* Bestanden panel */}
                 {zipPanelOpen && (
                   <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 overflow-hidden">
+                    {/* Header + Alles aan/uit */}
                     <div className="px-3 py-2 border-b border-blue-100 flex items-center justify-between">
                       <span className="text-xs font-semibold text-blue-800">📦 GML-bestanden in ZIP</span>
-                      <span className="text-xs text-blue-600">{zipFeatures.length} polygonen totaal</span>
+                      <div className="flex gap-1">
+                        <button onClick={()=>{
+                          // Alles zichtbaar
+                          setZipFilter(new Set());
+                          if(zipLaagRef.current&&kaartRef.current){kaartRef.current.removeLayer(zipLaagRef.current);zipLaagRef.current=null;setZipLaagAan(false);}
+                          setTimeout(()=>toggleZipLaagMet(new Set()),50);
+                        }} className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 border border-green-200 hover:bg-green-200">
+                          Alles aan
+                        </button>
+                        <button onClick={()=>{
+                          // Alles verbergen
+                          const alleLabels = new Set(zipFeatures.map(f=>f.oppervlak.label));
+                          setZipFilter(alleLabels);
+                          if(zipLaagRef.current&&kaartRef.current){kaartRef.current.removeLayer(zipLaagRef.current);zipLaagRef.current=null;setZipLaagAan(false);}
+                        }} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200">
+                          Alles uit
+                        </button>
+                      </div>
                     </div>
-                    <div className="max-h-48 overflow-y-auto">
-                      {zipBestanden.map((b,i) => (
-                        <div key={i} className="px-3 py-2 border-b border-blue-100 last:border-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-blue-900 font-mono">{b.naam}.gml</span>
-                            <span className="text-xs text-blue-600">{b.aantalFeatures}×</span>
-                          </div>
+                    {/* Lagenlijst — alle unieke typen */}
+                    {zipLaagAan && (() => {
+                      // Unieke types over alle bestanden
+                      const alleTypen = {};
+                      zipFeatures.forEach(f => {
+                        const l = f.oppervlak.label, k = f.oppervlak.kleur;
+                        if (!alleTypen[l]) alleTypen[l] = { label: l, kleur: k, n: 0 };
+                        alleTypen[l].n++;
+                      });
+                      return (
+                        <div className="px-3 py-2 border-b border-blue-100">
+                          <div className="text-xs font-semibold text-blue-800 mb-1.5">🗺️ Lagen op kaart</div>
                           <div className="flex flex-wrap gap-1">
-                            {Object.entries(b.typen).map(([label, n]) => {
-                              const kleur = BGT_ZIP_TYPEN[Object.keys(BGT_ZIP_TYPEN).find(k=>BGT_ZIP_TYPEN[k].label===label)]?.kleur ?? "#9ca3af";
+                            {Object.values(alleTypen).sort((a,b)=>b.n-a.n).map(({label,kleur,n}) => {
                               const verborgen = zipFilter.has(label);
                               return (
                                 <button key={label} onClick={()=>toggleZipFilter(label)}
-                                  title={verborgen?"Toon op kaart":"Verberg van kaart"}
-                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-opacity"
-                                  style={{background:verborgen?"#F3F4F6":kleur+"20",border:`1px solid ${verborgen?"#E5E7EB":kleur}`,color:verborgen?"#9CA3AF":kleur,opacity:verborgen?0.5:1}}>
-                                  <div style={{width:6,height:6,borderRadius:"50%",background:verborgen?"#9CA3AF":kleur}}/>
-                                  {label} ({n})
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-all"
+                                  style={{background:verborgen?"#F3F4F6":kleur+"25",border:`1.5px solid ${verborgen?"#D1D5DB":kleur}`,color:verborgen?"#9CA3AF":"#1F2937"}}>
+                                  <div style={{width:8,height:8,borderRadius:2,background:verborgen?"#D1D5DB":kleur,flexShrink:0}}/>
+                                  <span style={{textDecoration:verborgen?"line-through":"none"}}>{label}</span>
+                                  <span style={{color:verborgen?"#D1D5DB":kleur,fontWeight:600}}>({n})</span>
                                 </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* GML bestanden detail */}
+                    <div className="max-h-40 overflow-y-auto">
+                      {zipBestanden.map((b,i) => (
+                        <div key={i} className="px-3 py-1.5 border-b border-blue-100 last:border-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-blue-900 font-mono">{b.naam}.gml</span>
+                            <span className="text-xs text-blue-500">{b.aantalFeatures}×</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {Object.entries(b.typen).map(([label,n]) => {
+                              const kleur = Object.values(BGT_ZIP_TYPEN).find(t=>t.label===label)?.kleur ?? "#9ca3af";
+                              return (
+                                <span key={label} className="text-xs px-1.5 py-0 rounded-full" style={{background:kleur+"20",color:kleur,border:`1px solid ${kleur}50`}}>
+                                  {label} ({n})
+                                </span>
                               );
                             })}
                           </div>
@@ -1409,6 +1483,10 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
                     setOpslaanBezig(true);
                     try {
                       await onAnalyseOpgeslagen?.(analysePunten).catch(console.error);
+                      // Sla ook ZIP features op als die aanwezig zijn
+                      if (zipFeatures?.length) {
+                        await onZipOpgeslagen?.(zipFeatures).catch(console.error);
+                      }
                       setOpgeslagen(true); setTimeout(()=>setOpgeslagen(false), 3000);
                     } finally { setOpslaanBezig(false); }
                   }}

@@ -111,6 +111,9 @@ export default function ProjectDetailPagina() {
       } else if (data._alleenAnalyse) {
         // Auto-save analysepunten — geen laadProject
         await updateProject(id, { analyse_punten: data.analyse_punten });
+      } else if (data._alleenZipFeatures) {
+        // Sla BGT ZIP features op — geen laadProject
+        await updateProject(id, { bgt_zip_features: data.bgt_zip_features });
       } else {
         // Boorlijn opslaan — geojson object direct meegeven (geen stringify)
         await updateProject(id, { boortrace_geojson: data });
@@ -564,6 +567,9 @@ export default function ProjectDetailPagina() {
             boringConfig={boringConfig}
             onAnalyseOpgeslagen={async (resultaten) => {
               await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
+            }}
+            onZipOpgeslagen={async (features) => {
+              await handleTraceOpgeslagen({ _alleenZipFeatures: true, bgt_zip_features: JSON.stringify(features) });
             }}
           />
         );
