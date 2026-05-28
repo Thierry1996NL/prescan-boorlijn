@@ -5,36 +5,36 @@ import { useRouter, usePathname } from "next/navigation";
 import { getProjecten, logout } from "@/lib/supabase-queries";
 
 const STAPPEN = [
-  { nr: 1,  label: "Projectinformatie",  sub: "Basisgegevens",            leeg: false },
-  { nr: 2,  label: "Ontwerp inladen",    sub: "LS · MS · Gas · Water",    leeg: false },
-  { nr: 3,  label: "Ontwerp bekijken",   sub: "Lagen & instellingen",     leeg: false },
-  { nr: 4,  label: "Boorlijn tekenen",   sub: "Tracé op de kaart",        leeg: false },
-  { nr: 5,  label: "Oppervlakteanalyse", sub: "BGT oppervlakken",         leeg: false },
-  { nr: 6,  label: "Diepteligging",      sub: "Dwarsprofiel & bodem",     leeg: false },
-  { nr: 7,  label: "Machine locatie",    sub: "Boormachine & bentoniet",  leeg: false },
-  { nr: 8,  label: "3D ontwerp",         sub: "CesiumJS visualisatie",    leeg: false },
-  { nr: 9,  label: "Eindontwerp",        sub: "Overzicht read-only",      leeg: false },
-  { nr: 10, label: "AI optimalisatie",   sub: "Kruisingen & advies",      leeg: true  },
-  { nr: 11, label: "Pre-scan",           sub: "Tekeningen",               leeg: true  },
-  { nr: 12, label: "Contactpersonen",    sub: "KLIC contacten",           leeg: true  },
-  { nr: 13, label: "Exporteren",         sub: "Rapport & coördinaten",    leeg: true  },
+  { nr: 1,  label: "Projectinformatie",    sub: "Basisgegevens",            leeg: false },
+  { nr: 2,  label: "Ontwerp inladen",      sub: "LS · MS · Gas · Water",    leeg: false },
+  { nr: 3,  label: "Ontwerp bekijken",     sub: "Lagen & instellingen",     leeg: false },
+  { nr: 4,  label: "Boorlijn tekenen",     sub: "Tracé op de kaart",        leeg: false },
+  { nr: 5,  label: "Oppervlakteanalyse",   sub: "BGT verharding",           leeg: false },
+  { nr: 6,  label: "Ondergrondanalyse",    sub: "DINO Loket · BRO",         leeg: false },
+  { nr: 7,  label: "Dwarsprofiel",         sub: "Dwarsprofiel & bodem",     leeg: false },
+  { nr: 8,  label: "Machine locatie",      sub: "Boormachine & bentoniet",  leeg: false },
+  { nr: 9,  label: "3D ontwerp",           sub: "CesiumJS visualisatie",    leeg: false },
+  { nr: 10, label: "Eindrapport & Export", sub: "Overzicht & exports",      leeg: false },
+  { nr: 11, label: "AI optimalisatie",     sub: "Kruisingen & advies",      leeg: true  },
+  { nr: 12, label: "Pre-scan",             sub: "Tekeningen",               leeg: true  },
+  { nr: 13, label: "Contactpersonen",      sub: "KLIC contacten",           leeg: true  },
 ];
 
-// Sub-stappen voor stap 5 — zichtbaar als stap 5 actief is
-const SUB_STAPPEN_5 = [
-  { id:"5.1", label:"Oppervlakte", emoji:"🛣️", subtitel:"BGT verharding" },
-  { id:"5.2", label:"GeoTOP",      emoji:"🧭", subtitel:"3D Bodemopbouw" },
-  { id:"5.3", label:"REGIS II",    emoji:"🧱", subtitel:"Hydrogeologie"  },
-  { id:"5.4", label:"Bodemkaart",  emoji:"🌍", subtitel:"1:50.000"       },
-  { id:"5.5", label:"Grondwater",  emoji:"💧", subtitel:"BRO Peilbuizen" },
-  { id:"5.6", label:"AHN",         emoji:"🌊", subtitel:"Hoogtemodel"    },
+// Sub-stappen voor stap 6 — zichtbaar als stap 6 (Ondergrondanalyse) actief is
+const SUB_STAPPEN_6 = [
+  { id:"6.1", label:"BRO DGM",          emoji:"🧭", subtitel:"3D Bodemopbouw"   },
+  { id:"6.2", label:"REGIS II",         emoji:"🧱", subtitel:"Hydrogeologie"    },
+  { id:"6.3", label:"Geomorfologie",    emoji:"🏔️", subtitel:"BRO GMM kaart"   },
+  { id:"6.4", label:"Bodemkaart",       emoji:"🌍", subtitel:"1:50.000"         },
+  { id:"6.5", label:"Grondwaterspiegel",emoji:"💧", subtitel:"BRO Peilbuizen"   },
+  { id:"6.6", label:"AHN",              emoji:"🌊", subtitel:"Hoogtemodel"      },
 ];
 
 export default function Sidebar({
   actiefProjectId   = null,
   actieveStap       = 1,
   onStapWijzigen    = null,
-  actieveSubStap    = "5.1",
+  actieveSubStap    = "6.1",
   onSubStapWijzigen = null,
   project           = null,
   gebruiker         = null,
@@ -146,7 +146,7 @@ export default function Sidebar({
               {STAPPEN.map(stap => {
                 const actief   = actieveStap === stap.nr;
                 const voltooid = !stap.leeg && actieveStap > stap.nr;
-                const toontSub = actief && stap.nr === 5 && !ingeklapt;
+                const toontSub = actief && stap.nr === 6 && !ingeklapt;
                 return (
                   <div key={stap.nr}>
                     <button
@@ -178,7 +178,7 @@ export default function Sidebar({
                     {/* Sub-stappen stap 5 — tonen als stap 5 actief is */}
                     {toontSub && (
                       <div className="ml-7 mt-0.5 mb-1 space-y-0.5 border-l-2 border-orange-100 pl-3">
-                        {SUB_STAPPEN_5.map(sub => {
+                        {SUB_STAPPEN_6.map(sub => {
                           const subActief = actieveSubStap === sub.id;
                           return (
                             <button

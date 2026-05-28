@@ -24,17 +24,17 @@ const STAP_LABELS = {
   3:  "Ontwerp bekijken",
   4:  "Boorlijn tekenen",
   5:  "Oppervlakteanalyse",
-  6:  "Diepteligging & dwarsprofiel",
-  7:  "Machine- & bentonietlocatie",
-  8:  "3D ontwerp",
-  9:  "Eindontwerp",
-  10: "AI optimalisatie & kruisingen",
-  11: "Pre-scan en tekeningen",
-  12: "Contactpersonen (KLIC)",
-  13: "Exporteren",
+  6:  "Ondergrondanalyse",
+  7:  "Dwarsprofiel",
+  8:  "Machine locatie",
+  9:  "3D ontwerp",
+  10: "Eindrapport & Export",
+  11: "AI optimalisatie & kruisingen",
+  12: "Pre-scan en tekeningen",
+  13: "Contactpersonen (KLIC)",
 };
 
-const STAP_MAX_UITGEWERKT = 9;
+const STAP_MAX_UITGEWERKT = 10;
 
 // ═══════════════════════════════════════════════════════════════
 export default function ProjectDetailPagina() {
@@ -565,6 +565,7 @@ export default function ProjectDetailPagina() {
           <OppervlakteAnalyse
             project={project}
             boringConfig={boringConfig}
+            modus="oppervlakte"
             onAnalyseOpgeslagen={async (resultaten) => {
               await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
             }}
@@ -574,8 +575,24 @@ export default function ProjectDetailPagina() {
           />
         );
 
-      // ── Stap 6: Diepteligging ──────────────────────────────────
+      // ── Stap 6: Ondergrondanalyse DINO Loket ───────────────────
       case 6:
+        return (
+          <OppervlakteAnalyse
+            project={project}
+            boringConfig={boringConfig}
+            modus="ondergrond"
+            onAnalyseOpgeslagen={async (resultaten) => {
+              await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
+            }}
+            onZipOpgeslagen={async (features) => {
+              await handleTraceOpgeslagen({ _alleenZipFeatures: true, bgt_zip_features: JSON.stringify(features) });
+            }}
+          />
+        );
+
+      // ── Stap 7: Dwarsprofiel ────────────────────────────────────
+      case 7:
         return (
           <div>
             <BoringBanner showSVG={true} />
@@ -589,8 +606,8 @@ export default function ProjectDetailPagina() {
           </div>
         );
 
-      // ── Stap 7: Machine & bentonietlocatie ─────────────────────
-      case 7:
+      // ── Stap 8: Machine locatie ─────────────────────────────────
+      case 8:
         return (
           <div>
             <BoringBanner />
@@ -602,8 +619,8 @@ export default function ProjectDetailPagina() {
           </div>
         );
 
-      // ── Stap 8: 3D Ontwerp ─────────────────────────────────────
-      case 8:
+      // ── Stap 9: 3D Ontwerp ─────────────────────────────────────
+      case 9:
         return (
           <div>
             <BoringBanner />
@@ -611,11 +628,11 @@ export default function ProjectDetailPagina() {
           </div>
         );
 
-      // ── Stap 9: Eindontwerp ────────────────────────────────────
-      case 9:
+      // ── Stap 10: Eindrapport & Export ──────────────────────────
+      case 10:
         return <Eindontwerp project={project} boringConfig={boringConfig} />;
 
-      // ── Stap 10–13: Nog niet uitgewerkt ──────────────────────
+      // ── Stap 11–13: Nog niet uitgewerkt ──────────────────────
       default:
         return (
           <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -663,7 +680,7 @@ export default function ProjectDetailPagina() {
         <div className="flex-1 p-6 overflow-auto">
           {renderStap()}
           {/* AI Analyse box — per stap */}
-          {actieveStap >= 1 && actieveStap <= 9 && (
+          {actieveStap >= 1 && actieveStap <= 10 && (
             <PrescanAnalyse
               key={actieveStap}
               stap={actieveStap}
@@ -674,7 +691,7 @@ export default function ProjectDetailPagina() {
         </div>
 
         {/* AI-assistent — altijd beschikbaar per stap */}
-        {actieveStap >= 1 && actieveStap <= 9 && (
+        {actieveStap >= 1 && actieveStap <= 10 && (
           <PrescanBot
             stap={actieveStap}
             project={project}

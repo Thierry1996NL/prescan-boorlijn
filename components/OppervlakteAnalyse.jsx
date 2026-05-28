@@ -268,6 +268,17 @@ const ONDERGROND_LAGEN = [
     risicoTekst:"Hoge GWS → opbarstrisico boorgang & verminderde boorstabiliteit",
   },
   {
+    id:"geomorfologie", label:"Geomorfologie", subtitel:"BRO GMM kaart", emoji:"🏔️",
+    kleur:"#059669",
+    wmsAvailable:true,
+    url:"https://service.pdok.nl/bzk/bro-geomorfologischekaart/wms/v2_0",
+    layers:"GMM_vlakken",
+    type:"wms", opacity:0.6, zIndex:210,
+    beschrijving:"Geomorfologische kaart: stuwwallen, duinen, dekzand, veengebieden. Contextueel voor tracé-risico.",
+    risicoLabel:"Middel", risicoKleur:"#f59e0b",
+    risicoTekst:"Stuwwallen/veen/duinen → bijzondere ondergrondcondities langs tracé",
+  },
+  {
     id:"ahn", label:"AHN", subtitel:"Hoogtemodel", emoji:"🌊",
     kleur:"#f97316",
     wmsAvailable:true,
@@ -283,15 +294,16 @@ const ONDERGROND_LAGEN = [
 
 // ─── Sub-stappen definitie ─────────────────────────────────────────────────
 const SUB_STAPPEN = [
-  { id:"5.1", label:"Oppervlakte",  emoji:"🛣️",  subtitel:"BGT verharding",    ondergrondId:null,          kleur:"#f97316" },
-  { id:"5.2", label:"GeoTOP",       emoji:"🧭",  subtitel:"3D Bodemopbouw",    ondergrondId:"geotop",      kleur:"#a855f7" },
-  { id:"5.3", label:"REGIS II",     emoji:"🧱",  subtitel:"Hydrogeologie",     ondergrondId:"regis",       kleur:"#06b6d4" },
-  { id:"5.4", label:"Bodemkaart",   emoji:"🌍",  subtitel:"1:50.000",          ondergrondId:"bodemkaart",  kleur:"#84cc16" },
-  { id:"5.5", label:"Grondwater",   emoji:"💧",  subtitel:"BRO Peilbuizen",    ondergrondId:"grondwater",  kleur:"#3b82f6" },
-  { id:"5.6", label:"AHN",          emoji:"🌊",  subtitel:"Hoogtemodel",       ondergrondId:"ahn",         kleur:"#f97316" },
-  { id:"5.7", label:"Geotechnisch", emoji:"🏗️",  subtitel:"BRO Sonderingen",   ondergrondId:null,          kleur:"#6B7280", isBRO:true },
+  { id:"5.1", label:"BGT oppervlakte",   emoji:"🛣️",  subtitel:"BGT verharding",       ondergrondId:null,            kleur:"#f97316" },
+  { id:"5.2", label:"BRO DGM / GeoTOP", emoji:"🧭",  subtitel:"3D Bodemopbouw",       ondergrondId:"geotop",        kleur:"#a855f7" },
+  { id:"5.3", label:"REGIS II",          emoji:"🧱",  subtitel:"Hydrogeologie",         ondergrondId:"regis",         kleur:"#06b6d4" },
+  { id:"5.8", label:"Geomorfologie",     emoji:"🏔️",  subtitel:"BRO GMM kaart",        ondergrondId:"geomorfologie", kleur:"#059669" },
+  { id:"5.4", label:"Bodemkaart",        emoji:"🌍",  subtitel:"1:50.000",              ondergrondId:"bodemkaart",    kleur:"#84cc16" },
+  { id:"5.5", label:"Grondwaterspiegel", emoji:"💧",  subtitel:"BRO Peilbuizen",        ondergrondId:"grondwater",    kleur:"#3b82f6" },
+  { id:"5.6", label:"AHN hoogte",        emoji:"🌊",  subtitel:"Hoogtemodel",           ondergrondId:"ahn",           kleur:"#f97316" },
+  { id:"5.7", label:"Geotechnisch",      emoji:"🏗️",  subtitel:"BRO Sonderingen",       ondergrondId:null,            kleur:"#6B7280", isBRO:true },
 ];
-export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig }) {
+export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig, modus = "alles" }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
   const klicRef      = useRef([]);
@@ -322,8 +334,17 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
   const actOndergrondRef = useRef([]);
   actOndergrondRef.current = actieveOndergrondLagen;
   const [ondergrondSectieOpen, setOndergrondSectieOpen] = useState(true);
-  const [actieveSubStap, setActieveSubStap] = useState("5.1");
-  const actieveSubStapRef = useRef("5.1");   // stable ref voor closures (kaart click-handler)
+  const [actieveSubStap, setActieveSubStap] = useState(modus === "ondergrond" ? "5.2" : "5.1");
+  const actieveSubStapRef = useRef(modus === "ondergrond" ? "5.2" : "5.1");   // stable ref voor closures (kaart click-handler)
+
+  // Filter sub-stappen op basis van modus:
+  // "oppervlakte" = alleen BGT (5.1), "ondergrond" = BRO lagen (5.2+), "alles" = alles
+  const zichtbareSubStappen = modus === "oppervlakte"
+    ? SUB_STAPPEN.filter(s => s.id === "5.1")
+    : modus === "ondergrond"
+    ? SUB_STAPPEN.filter(s => s.id !== "5.1")
+    : SUB_STAPPEN;
+  const stapLabel = modus === "ondergrond" ? "Stap 6" : "Stap 5";
   actieveSubStapRef.current = actieveSubStap;
 
   // BGT klik-info (GetFeatureInfo op klik)
@@ -1276,10 +1297,11 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
   return(
     <div className="space-y-3">
 
-      {/* ── Sub-navigatie 5.1 – 5.6 ────────────────────────────── */}
+      {/* ── Sub-navigatie (verborgen als er maar 1 sub-stap is) ──── */}
+      {zichtbareSubStappen.length > 1 && (
       <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 flex items-center gap-1 flex-wrap">
-        <span className="text-xs font-semibold text-gray-400 mr-2 flex-shrink-0">Stap 5 — Analyse:</span>
-        {SUB_STAPPEN.map(s=>{
+        <span className="text-xs font-semibold text-gray-400 mr-2 flex-shrink-0">{stapLabel} — Analyse:</span>
+        {zichtbareSubStappen.map(s=>{
           const actief=actieveSubStap===s.id;
           const laag=s.ondergrondId?ONDERGROND_LAGEN.find(l=>l.id===s.ondergrondId):null;
           const heeftWms=!laag||laag.wmsAvailable;
@@ -1299,6 +1321,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
           );
         })}
       </div>
+      )}
 
       <div className="flex gap-4" style={{height:"calc(100vh - 280px)",minHeight:400}}>
 
@@ -1642,8 +1665,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
               </div>
             )}
 
-            {/* ── 5.4 / 5.5 / 5.6 (WMS beschikbaar) ────────────── */}
-            {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
+            {/* ── 5.4 / 5.5 / 5.6 / 5.8 (WMS beschikbaar) ────────────── */}
+            {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6"||actieveSubStap==="5.8")&&actOndergrondLaag&&(
               <div className="p-4 space-y-3">
                 {/* Status kaart */}
                 <div className="rounded-xl border p-3 space-y-1.5" style={{borderColor:actOndergrondLaag.kleur+"44",background:actOndergrondLaag.kleur+"08"}}>
@@ -1757,8 +1780,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
         </div>
       )}
 
-      {/* 5.4 / 5.5 / 5.6 WMS lagen info */}
-      {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6")&&actOndergrondLaag&&(
+      {/* 5.4 / 5.5 / 5.6 / 5.8 WMS lagen info */}
+      {(actieveSubStap==="5.4"||actieveSubStap==="5.5"||actieveSubStap==="5.6"||actieveSubStap==="5.8")&&actOndergrondLaag&&(
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-2xl">{actSubStapDef?.emoji}</span>
