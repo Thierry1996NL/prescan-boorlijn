@@ -153,12 +153,19 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
     const clientTimeout = setTimeout(() => controller.abort(), 30000); // 30s max
 
     try {
+      // Strip zware velden die de API niet nodig heeft (voorkomt 4.5MB Vercel-limiet)
+      const projectSlank = project ? Object.fromEntries(
+        Object.entries(project).filter(([k]) =>
+          !["bgt_zip_features", "bestanden_meta", "custom_veld_namen"].includes(k)
+        )
+      ) : project;
+
       const res = await fetch("/api/stap-ai", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          stap, project, boringConfig, analyseer: true, analyseContext,
+          stap, project: projectSlank, boringConfig, analyseer: true, analyseContext,
           extraInstructie: (() => { try { return localStorage.getItem(`prescan_bot_prompt_${stap}`) ?? ""; } catch { return ""; } })(),
           kennisbank: (() => { try { return JSON.parse(localStorage.getItem("prescan_globale_kennisbank") || "[]"); } catch { return []; } })(),
         }),
@@ -167,7 +174,7 @@ export default function PrescanAnalyse({ stap, project, boringConfig }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setTekst(`❌ ${data.error ?? "Analyse mislukt"}`);
+        setTekst(`❌ ${data.error ?? `HTTP ${res.status} — Analyse mislukt`}`);
         setStatus("fout");
         return;
       }
