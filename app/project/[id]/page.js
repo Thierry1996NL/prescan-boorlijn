@@ -29,9 +29,6 @@ const STAP_LABELS = {
   8:  "Machine locatie",
   9:  "3D ontwerp",
   10: "Eindrapport & Export",
-  11: "AI optimalisatie & kruisingen",
-  12: "Pre-scan en tekeningen",
-  13: "Contactpersonen (KLIC)",
 };
 
 const STAP_MAX_UITGEWERKT = 10;
@@ -632,15 +629,9 @@ export default function ProjectDetailPagina() {
       case 10:
         return <Eindontwerp project={project} boringConfig={boringConfig} />;
 
-      // ── Stap 11–13: Nog niet uitgewerkt ──────────────────────
+      // ── Fallback ──────────────────────────────────────────────
       default:
-        return (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <div className="text-4xl mb-4">🚧</div>
-            <h2 className="text-base font-semibold text-gray-700 mb-1">{STAP_LABELS[actieveStap]}</h2>
-            <p className="text-sm text-gray-400">Wordt uitgewerkt zodra stap 1 t/m 9 stabiel zijn.</p>
-          </div>
-        );
+        return null;
     }
   }
 
@@ -659,7 +650,7 @@ export default function ProjectDetailPagina() {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-20 flex-shrink-0">
           <div>
-            <div className="text-xs text-gray-400">Stap {actieveStap} van 13</div>
+            <div className="text-xs text-gray-400">Stap {actieveStap} van 10</div>
             <h1 className="text-base font-semibold text-gray-900 mt-0.5">{STAP_LABELS[actieveStap]}</h1>
           </div>
           <div className="flex items-center gap-2">

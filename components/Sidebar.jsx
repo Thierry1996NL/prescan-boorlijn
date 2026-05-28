@@ -15,9 +15,6 @@ const STAPPEN = [
   { nr: 8,  label: "Machine locatie",      sub: "Boormachine & bentoniet",  leeg: false },
   { nr: 9,  label: "3D ontwerp",           sub: "CesiumJS visualisatie",    leeg: false },
   { nr: 10, label: "Eindrapport & Export", sub: "Overzicht & exports",      leeg: false },
-  { nr: 11, label: "AI optimalisatie",     sub: "Kruisingen & advies",      leeg: true  },
-  { nr: 12, label: "Pre-scan",             sub: "Tekeningen",               leeg: true  },
-  { nr: 13, label: "Contactpersonen",      sub: "KLIC contacten",           leeg: true  },
 ];
 
 // Sub-stappen voor stap 6 — zichtbaar als stap 6 (Ondergrondanalyse) actief is
