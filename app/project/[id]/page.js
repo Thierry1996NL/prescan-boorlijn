@@ -51,8 +51,8 @@ export default function ProjectDetailPagina() {
   const [uploadStatus,  setUploadStatus]  = useState({});
   const [uploadLaden,   setUploadLaden]   = useState({});
 
-  // boring configuratie (stap 1) — gedeeld met alle andere stappen
-  const [boringConfig, setBoringConfig] = useState(null);
+  // stap 6 – actieve sub-stap Ondergrondanalyse
+  const [actieveSubStap6, setActieveSubStap6] = useState("5.2");
 
   useEffect(() => { laadProject(); }, [id]);
 
@@ -578,6 +578,8 @@ export default function ProjectDetailPagina() {
             project={project}
             boringConfig={boringConfig}
             modus="ondergrond"
+            subStapOverride={actieveSubStap6}
+            onSubStapChange={setActieveSubStap6}
             onAnalyseOpgeslagen={async (resultaten) => {
               await handleTraceOpgeslagen({ _alleenAnalyse: true, analyse_punten: resultaten });
             }}
@@ -641,6 +643,8 @@ export default function ProjectDetailPagina() {
         actiefProjectId={id}
         actieveStap={actieveStap}
         onStapWijzigen={setActieveStap}
+        actieveSubStap={actieveSubStap6}
+        onSubStapWijzigen={setActieveSubStap6}
         project={project}
         gebruiker={gebruiker}
       />

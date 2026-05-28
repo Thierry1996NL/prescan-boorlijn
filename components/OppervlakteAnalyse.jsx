@@ -303,7 +303,7 @@ const SUB_STAPPEN = [
   { id:"5.6", label:"AHN hoogte",        emoji:"🌊",  subtitel:"Hoogtemodel",           ondergrondId:"ahn",           kleur:"#f97316" },
   { id:"5.7", label:"Geotechnisch",      emoji:"🏗️",  subtitel:"BRO Sonderingen",       ondergrondId:null,            kleur:"#6B7280", isBRO:true },
 ];
-export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig, modus = "alles" }) {
+export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZipOpgeslagen, boringConfig, modus = "alles", subStapOverride = null, onSubStapChange = null }) {
   const mapRef       = useRef(null);
   const kaartRef     = useRef(null);
   const klicRef      = useRef([]);
@@ -674,7 +674,15 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
       }
     }
     setActieveSubStap(nieuweStap);
+    onSubStapChange?.(nieuweStap);
   }
+
+  // ── Sync sidebar-klik naar interne sub-stap ───────────────────
+  const wisselSubStapRef = useRef(wisselSubStap);
+  wisselSubStapRef.current = wisselSubStap;
+  useEffect(() => {
+    if (subStapOverride) wisselSubStapRef.current(subStapOverride);
+  }, [subStapOverride]);
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
   // ── RD New (X,Y) → [lat,lng] WGS84 ──────────────────────────────

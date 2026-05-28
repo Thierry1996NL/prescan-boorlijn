@@ -17,21 +17,21 @@ const STAPPEN = [
   { nr: 10, label: "Eindrapport & Export", sub: "Overzicht & exports",      leeg: false },
 ];
 
-// Sub-stappen voor stap 6 — zichtbaar als stap 6 (Ondergrondanalyse) actief is
+// Sub-stappen voor stap 6 — IDs matchen de component (5.x)
 const SUB_STAPPEN_6 = [
-  { id:"6.1", label:"BRO DGM",          emoji:"🧭", subtitel:"3D Bodemopbouw"   },
-  { id:"6.2", label:"REGIS II",         emoji:"🧱", subtitel:"Hydrogeologie"    },
-  { id:"6.3", label:"Geomorfologie",    emoji:"🏔️", subtitel:"BRO GMM kaart"   },
-  { id:"6.4", label:"Bodemkaart",       emoji:"🌍", subtitel:"1:50.000"         },
-  { id:"6.5", label:"Grondwaterspiegel",emoji:"💧", subtitel:"BRO Peilbuizen"   },
-  { id:"6.6", label:"AHN",              emoji:"🌊", subtitel:"Hoogtemodel"      },
+  { id:"5.2", label:"BRO DGM",          emoji:"🧭", subtitel:"3D Bodemopbouw"   },
+  { id:"5.3", label:"REGIS II",         emoji:"🧱", subtitel:"Hydrogeologie"    },
+  { id:"5.8", label:"Geomorfologie",    emoji:"🏔️", subtitel:"BRO GMM kaart"   },
+  { id:"5.4", label:"Bodemkaart",       emoji:"🌍", subtitel:"1:50.000"         },
+  { id:"5.5", label:"Grondwaterspiegel",emoji:"💧", subtitel:"BRO Peilbuizen"   },
+  { id:"5.6", label:"AHN",              emoji:"🌊", subtitel:"Hoogtemodel"      },
 ];
 
 export default function Sidebar({
   actiefProjectId   = null,
   actieveStap       = 1,
   onStapWijzigen    = null,
-  actieveSubStap    = "6.1",
+  actieveSubStap    = "5.2",
   onSubStapWijzigen = null,
   project           = null,
   gebruiker         = null,
