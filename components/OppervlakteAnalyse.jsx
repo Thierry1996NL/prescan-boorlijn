@@ -655,8 +655,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
     kaartRef.current?._zetOndergrondOverlay?.(id,aan);
   }
   function wisselSubStap(nieuweStap){
-    // Deactiveer vorige ondergrond-overlay
-    const vorigeStap=SUB_STAPPEN.find(s=>s.id===actieveSubStap);
+    // Deactiveer vorige ondergrond-overlay (via ref — altijd actueel)
+    const vorigeStap=SUB_STAPPEN.find(s=>s.id===actieveSubStapRef.current);
     if(vorigeStap?.ondergrondId){
       const laag=ONDERGROND_LAGEN.find(l=>l.id===vorigeStap.ondergrondId);
       if(laag?.wmsAvailable){
@@ -677,11 +677,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
     onSubStapChange?.(nieuweStap);
   }
 
-  // ── Sync sidebar-klik naar interne sub-stap ───────────────────
-  const wisselSubStapRef = useRef(wisselSubStap);
-  wisselSubStapRef.current = wisselSubStap;
+  // ── Sidebar-klik doorsturen naar interne sub-stap ─────────────
   useEffect(() => {
-    if (subStapOverride) wisselSubStapRef.current(subStapOverride);
+    if (subStapOverride && subStapOverride !== actieveSubStapRef.current) {
+      wisselSubStap(subStapOverride);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subStapOverride]);
 
   // ── Analyse uitvoeren — één bulk-request voor het gehele tracé ───
