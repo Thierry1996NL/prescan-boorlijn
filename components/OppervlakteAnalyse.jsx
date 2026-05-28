@@ -850,7 +850,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, borin
           geometry: { type: "Polygon", coordinates: [ring] },
           meta: {
             bestand: bestandsnaam,
-            element: elementNaam,
+            element: bestandsnaam,
             subtype: subtype ?? null,
             bronhouder: bronhouder ?? null,
             inOnderzoek: inOnderzoek === "true",
