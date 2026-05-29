@@ -18,21 +18,47 @@ function nap(v){return v!=null?`${v>=0?"+":""}${v.toFixed(2)} m NAP`:"—";}
 function maaiveldOp(a,pts){const g=pts.filter(p=>p.hoogte!==null);if(!g.length)return null;for(let i=0;i<g.length-1;i++){if(a>=g[i].afstand&&a<=g[i+1].afstand){const t=(a-g[i].afstand)/(g[i+1].afstand-g[i].afstand);return g[i].hoogte+t*(g[i+1].hoogte-g[i].hoogte);}}return null;}
 
 // ─── WMS + SVG Kaart wrapper ──────────────────────────────────────────────────
+// ─── Tile helpers (Slippy Map / Web Mercator) ──────────────────────────────
+const T=256;
+function l2t(lng,z){return Math.floor((lng+180)/360*Math.pow(2,z));}
+function a2t(lat,z){return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z));}
+function t2lng(x,z){return x/Math.pow(2,z)*360-180;}
+function t2lat(y,z){return Math.atan(Math.sinh(Math.PI*(1-2*y/Math.pow(2,z))))*180/Math.PI;}
+// Primair: PDOK BRT WMTS grijs (zelfde als Leaflet in de rest van de app)
+// Fallback: CartoDB Light
+function tileUrl(z,x,y){return `https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/${z}/${x}/${y}.png`;}
+function tileFallback(z,x,y){return `https://a.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`;}
+
 function WmsKaart({lats,lngs,W=680,H=280,pad=0.35,children,label}){
-  const[err,setErr]=useState(false);
   if(!lats?.length)return null;
   const minLa=Math.min(...lats),maxLa=Math.max(...lats),minLn=Math.min(...lngs),maxLn=Math.max(...lngs);
   const pLa=Math.max((maxLa-minLa)*pad,0.002),pLn=Math.max((maxLn-minLn)*pad,0.003);
   const bb={minLa:minLa-pLa,maxLa:maxLa+pLa,minLn:minLn-pLn,maxLn:maxLn+pLn};
-  const laS=bb.maxLa-bb.minLa||0.001,lnS=bb.maxLn-bb.minLn||0.001;
-  const toX=ln=>((ln-bb.minLn)/lnS*W).toFixed(1);
-  const toY=la=>((1-(la-bb.minLa)/laS)*H).toFixed(1);
-  const wms=`https://service.pdok.nl/brt/achtergrondkaart/wms/v2_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=grijs&CRS=EPSG:4326&BBOX=${bb.minLa},${bb.minLn},${bb.maxLa},${bb.maxLn}&WIDTH=${W}&HEIGHT=${H}&FORMAT=image/png`;
+  const dLa=bb.maxLa-bb.minLa,dLn=bb.maxLn-bb.minLn;
+  const zoom=dLa>0.08||dLn>0.12?12:dLa>0.03||dLn>0.05?13:dLa<0.004&&dLn<0.006?16:14;
+  const x0=l2t(bb.minLn,zoom),y0=a2t(bb.maxLa,zoom),x1=l2t(bb.maxLn,zoom),y1=a2t(bb.minLa,zoom);
+  const gMinLng=t2lng(x0,zoom),gMaxLng=t2lng(x1+1,zoom);
+  const gMaxLat=t2lat(y0,zoom),gMinLat=t2lat(y1+1,zoom);
+  const gW=(x1-x0+1)*T,gH=(y1-y0+1)*T;
+  const rX0=(bb.minLn-gMinLng)/(gMaxLng-gMinLng)*gW;
+  const rX1=(bb.maxLn-gMinLng)/(gMaxLng-gMinLng)*gW;
+  const rY0=(1-(bb.maxLa-gMinLat)/(gMaxLat-gMinLat))*gH;
+  const rY1=(1-(bb.minLa-gMinLat)/(gMaxLat-gMinLat))*gH;
+  const rW=rX1-rX0,rH=rY1-rY0;
+  const sc=Math.min(W/rW,H/rH);
+  const offX=(W-rW*sc)/2,offY=(H-rH*sc)/2;
+  const toX=lng=>(offX+((lng-gMinLng)/(gMaxLng-gMinLng)*gW-rX0)*sc).toFixed(1);
+  const toY=lat=>(offY+((1-(lat-gMinLat)/(gMaxLat-gMinLat))*gH-rY0)*sc).toFixed(1);
+  const tiles=[];
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)tiles.push({key:`${x}-${y}`,x,y,
+    left:offX+((x-x0)*T-rX0)*sc,top:offY+((y-y0)*T-rY0)*sc,sz:T*sc});
   return(
-    <div style={{position:"relative",width:"100%",maxWidth:W,height:H,border:"1px solid #E5E7EB",borderRadius:8,overflow:"hidden",background:"#eef2f7"}}>
-      {!err&&<img src={wms} alt="kaart" onError={()=>setErr(true)} style={{position:"absolute",width:"100%",height:"100%",objectFit:"fill"}}/>}
-      {err&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:4,fontSize:10,color:"#9CA3AF"}}>
-        <span>📡 Kaart niet beschikbaar (offline)</span></div>}
+    <div style={{position:"relative",width:"100%",maxWidth:W,height:H,border:"1px solid #E5E7EB",borderRadius:8,overflow:"hidden",background:"#e8ecf1"}}>
+      {tiles.map(t=>(
+        <img key={t.key} src={tileUrl(zoom,t.x,t.y)} alt=""
+          onError={e=>{e.target.src=tileFallback(zoom,t.x,t.y);e.target.onerror=null;}}
+          style={{position:"absolute",left:t.left,top:t.top,width:t.sz,height:t.sz,objectFit:"fill"}}/>
+      ))}
       <svg viewBox={`0 0 ${W} ${H}`} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible"}}>
         {typeof children==="function"?children({toX,toY}):children}
         <g transform={`translate(${W-28},28)`}><circle r={17} fill="white" fillOpacity={0.85} stroke="#E5E7EB"/><text x={0} y={-5} textAnchor="middle" fontSize={7} fontWeight="700" fill="#1F2937">N</text><polygon points="0,-12 -3.5,3 0,0 3.5,3" fill="#1F2937"/></g>
