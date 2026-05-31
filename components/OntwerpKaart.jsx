@@ -283,9 +283,62 @@ function standaardThemaInst(t){
 }
 
 // ════════════════════════════════════════════════════════════════
+// ─── Snapshot helper (gedeeld via CDN html2canvas) ───────────────────────────
+async function maakKaartOpname(containerEl, projectId, stapNr, setStatus) {
+  if (!containerEl) return;
+  setStatus('saving');
+  try {
+    if (!window.html2canvas) {
+      await new Promise((ok, err) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = ok; s.onerror = err;
+        document.head.appendChild(s);
+      });
+    }
+    const canvas = await window.html2canvas(containerEl, {
+      useCORS: true, allowTaint: false, scale: 1.2,
+      imageTimeout: 12000, logging: false,
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.82);
+    localStorage.setItem(`bv_snap_${projectId}_${stapNr}`, imgData);
+    localStorage.setItem(`bv_snap_${projectId}_${stapNr}_datum`,
+      new Date().toLocaleString('nl-NL', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    );
+    setStatus('saved');
+    setTimeout(() => setStatus(null), 3000);
+  } catch(e) {
+    console.error('Opname mislukt:', e);
+    setStatus('error');
+    setTimeout(() => setStatus(null), 4000);
+  }
+}
+
+function SnapKnop({ status, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={status === 'saving'}
+      title="Sla de huidige kaartweergave op voor het eindrapport"
+      className={`absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg shadow-md transition-all border ${
+        status === 'saved'  ? 'bg-[#007A5A] text-white border-[#007A5A]' :
+        status === 'error'  ? 'bg-red-500 text-white border-red-500' :
+        status === 'saving' ? 'bg-white text-[#587080] border-[#DEE6EA]' :
+        'bg-white text-[#587080] border-[#DEE6EA] hover:bg-[#F5F7F9] hover:text-[#1B2B35]'
+      }`}
+    >
+      {status === 'saving' ? <>⏳ Opname…</> :
+       status === 'saved'  ? <>✓ Opgeslagen voor rapport</> :
+       status === 'error'  ? <>✗ Mislukt — probeer opnieuw</> :
+       <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Opslaan voor rapport</>}
+    </button>
+  );
+}
+
 export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   const mapElRef  = useRef(null);
   const kaartRef  = useRef(null);
+  const snapContainerRef = useRef(null);
   const LRef      = useRef(null);
   const lagenRef  = useRef({});
   const basisLaagRef = useRef(null);
@@ -300,6 +353,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     if(k.startsWith("klic_")){const t=k.replace("klic_","");initInst[k]={...standaardThemaInst(t),...v,kleur:THEMA[t]?.kleur??v.kleur};}
   }
 
+  const [snapStatus,     setSnapStatus]      = useState(null); // null|'saving'|'saved'|'error'
   const [instellingen,   setInstellingen]   = useState(initInst);
   const [klicLagen,      setKlicLagen]       = useState({});
   const [documenten,     setDocumenten]      = useState([]); // [{naam,type,thema,broncode,blobUrl}]
@@ -935,10 +989,11 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       </div>
 
       {/* ── Kaart + feature detail ───────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div ref={snapContainerRef} className="flex-1 flex flex-col min-w-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
         {/* Kaart met overlay */}
         <div className="flex-1 min-h-0 relative" style={{minHeight:300}}>
           <div ref={mapElRef} className="w-full h-full"/>
+          <SnapKnop status={snapStatus} onClick={() => maakKaartOpname(snapContainerRef.current, projectId, 3, setSnapStatus)}/>
 
           {/* Laadspinner overlay */}
           {isKaartLaden&&(

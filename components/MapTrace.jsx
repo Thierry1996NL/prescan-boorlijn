@@ -109,9 +109,40 @@ const OVERLAYS = [
   { id:"gemeenten",  label:"Gemeentegrenzen",      kleur:"#10b981", url:"https://service.pdok.nl/cbs/gebiedsindelingen/2024/wms/v1_0", layers:"gemeente_gegeneraliseerd" },
 ];
 
+// ─── Kaart snapshot helper ────────────────────────────────────────────────────
+async function maakKaartOpname(containerEl, projectId, stapNr, setStatus) {
+  if (!containerEl) return;
+  setStatus('saving');
+  try {
+    if (!window.html2canvas) {
+      await new Promise((ok, err) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = ok; s.onerror = err;
+        document.head.appendChild(s);
+      });
+    }
+    const canvas = await window.html2canvas(containerEl, {
+      useCORS: true, allowTaint: false, scale: 1.2, imageTimeout: 12000, logging: false,
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.82);
+    localStorage.setItem(`bv_snap_${projectId}_${stapNr}`, imgData);
+    localStorage.setItem(`bv_snap_${projectId}_${stapNr}_datum`,
+      new Date().toLocaleString('nl-NL', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    );
+    setStatus('saved');
+    setTimeout(() => setStatus(null), 3000);
+  } catch(e) {
+    console.error('Opname mislukt:', e);
+    setStatus('error');
+    setTimeout(() => setStatus(null), 4000);
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const mapRef        = useRef(null);
+  const snapContainerRef = useRef(null);
   const kaartRef      = useRef(null);
   const polyRef       = useRef(null);
   const markersRef    = useRef([]);
@@ -126,6 +157,7 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
   const s3 = (() => { try { return JSON.parse(project?.laag_instellingen||"{}"); } catch { return {}; } })();
 
   const [controlePunten, setControlePunten] = useState([]);
+  const [snapStatus,     setSnapStatus]     = useState(null);
   const [tekenModus,     setTekenModus]     = useState(false);
   const [opgeslagen,     setOpgeslagen]     = useState(false);
   const [opslaat,        setOpslaat]        = useState(false);
@@ -825,8 +857,24 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       </div>
 
       {/* ── Kaart ────────────────────────────────────────────────── */}
-      <div className="flex-1 relative min-w-0">
+      <div ref={snapContainerRef} className="flex-1 relative min-w-0">
         <div ref={mapRef} className="w-full h-full rounded-xl border border-gray-200 overflow-hidden shadow-sm" />
+
+        {/* Snapshot knop */}
+        <button
+          onClick={() => maakKaartOpname(snapContainerRef.current, project?.id, 4, setSnapStatus)}
+          disabled={snapStatus === 'saving'}
+          title="Sla de huidige kaartweergave op voor het eindrapport"
+          className={`absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg shadow-md transition-all border ${
+            snapStatus==='saved'  ? 'bg-[#007A5A] text-white border-[#007A5A]' :
+            snapStatus==='error'  ? 'bg-red-500 text-white border-red-500' :
+            snapStatus==='saving' ? 'bg-white text-[#587080] border-[#DEE6EA]' :
+            'bg-white text-[#587080] border-[#DEE6EA] hover:bg-[#F5F7F9] hover:text-[#1B2B35]'
+          }`}
+        >
+          {snapStatus==='saving' ? '⏳ Opname…' : snapStatus==='saved' ? '✓ Opgeslagen voor rapport' :
+           snapStatus==='error'  ? '✗ Mislukt' : '📷 Opslaan voor rapport'}
+        </button>
 
         {/* Versleepbaar boring-label */}
         <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="4" locked={locked} />

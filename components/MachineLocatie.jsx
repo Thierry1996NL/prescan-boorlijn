@@ -50,8 +50,10 @@ const MACHINE_CONFIG={
 // ─── Hoofd-component ──────────────────────────────────────────────
 export default function MachineLocatie({project,onSave,boringConfig}){
   const mapRef=useRef(null);
+  const snapContainerRef=useRef(null);
   const kaartRef=useRef(null);
   const [kaartInstantie,setKaartInstantie]=useState(null);
+  const [snapStatus,setSnapStatus]=useState(null);
   const [locked,setLocked]=useState(() => {
     try { const s = localStorage.getItem(`boor_lock_${project?.id}_7`); return s ? JSON.parse(s) : false; } catch { return false; }
   });
@@ -400,7 +402,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
         </div>
 
         {/* Kaart */}
-        <div className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
+        <div ref={snapContainerRef} className="flex-1 min-w-0 rounded-xl border border-gray-200 overflow-hidden shadow-sm relative bg-gray-100">
           <div style={{position:"absolute",width:"200%",height:"200%",top:"-50%",left:"-50%",
             transform:geroteerd?`rotate(${rotatieDeg}deg)`:"none",
             transition:"transform 0.5s ease",transformOrigin:"center center"}}>
@@ -408,6 +410,25 @@ export default function MachineLocatie({project,onSave,boringConfig}){
           </div>
           <BoorLabel boringConfig={boringConfig} boorlengte={project?.boorlengte_m} traceGeojson={project?.boortrace_geojson} leafletMapRef={kaartRef} projectId={project?.id} step="7" locked={locked} initialPos={{x:16,y:60}}/>
           <LockButton locked={locked} onToggle={()=>setLocked(l=>!l)}/>
+          {/* Snapshot knop */}
+          <button
+            onClick={async()=>{
+              if(!snapContainerRef.current)return;
+              setSnapStatus('saving');
+              try{
+                if(!window.html2canvas)await new Promise((ok,err)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';s.onload=ok;s.onerror=err;document.head.appendChild(s);});
+                const canvas=await window.html2canvas(snapContainerRef.current,{useCORS:true,allowTaint:false,scale:1.2,imageTimeout:12000,logging:false});
+                const imgData=canvas.toDataURL('image/jpeg',0.82);
+                localStorage.setItem(`bv_snap_${project?.id}_8`,imgData);
+                localStorage.setItem(`bv_snap_${project?.id}_8_datum`,new Date().toLocaleString('nl-NL',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}));
+                setSnapStatus('saved');setTimeout(()=>setSnapStatus(null),3000);
+              }catch(e){console.error(e);setSnapStatus('error');setTimeout(()=>setSnapStatus(null),4000);}
+            }}
+            disabled={snapStatus==='saving'}
+            className={`absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg shadow-md border transition-all ${snapStatus==='saved'?'bg-[#007A5A] text-white border-[#007A5A]':snapStatus==='error'?'bg-red-500 text-white border-red-500':snapStatus==='saving'?'bg-white text-[#587080] border-[#DEE6EA]':'bg-white text-[#587080] border-[#DEE6EA] hover:bg-[#F5F7F9]'}`}
+          >
+            {snapStatus==='saving'?'⏳ Opname…':snapStatus==='saved'?'✓ Opgeslagen voor rapport':snapStatus==='error'?'✗ Mislukt':'📷 Opslaan voor rapport'}
+          </button>
           {plaatsModus&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
               <div className="bg-white/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs font-semibold shadow border border-gray-200" style={{color:MACHINE_CONFIG[plaatsModus]?.kleur}}>

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import BoringSVG, { computeBoring } from "@/components/BoringSVG";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ function DwarsprofielSVG({profielPunten,dieptePunten,klicKruisingen,totM}){
 }
 
 // ─── Stap layout helpers ──────────────────────────────────────────────────────
-const STAP_KLEUREN=["#F97316","#7C3AED","#0891B2","#1D4ED8","#059669","#7C3AED","#0891B2","#374151"];
+const STAP_KLEUREN=["#007A5A","#009E74","#007A5A","#00915F","#007A5A","#009E74","#007A5A","#00915F"];
 function Stap({nr,titel,children}){
   const kleur=STAP_KLEUREN[(nr-1)%STAP_KLEUREN.length];
   return(
@@ -224,6 +224,47 @@ function Sub({titel}){return<div style={{fontSize:10,fontWeight:700,color:"#6B72
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function Eindontwerp({project,boringConfig:bcProp}){
   const reportRef=useRef(null);
+  const [snapshots, setSnapshots] = useState({});
+
+  // Laad opgeslagen kaartopnames uit localStorage
+  useEffect(() => {
+    if (!project?.id) return;
+    const snaps = {};
+    [3, 4, 8].forEach(stap => {
+      const data  = localStorage.getItem(`bv_snap_${project.id}_${stap}`);
+      const datum = localStorage.getItem(`bv_snap_${project.id}_${stap}_datum`);
+      if (data) snaps[stap] = { data, datum };
+    });
+    setSnapshots(snaps);
+  }, [project?.id]);
+
+  function verwijderSnapshot(stap) {
+    localStorage.removeItem(`bv_snap_${project.id}_${stap}`);
+    localStorage.removeItem(`bv_snap_${project.id}_${stap}_datum`);
+    setSnapshots(s => { const n={...s}; delete n[stap]; return n; });
+  }
+
+  function SnapImage({ stap, fallback }) {
+    const snap = snapshots[stap];
+    if (!snap) return fallback;
+    return (
+      <div>
+        <img src={snap.data} alt={`Kaartopname stap ${stap}`}
+          style={{width:'100%',borderRadius:6,border:'1px solid #E5E7EB',display:'block'}}/>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+          marginTop:4,padding:'3px 6px',background:'#F5F7F9',borderRadius:4}}>
+          <span style={{fontSize:10,color:'#8FA6B2'}}>
+            📷 Opname: {snap.datum}
+          </span>
+          <button
+            onClick={() => verwijderSnapshot(stap)}
+            className="no-print"
+            style={{fontSize:10,color:'#EF4444',background:'none',border:'none',cursor:'pointer',padding:'0 2px'}}
+          >✕ verwijder</button>
+        </div>
+      </div>
+    );
+  }
   const bc=bcProp??pJ(project?.boring_config);
   const ahnData=pJ(project?.ahn_profiel);
   const machData=pJ(project?.machine_locaties);
@@ -280,7 +321,7 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
     <div style={{fontFamily:"system-ui,sans-serif",maxWidth:900}}>
       {/* Export knop */}
       <div className="no-print" style={{display:"flex",gap:12,marginBottom:20,alignItems:"center"}}>
-        <button onClick={handlePrint} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",background:"#F97316",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600,boxShadow:"0 2px 8px rgba(249,115,22,0.3)"}}>
+        <button onClick={handlePrint} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",background:"#007A5A",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600,boxShadow:"0 2px 8px rgba(0,122,90,0.25)"}}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           Exporteer naar PDF
         </button>
@@ -289,8 +330,8 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
 
       <div ref={reportRef}>
         {/* Koptekst */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,paddingBottom:14,borderBottom:"3px solid #F97316"}}>
-          <div><div style={{fontSize:22,fontWeight:900,color:"#F97316",letterSpacing:"-0.5px"}}>PrescanAI</div><div style={{fontSize:11,color:"#6B7280",marginTop:2}}>HDD Horizontaal Gestuurd Boren — Prescan Rapportage</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,paddingBottom:14,borderBottom:"3px solid #007A5A"}}>
+          <div><div style={{fontSize:22,fontWeight:900,color:"#007A5A",letterSpacing:"-0.5px"}}>Borevexa</div><div style={{fontSize:11,color:"#6B7280",marginTop:2}}>HDD Horizontaal Gestuurd Boren — Prescan Rapportage</div></div>
           <div style={{textAlign:"right"}}><div style={{fontSize:20,fontWeight:800,color:"#1F2937"}}>{project?.naam??"—"}</div><div style={{fontSize:12,color:"#6B7280"}}>{project?.opdrachtgever??""}{project?.locatie?` · ${project.locatie}`:""}</div><div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>Gegenereerd: {today}</div></div>
         </div>
 
@@ -368,7 +409,7 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
 
         {/* STAP 3 — Ontwerp bekijken */}
         <Stap nr={3} titel="Ontwerp bekijken — KLIC leidingen op kaart">
-          <KlicKaart project={project} traceCoords={traceCoords}/>
+          <SnapImage stap={3} fallback={<KlicKaart project={project} traceCoords={traceCoords}/>}/>
           {klicKruisingen.length>0&&<>
             <Sub titel={`${klicKruisingen.length} KLIC kruisingen met boorlijn`}/>
             <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
@@ -387,7 +428,10 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
             <div><Rij label="Eindpunt"      waarde={traceCoords.length?`${traceCoords[traceCoords.length-1][1].toFixed(5)}°N`:null}/><Rij label="" waarde={traceCoords.length?`${traceCoords[traceCoords.length-1][0].toFixed(5)}°E`:null}/></div>
           </Grid>
           <div style={{marginTop:12}}>
-            {traceCoords.length>=2?<BoorlijnKaart traceCoords={traceCoords}/>:<div style={{fontSize:11,color:"#9CA3AF",fontStyle:"italic"}}>Geen boorlijn getekend in stap 4.</div>}
+            {traceCoords.length>=2
+              ? <SnapImage stap={4} fallback={<BoorlijnKaart traceCoords={traceCoords}/>}/>
+              : <div style={{fontSize:11,color:"#9CA3AF",fontStyle:"italic"}}>Geen boorlijn getekend in stap 4.</div>
+            }
           </div>
         </Stap>
 
@@ -447,7 +491,9 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
                 <Rij label="Oppervlak" waarde={machData.bentoniet?.lengte&&machData.bentoniet?.breedte?`${machData.bentoniet.lengte*machData.bentoniet.breedte} m²`:null} highlight/>
               </div>
             </Grid>
-            {traceCoords.length>=2&&<div style={{marginTop:12}}><BoorlijnKaart traceCoords={traceCoords} W={680} H={220}/></div>}
+            {traceCoords.length>=2&&<div style={{marginTop:12}}>
+              <SnapImage stap={8} fallback={<BoorlijnKaart traceCoords={traceCoords} W={680} H={220}/>}/>
+            </div>}
           </>:<div style={{fontSize:11,color:"#9CA3AF",fontStyle:"italic"}}>Geen machinelocaties opgeslagen in stap 7.</div>}
         </Stap>
 
@@ -467,7 +513,7 @@ export default function Eindontwerp({project,boringConfig:bcProp}){
 
         {/* Footer */}
         <div style={{marginTop:24,paddingTop:12,borderTop:"1px solid #E5E7EB",display:"flex",justifyContent:"space-between"}}>
-          <span style={{fontSize:10,color:"#9CA3AF"}}>PrescanAI · HDD Prescan Tool</span>
+          <span style={{fontSize:10,color:"#9CA3AF"}}>Borevexa · HDD Prescan Tool</span>
           <span style={{fontSize:10,color:"#9CA3AF"}}>{project?.naam??""} · {today}</span>
         </div>
       </div>
