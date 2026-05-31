@@ -17,6 +17,7 @@ import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_CO
 import Eindontwerp from "@/components/Eindontwerp";
 import PrescanAnalyse from "@/components/PrescanAnalyse";
 import DataBronnenStatus from "@/components/DataBronnenStatus";
+import CoordinatenInfo from "@/components/CoordinatenInfo";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -690,6 +691,10 @@ export default function ProjectDetailPagina() {
           {/* Databronnen status — onderaan elke stap die data ophaalt */}
           {[3,4,5,6,7,8,9].includes(actieveStap) && (
             <DataBronnenStatus key={actieveStap} stap={actieveStap} />
+          )}
+          {/* Coördinatenstelsels info — per stap */}
+          {[3,4,5,6,7,8].includes(actieveStap) && (
+            <CoordinatenInfo key={`crs-${actieveStap}`} stap={actieveStap} />
           )}
         </div>
       </main>
