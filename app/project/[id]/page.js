@@ -16,6 +16,7 @@ import BoringConfigurator from "@/components/BoringConfigurator";
 import BoringSVG, { computeBoring, CATS as BORING_CATS, TUBE_COLORS as BORING_COLORS } from "@/components/BoringSVG";
 import Eindontwerp from "@/components/Eindontwerp";
 import PrescanAnalyse from "@/components/PrescanAnalyse";
+import DataBronnenStatus from "@/components/DataBronnenStatus";
 
 const STAP_LABELS = {
   1:  "Projectinformatie",
@@ -685,6 +686,10 @@ export default function ProjectDetailPagina() {
               project={project}
               boringConfig={boringConfig}
             />
+          )}
+          {/* Databronnen status — onderaan elke stap die data ophaalt */}
+          {[3,4,5,6,7,8,9].includes(actieveStap) && (
+            <DataBronnenStatus key={actieveStap} stap={actieveStap} />
           )}
         </div>
       </main>
