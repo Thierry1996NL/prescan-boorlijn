@@ -789,69 +789,86 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
         {legendaOpen && (
           <div className="flex-1 overflow-y-auto">
 
-            {/* Achtergrond */}
-            <div className="px-4 py-3 border-b border-gray-100">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Achtergrond</div>
-              <div className="space-y-1">
+            {/* ── ACHTERGROND BOX ── */}
+            <div className="m-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Achtergrond</span>
+                <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+              </div>
+              <div className="p-2 space-y-0.5">
                 {ACHTERGRONDEN.map(a => (
                   <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
-                    className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-gray-600 hover:bg-gray-50"}`}>
-                    <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id ? "border-[#007A5A] bg-[#007A5A]" : "border-gray-300"}`}/>
+                    className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                      actieveAchtergrond===a.id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-[#1B2B35] hover:bg-[#F5F7F9]"
+                    }`}>
+                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${
+                      actieveAchtergrond===a.id ? "border-[#007A5A] bg-[#007A5A]" : "border-[#DEE6EA]"
+                    }`}/>
                     <span className="text-xs font-medium">{a.label}</span>
+                    {actieveAchtergrond===a.id&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">actief</span>}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Overlays */}
-            <div className="px-4 py-3 border-b border-gray-100">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Overlays</div>
-              <div className="space-y-1">
+            {/* ── OVERLAYS BOX ── */}
+            <div className="mx-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Overlays</span>
+                {actieveOverlays.length>0&&(
+                  <span className="text-[10px] font-semibold bg-[#007A5A] text-white px-1.5 py-0.5 rounded-full">{actieveOverlays.length}</span>
+                )}
+              </div>
+              <div className="p-2 space-y-0.5">
                 {OVERLAYS.map(o => {
                   const aan = actieveOverlays.includes(o.id);
                   return (
                     <button key={o.id} onClick={() => toggleOverlay(o.id)}
-                      className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan ? "bg-blue-50" : "hover:bg-gray-50"}`}>
-                      <div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200 transition-colors"
-                        style={{ background: aan ? o.kleur : "transparent" }}/>
-                      <span className={`text-xs font-medium ${aan ? "text-blue-700" : "text-gray-600"}`}>{o.label}</span>
-                      {aan && <span className="ml-auto text-xs text-blue-400">aan</span>}
+                      className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${aan ? "bg-[#E5F3EC]" : "hover:bg-[#F5F7F9]"}`}>
+                      <div className="w-3.5 h-3.5 rounded flex-shrink-0 border transition-colors"
+                        style={{ background: aan ? o.kleur : "transparent", borderColor: aan ? o.kleur : "#DEE6EA" }}/>
+                      <span className={`text-xs font-medium ${aan ? "text-[#007A5A]" : "text-[#1B2B35]"}`}>{o.label}</span>
+                      {aan && <span className="ml-auto text-[10px] text-[#007A5A] font-semibold">aan</span>}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* KLIC achtergrond */}
-            <div className="px-4 py-3">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">KLIC achtergrond</div>
-              {klicLagen.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">
-                  {isLaden ? laadBericht : "Geen KLIC bestanden — upload in stap 2."}
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {klicLagen.map((l, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background:l.kleur }}/>
-                      <span className="capitalize">{l.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            {/* ── KLIC BOX ── */}
+            <div className="mx-3 mb-3 border border-[#DEE6EA] rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA]">
+                <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">KLIC achtergrond</span>
+              </div>
+              <div className="p-2">
+                {klicLagen.length === 0 ? (
+                  <p className="text-xs text-[#8FA6B2] italic px-1">
+                    {isLaden ? laadBericht : "Geen KLIC bestanden — upload in stap 2."}
+                  </p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {klicLagen.map((l, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-1 py-1">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm" style={{ background:l.kleur }}/>
+                        <span className="text-xs font-medium text-[#1B2B35] capitalize">{l.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-4 py-2">
+        <div className="border-t border-[#DEE6EA] px-3 py-2 flex-shrink-0">
           {isLaden ? (
             <div className="flex items-center gap-2 text-xs text-[#007A5A]">
-              <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
+              <div className="w-3 h-3 border-2 border-[#E5F3EC] border-t-[#007A5A] rounded-full animate-spin flex-shrink-0" />
               <span>{laadBericht}</span>
             </div>
           ) : (
-            <p className="text-xs text-gray-400">Instellingen uit stap 3 · {s3.__kaartBox ? "Filterbox actief" : "Volledig gebied"}</p>
+            <p className="text-[11px] text-[#8FA6B2]">Instellingen uit stap 3 · {s3.__kaartBox ? "Filterbox actief" : "Volledig gebied"}</p>
           )}
         </div>
       </div>
@@ -883,7 +900,7 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
         {/* Laadspinner over kaart */}
         {isLaden && (
           <div className="absolute inset-0 bg-white/60 flex flex-col items-center justify-center rounded-xl pointer-events-none z-[400]">
-            <div className="w-10 h-10 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mb-2" />
+            <div className="w-10 h-10 border-4 border-[#E5F3EC] border-t-[#007A5A] rounded-full animate-spin mb-2" />
             <p className="text-sm text-gray-600 font-medium">{laadBericht}</p>
           </div>
         )}

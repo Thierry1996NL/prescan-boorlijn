@@ -306,10 +306,10 @@ export default function MachineLocatie({project,onSave,boringConfig}){
       <div className="flex gap-4" style={{height:"calc(100vh - 200px)",minHeight:480}}>
 
         {/* Sidebar */}
-        <div className="w-72 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto flex flex-col">
-          <div className="px-4 py-2.5 border-b border-gray-100">
-            <span className="text-sm font-semibold text-gray-900">7. Machine- & bentonietlocatie</span>
-            <div className="text-xs text-gray-400">Klik op de kaart om te plaatsen</div>
+        <div className="w-72 flex-shrink-0 bg-white border border-[#DEE6EA] rounded-xl overflow-y-auto flex flex-col">
+          <div className="px-4 py-2.5 border-b border-[#DEE6EA]">
+            <span className="text-sm font-semibold text-[#1B2B35]">7. Machine- & bentonietlocatie</span>
+            <div className="text-xs text-[#8FA6B2]">Klik op de kaart om te plaatsen</div>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
 
@@ -368,26 +368,51 @@ export default function MachineLocatie({project,onSave,boringConfig}){
               {geroteerd?"↑ Noord-omhoog":"↺ Bore-richting (horizontaal)"}
             </button>
 
-            {/* Achtergrond */}
-            <div className="border-t border-gray-100 pt-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
-              {[["standaard","BRT Standaard"],["grijs","BRT Grijs"],["luchtfoto","Luchtfoto (HR)"]].map(([id,label])=>(
-                <label key={id} className="flex items-center gap-2 cursor-pointer mb-1">
-                  <input type="radio" name="ach7" checked={actieveAchtergrond===id} onChange={()=>setActieveAchtergrond(id)} className="accent-orange-500"/>
-                  <span className="text-xs text-gray-700">{label}</span>
-                </label>
-              ))}
+            {/* ── ACHTERGROND BOX ── */}
+            <div className="border border-[#DEE6EA] rounded-lg overflow-hidden -mx-0.5">
+              <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Achtergrond</span>
+                <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+              </div>
+              <div className="p-2 space-y-0.5">
+                {[["standaard","BRT Standaard"],["grijs","BRT Grijs"],["luchtfoto","Luchtfoto (HR)"]].map(([id,label])=>(
+                  <button key={id} onClick={()=>setActieveAchtergrond(id)}
+                    className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                      actieveAchtergrond===id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-[#1B2B35] hover:bg-[#F5F7F9]"
+                    }`}>
+                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+                      actieveAchtergrond===id ? "border-[#007A5A] bg-[#007A5A]" : "border-[#DEE6EA]"
+                    }`}/>
+                    <span className="text-xs font-medium">{label}</span>
+                    {actieveAchtergrond===id&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">actief</span>}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Overlays */}
-            <div className="border-t border-gray-100 pt-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
-              {[["klic","KLIC leidingen"],["kadaster","Kadastrale percelen"],["bgt","BGT oppervlakken"]].map(([id,label])=>(
-                <label key={id} className="flex items-center gap-2 cursor-pointer mb-1">
-                  <input type="checkbox" checked={!!actieveOverlays[id]} onChange={e=>setActieveOverlays(p=>({...p,[id]:e.target.checked}))} className="accent-orange-500"/>
-                  <span className="text-xs text-gray-700">{label}</span>
-                </label>
-              ))}
+            {/* ── OVERLAYS BOX ── */}
+            <div className="border border-[#DEE6EA] rounded-lg overflow-hidden -mx-0.5">
+              <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Overlays</span>
+                {Object.values(actieveOverlays).filter(Boolean).length>0&&(
+                  <span className="text-[10px] font-semibold bg-[#007A5A] text-white px-1.5 py-0.5 rounded-full">
+                    {Object.values(actieveOverlays).filter(Boolean).length}
+                  </span>
+                )}
+              </div>
+              <div className="p-2 space-y-0.5">
+                {[["klic","KLIC leidingen"],["kadaster","Kadastrale percelen"],["bgt","BGT oppervlakken"]].map(([id,label])=>(
+                  <button key={id} onClick={()=>setActieveOverlays(p=>({...p,[id]:!p[id]}))}
+                    className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                      actieveOverlays[id] ? "bg-[#E5F3EC]" : "hover:bg-[#F5F7F9]"
+                    }`}>
+                    <div className={`w-3.5 h-3.5 rounded flex-shrink-0 border transition-colors ${
+                      actieveOverlays[id] ? "bg-[#007A5A] border-[#007A5A]" : "border-[#DEE6EA]"
+                    }`}/>
+                    <span className={`text-xs font-medium ${actieveOverlays[id]?"text-[#007A5A]":"text-[#1B2B35]"}`}>{label}</span>
+                    {actieveOverlays[id]&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">aan</span>}
+                  </button>
+                ))}
             </div>
 
             {/* Opslaan */}

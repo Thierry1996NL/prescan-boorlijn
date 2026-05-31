@@ -807,8 +807,8 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     if(vergrendeld[lagId]!==true)return null;
     return(<div className={`mt-2 space-y-2 px-2 py-2 bg-gray-50 rounded-lg ${!inst.zichtbaar?"opacity-40 pointer-events-none":""}`}>
       <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Kleur</span><input type="color" value={inst.kleur} onChange={e=>wijzig(lagId,"kleur",e.target.value)} className="w-7 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0"/><span className="text-xs text-gray-400 font-mono">{inst.kleur}</span></div>
-      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Dikte</span><input type="range" min="0.5" max="8" step="0.5" value={inst.dikte} onChange={e=>wijzig(lagId,"dikte",Number(e.target.value))} className="flex-1 accent-orange-500 h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{inst.dikte}px</span></div>
-      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Helderheid</span><input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid} onChange={e=>wijzig(lagId,"helderheid",Number(e.target.value))} className="flex-1 accent-orange-500 h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{Math.round(inst.helderheid*100)}%</span></div>
+      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Dikte</span><input type="range" min="0.5" max="8" step="0.5" value={inst.dikte} onChange={e=>wijzig(lagId,"dikte",Number(e.target.value))} className="flex-1 accent-[#007A5A] h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{inst.dikte}px</span></div>
+      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-16 flex-shrink-0">Helderheid</span><input type="range" min="0.1" max="1" step="0.05" value={inst.helderheid} onChange={e=>wijzig(lagId,"helderheid",Number(e.target.value))} className="flex-1 accent-[#007A5A] h-1 min-w-0"/><span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{Math.round(inst.helderheid*100)}%</span></div>
     </div>);
   }
 
@@ -885,107 +885,201 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
     <div className="flex gap-4 min-h-0" style={{height:"calc(100vh - 168px)"}}>
 
       {/* ── Lagenpaneel ─────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" style={{width:296}}>
+      <div className="flex-shrink-0 bg-white border border-[#DEE6EA] rounded-xl flex flex-col overflow-hidden" style={{width:300}}>
 
-        {/* Header: tabs + filterbox knop + opslaan */}
-        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-gray-100">
-          {/* Tabs */}
-          {["lagen","docs"].map(t=>(<button key={t} onClick={()=>setActieveTab(t)} className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${actieveTab===t?"bg-gray-100 text-gray-800":"text-gray-400 hover:text-gray-600"}`}>{t==="lagen"?"Lagen":"Docs"}{t==="docs"&&documenten.length>0?` (${documenten.length})`:""}</button>))}
-
+        {/* ── Header rij 1: tabs + opslaan ── */}
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#DEE6EA] flex-shrink-0">
+          <div className="flex gap-0.5 bg-[#F5F7F9] rounded-lg p-0.5">
+            {["lagen","docs"].map(t=>(
+              <button key={t} onClick={()=>setActieveTab(t)}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                  actieveTab===t ? "bg-white text-[#1B2B35] shadow-sm" : "text-[#8FA6B2] hover:text-[#587080]"
+                }`}>
+                {t==="lagen"?"Lagen":"Docs"}{t==="docs"&&documenten.length>0?` (${documenten.length})`:""}
+              </button>
+            ))}
+          </div>
           <div className="flex-1"/>
-
-          {/* Filterbox knop */}
           {!tekenModus&&!kaartBox&&(
-            <button onClick={startTekenBox} title="Teken een filterbox om alleen dat gebied te tonen"
-              className="flex items-center gap-1 px-2.5 py-1 text-xs border border-gray-200 rounded-lg hover:bg-[#F0FAF5] hover:border-orange-300 text-gray-500 hover:text-[#007A5A] transition-colors font-medium">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-              Filterbox
+            <button onClick={startTekenBox} title="Teken filterbox"
+              className="flex items-center gap-1 px-2 py-1 text-xs border border-[#DEE6EA] rounded-lg hover:bg-[#E5F3EC] hover:border-[#007A5A] text-[#8FA6B2] hover:text-[#007A5A] transition-colors font-medium">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Filter
             </button>
           )}
           {tekenModus&&(
-            <span className="px-2.5 py-1 text-xs bg-[#E5F3EC] text-[#007A5A] rounded-lg font-medium animate-pulse">
-              {boxStartRef.current?"Klik 2e hoek…":"Klik 1e hoek…"}
+            <span className="px-2 py-1 text-xs bg-[#E5F3EC] text-[#007A5A] rounded-lg font-medium animate-pulse">
+              {boxStartRef.current?"2e hoek…":"1e hoek…"}
             </span>
           )}
           {kaartBox&&!tekenModus&&(
             <div className="flex gap-1">
-              <button onClick={startTekenBox} title="Nieuwe filterbox tekenen"
-                className="flex items-center gap-1 px-2 py-1 text-xs border border-orange-300 text-[#007A5A] rounded-lg hover:bg-[#F0FAF5] transition-colors font-medium">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              <button onClick={startTekenBox}
+                className="flex items-center gap-1 px-2 py-1 text-xs border border-[#007A5A]/30 text-[#007A5A] rounded-lg hover:bg-[#E5F3EC] transition-colors font-medium">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                 Opnieuw
               </button>
-              <button onClick={resetBox} title="Filterbox verwijderen"
-                className="px-2 py-1 text-xs border border-gray-200 text-gray-400 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors font-medium">×</button>
+              <button onClick={resetBox}
+                className="w-6 h-6 flex items-center justify-center text-xs border border-[#DEE6EA] text-[#8FA6B2] rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors">×</button>
             </div>
           )}
-
-          {/* Opslaan */}
           <button onClick={handleOpslaan} disabled={opslaanActief}
-            className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-medium transition-colors flex-shrink-0 ${ingeslagen?"bg-green-500 text-white":"bg-[#007A5A] text-white hover:bg-[#00915F] disabled:opacity-50"}`}>
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors flex-shrink-0 ${
+              ingeslagen ? "bg-[#007A5A] text-white" : "bg-[#007A5A] text-white hover:bg-[#00915F] disabled:opacity-50"
+            }`}>
             {ingeslagen?(
-              <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Opgeslagen</>
+              <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Opgeslagen</>
             ):(
-              <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>{opslaanActief?"Opslaan…":"Opslaan"}</>
+              <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>{opslaanActief?"Opslaan…":"Opslaan"}</>
             )}
           </button>
         </div>
 
-        {/* Inhoud tab */}
+        {/* Inhoud */}
         <div className="flex-1 overflow-y-auto">
           {actieveTab==="docs"?(
             <DocumentenLijst/>
           ):(
             <>
-              {/* Achtergrond */}
-              <div className="px-4 py-3 border-b border-gray-100">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
-                <div className="space-y-1">
-                  {ACHTERGROND.map(a=>(<button key={a.id} onClick={()=>wisselAchtergrond(a.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-[#E5F3EC] text-[#007A5A]":"text-gray-600 hover:bg-gray-50"}`}><div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-[#007A5A] bg-[#007A5A]":"border-gray-300"}`}/><span className="text-xs font-medium">{a.label}</span></button>))}
+              {/* ── ACHTERGROND BOX ── */}
+              <div className="m-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Achtergrond</span>
+                  <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+                </div>
+                <div className="p-2 space-y-0.5">
+                  {ACHTERGROND.map(a=>(
+                    <button key={a.id} onClick={()=>wisselAchtergrond(a.id)}
+                      className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                        actieveAchtergrond===a.id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-[#1B2B35] hover:bg-[#F5F7F9]"
+                      }`}>
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${
+                        actieveAchtergrond===a.id ? "border-[#007A5A] bg-[#007A5A]" : "border-[#DEE6EA]"
+                      }`}/>
+                      <span className="text-xs font-medium">{a.label}</span>
+                      {actieveAchtergrond===a.id&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">actief</span>}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Overlays */}
-              <div className="px-4 py-3 border-b border-gray-200">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overlays</div>
-                <div className="space-y-1">
-                  {OVERLAYS.map(o=>{const aan=actieveOverlays.includes(o.id);return(<button key={o.id} onClick={()=>toggleOverlay(o.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-blue-50":"hover:bg-gray-50"}`}><div className="w-3 h-3 rounded flex-shrink-0 border border-gray-200" style={{background:aan?o.kleur:"transparent"}}/><span className={`text-xs font-medium ${aan?"text-blue-700":"text-gray-600"}`}>{o.label}</span>{aan&&<span className="ml-auto text-xs text-blue-400">aan</span>}</button>);})}
+              {/* ── OVERLAYS BOX ── */}
+              <div className="mx-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Overlays</span>
+                  {actieveOverlays.length>0&&(
+                    <span className="text-[10px] font-semibold bg-[#007A5A] text-white px-1.5 py-0.5 rounded-full">{actieveOverlays.length}</span>
+                  )}
+                </div>
+                <div className="p-2 space-y-0.5">
+                  {OVERLAYS.map(o=>{
+                    const aan=actieveOverlays.includes(o.id);
+                    return(
+                      <button key={o.id} onClick={()=>toggleOverlay(o.id)}
+                        className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${aan?"bg-[#E5F3EC]":"hover:bg-[#F5F7F9]"}`}>
+                        <div className="w-3.5 h-3.5 rounded flex-shrink-0 border transition-colors"
+                          style={{background:aan?o.kleur:"transparent",borderColor:aan?o.kleur:"#DEE6EA"}}/>
+                        <span className={`text-xs font-medium ${aan?"text-[#007A5A]":"text-[#1B2B35]"}`}>{o.label}</span>
+                        {aan&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">aan</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Gewone DXF/GML lagen */}
-              {gewoneLagen.length>0&&(<div className="divide-y divide-gray-100">
-                {gewoneLagen.map(b=>{const inst=instellingen[b.id]??standaardInst(b.type);return(<div key={b.id} className="px-4 py-3 space-y-1">
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:inst.kleur}}/><div className="flex-1 min-w-0"><div className="text-xs font-medium text-gray-800 truncate">{b.naam}</div><div className="text-xs text-gray-400">{bestandStatus[b.id]||b.type}</div></div><div className="flex items-center gap-1 flex-shrink-0"><ResetKnop lagId={b.id}/><SlotIcoon lagId={b.id}/><Toggle lagId={b.id} inst={inst}/></div></div>
-                  <ResetBevestiging lagId={b.id}/>
-                  <LaagControls lagId={b.id} inst={inst}/>
-                </div>);})}
-              </div>)}
-
-              {/* KLIC lagen */}
-              {klicBestanden.map(b=>(<div key={b.id}>
-                <div className="px-4 py-2 bg-gray-50">
-                  <div className="flex items-center gap-2"><span>🗂️</span><div className="flex-1 min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{b.naam}</div><div className="text-xs text-gray-400">KLIC-melding · IMKL</div></div></div>
-                  {bestandStatus[b.id]&&<div className={`text-xs mt-1 ml-6 ${bestandStatus[b.id].startsWith("✓")?"text-green-600":bestandStatus[b.id].startsWith("✗")?"text-red-500":"text-[#007A5A]"}`}>{bestandStatus[b.id]}</div>}
+              {/* ── LAGEN BOX ── */}
+              {(gewoneLagen.length>0||klicBestanden.length>0)&&(
+                <div className="mx-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA]">
+                    <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Lagen</span>
+                  </div>
+                  <div className="divide-y divide-[#F0F4F6]">
+                    {gewoneLagen.map(b=>{const inst=instellingen[b.id]??standaardInst(b.type);return(
+                      <div key={b.id} className="px-3 py-2.5 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm" style={{background:inst.kleur}}/>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-[#1B2B35] truncate">{b.naam}</div>
+                            <div className="text-[11px] text-[#8FA6B2]">{bestandStatus[b.id]||b.type}</div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <ResetKnop lagId={b.id}/><SlotIcoon lagId={b.id}/><Toggle lagId={b.id} inst={inst}/>
+                          </div>
+                        </div>
+                        <ResetBevestiging lagId={b.id}/>
+                        <LaagControls lagId={b.id} inst={inst}/>
+                      </div>
+                    );})}
+                    {klicBestanden.map(b=>(
+                      <div key={b.id}>
+                        <div className="px-3 py-2 bg-[#F5F7F9]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base leading-none">🗂️</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold text-[#1B2B35] truncate">{b.naam}</div>
+                              <div className="text-[11px] text-[#8FA6B2]">KLIC-melding · IMKL</div>
+                            </div>
+                          </div>
+                          {bestandStatus[b.id]&&(
+                            <div className={`text-[11px] mt-1 ml-7 font-medium ${
+                              bestandStatus[b.id].startsWith("✓")?"text-[#007A5A]":bestandStatus[b.id].startsWith("✗")?"text-red-500":"text-[#587080]"
+                            }`}>{bestandStatus[b.id]}</div>
+                          )}
+                        </div>
+                        {klicThemas.length>0 ? klicThemas.map(thema=>{
+                          const lagId=`klic_${thema}`;
+                          const inst=instellingen[lagId]??standaardThemaInst(thema);
+                          const config=THEMA[thema]??{label:thema};
+                          const n=klicLagen[thema]?.features?.length;
+                          return(
+                            <div key={lagId} className="px-3 py-2 space-y-1 border-t border-[#F0F4F6]">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ml-2 border border-white shadow-sm" style={{background:inst.kleur}}/>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium text-[#1B2B35]">{config.label}</div>
+                                  {n&&<div className="text-[11px] text-[#8FA6B2]">{n} objecten</div>}
+                                </div>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <ResetKnop lagId={lagId}/><SlotIcoon lagId={lagId}/><Toggle lagId={lagId} inst={inst}/>
+                                </div>
+                              </div>
+                              <ResetBevestiging lagId={lagId}/>
+                              <LaagControls lagId={lagId} inst={inst}/>
+                            </div>
+                          );
+                        }) : (
+                          <div className="px-4 py-3 text-xs text-[#8FA6B2] italic pl-8">
+                            {bestandStatus[b.id]?"Laden…":"Geen lagen geladen"}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                {klicThemas.length>0?klicThemas.map(thema=>{const lagId=`klic_${thema}`;const inst=instellingen[lagId]??standaardThemaInst(thema);const config=THEMA[thema]??{label:thema};const n=klicLagen[thema]?.features?.length;
-                return(<div key={lagId} className="px-4 py-2 space-y-1 border-t border-gray-50">
-                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ml-3" style={{background:inst.kleur}}/><div className="flex-1 min-w-0"><div className="text-xs font-medium text-gray-700">{config.label}</div>{n&&<div className="text-xs text-gray-400">{n} objecten</div>}</div><div className="flex items-center gap-1 flex-shrink-0"><ResetKnop lagId={lagId}/><SlotIcoon lagId={lagId}/><Toggle lagId={lagId} inst={inst}/></div></div>
-                  <ResetBevestiging lagId={lagId}/>
-                  <LaagControls lagId={lagId} inst={inst}/>
-                </div>);}):(<div className="px-4 py-3 text-xs text-gray-400 italic pl-8">{bestandStatus[b.id]?"Laden…":"Geen lagen geladen"}</div>)}
-              </div>))}
+              )}
 
-              {bestanden.length===0&&(<div className="p-6 text-center space-y-2"><div className="text-2xl">📂</div><p className="text-sm text-gray-600 font-medium">Geen bestanden</p><p className="text-xs text-gray-400">Upload ontwerpen in stap 2.</p></div>)}
+              {bestanden.length===0&&(
+                <div className="p-6 text-center space-y-2">
+                  <div className="text-2xl">📂</div>
+                  <p className="text-sm font-medium text-[#1B2B35]">Geen bestanden</p>
+                  <p className="text-xs text-[#8FA6B2]">Upload ontwerpen in stap 2.</p>
+                </div>
+              )}
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-4 py-2 space-y-1">
-          {rdCursor&&<div className="text-xs font-mono text-gray-500 bg-gray-50 rounded px-2 py-1">RD X: {rdCursor.x.toLocaleString("nl-NL")} · Y: {rdCursor.y.toLocaleString("nl-NL")}</div>}
+        <div className="border-t border-[#DEE6EA] px-3 py-2 space-y-1 flex-shrink-0">
+          {rdCursor&&(
+            <div className="text-[11px] font-mono text-[#587080] bg-[#F5F7F9] rounded px-2 py-1">
+              RD X: {rdCursor.x.toLocaleString("nl-NL")} · Y: {rdCursor.y.toLocaleString("nl-NL")}
+            </div>
+          )}
           {foutmelding&&<p className="text-xs text-red-500 font-medium">✗ {foutmelding}</p>}
-          <p className="text-xs text-gray-400">EPSG:28992 · instellingen gelden ook in stap 4 t/m 8.</p>
+          <p className="text-[11px] text-[#8FA6B2]">EPSG:28992 · instellingen gelden ook in stap 4 t/m 8.</p>
         </div>
+      </div>        </div>
       </div>
 
       {/* ── Kaart + feature detail ───────────────────────────── */}
@@ -998,7 +1092,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           {/* Laadspinner overlay */}
           {isKaartLaden&&(
             <div className="absolute inset-0 bg-white/70 flex flex-col items-center justify-center z-[400] pointer-events-none">
-              <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mb-3"/>
+              <div className="w-12 h-12 border-4 border-[#E5F3EC] border-t-[#007A5A] rounded-full animate-spin mb-3"/>
               <p className="text-sm text-gray-700 font-medium">{kaartLaadBericht}</p>
               <p className="text-xs text-gray-400 mt-1">Even geduld…</p>
             </div>
