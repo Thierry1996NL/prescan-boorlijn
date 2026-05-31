@@ -413,6 +413,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
                     {actieveOverlays[id]&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">aan</span>}
                   </button>
                 ))}
+              </div>
             </div>
 
             {/* Opslaan */}

@@ -1079,7 +1079,6 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           {foutmelding&&<p className="text-xs text-red-500 font-medium">✗ {foutmelding}</p>}
           <p className="text-[11px] text-[#8FA6B2]">EPSG:28992 · instellingen gelden ook in stap 4 t/m 8.</p>
         </div>
-      </div>        </div>
       </div>
 
       {/* ── Kaart + feature detail ───────────────────────────── */}
