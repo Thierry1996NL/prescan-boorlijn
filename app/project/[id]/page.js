@@ -187,7 +187,7 @@ export default function ProjectDetailPagina() {
   // ── Helpers ────────────────────────────────────────────────────
   if (laden) {
     return (
-      <div className="flex min-h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-[#F5F7F9]">
         <Sidebar actiefProjectId={id} actieveStap={1} onStapWijzigen={() => {}} />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-gray-400">Laden…</p>
@@ -198,7 +198,7 @@ export default function ProjectDetailPagina() {
 
   if (!project) {
     return (
-      <div className="flex min-h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-[#F5F7F9]">
         <Sidebar />
         <div className="flex-1 flex flex-col items-center justify-center gap-3">
           <p className="text-sm text-gray-500">Project niet gevonden.</p>
@@ -228,10 +228,10 @@ export default function ProjectDetailPagina() {
 
     return (
       <div className="bg-white border border-orange-200 rounded-xl mb-4 overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3 bg-orange-50 border-b border-orange-100">
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#E5F3EC] border-b border-[#007A5A]/20">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-orange-500"/>
-            <span className="text-xs font-semibold text-orange-700">Boring configuratie</span>
+            <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+            <span className="text-xs font-semibold text-[#007A5A]">Boring configuratie</span>
           </div>
           <div className="flex items-center gap-2 ml-2 flex-wrap">
             <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">
@@ -245,7 +245,7 @@ export default function ProjectDetailPagina() {
             )}
           </div>
           <button onClick={() => setActieveStap(1)}
-                  className="ml-auto text-xs text-orange-500 hover:text-orange-700 underline">
+                  className="ml-auto text-xs text-orange-500 hover:text-[#007A5A] underline">
             Aanpassen →
           </button>
         </div>
@@ -284,7 +284,7 @@ export default function ProjectDetailPagina() {
 
         {/* Dwarsdoorsnede (alleen als showSVG=true) */}
         {showSVG && res && (
-          <div className="border-t border-orange-100 py-3 px-4">
+          <div className="border-t border-[#007A5A]/20 py-3 px-4">
             <p className="text-xs text-gray-500 font-medium mb-2">Dwarsdoorsnede boring</p>
             <div className="flex justify-center">
               <BoringSVG res={res} customPos={bc.customPos ?? {}} size={180} showLabel={true}/>
@@ -308,7 +308,7 @@ export default function ProjectDetailPagina() {
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-semibold text-gray-800">Projectgegevens</h2>
-                <button onClick={() => setBewerkModaal(true)} className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
+                <button onClick={() => setBewerkModaal(true)} className="px-3 py-1.5 text-xs bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] transition-colors">
                   Bewerken
                 </button>
               </div>
@@ -358,7 +358,7 @@ export default function ProjectDetailPagina() {
                           type={type}
                           value={bewerkData[key] ?? ""}
                           onChange={e => setBewerkData(d => ({ ...d, [key]: e.target.value }))}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#007A5A] outline-none"
                         />
                       </div>
                     ))}
@@ -380,7 +380,7 @@ export default function ProjectDetailPagina() {
                     </div>
                     <div className="flex gap-3 pt-2">
                       <button type="button" onClick={() => setBewerkModaal(false)} className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Annuleren</button>
-                      <button type="submit" disabled={opslaan} className="flex-1 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                      <button type="submit" disabled={opslaan} className="flex-1 px-4 py-2 text-sm bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] disabled:opacity-50">
                         {opslaan ? "Opslaan…" : "Opslaan"}
                       </button>
                     </div>
@@ -456,7 +456,7 @@ export default function ProjectDetailPagina() {
                     defaultValue={naam}
                     onBlur={e => { if (e.target.value !== naam) slaCustomNaamOp(type, e.target.value); }}
                     placeholder={label}
-                    className="text-xs font-medium text-gray-800 bg-transparent border-b border-dashed border-gray-200 focus:border-orange-400 outline-none w-full pb-0.5"
+                    className="text-xs font-medium text-gray-800 bg-transparent border-b border-dashed border-gray-200 focus:border-[#007A5A] outline-none w-full pb-0.5"
                   />
                 ) : (
                   <div className="text-xs font-medium text-gray-800">{naam}</div>
@@ -523,11 +523,11 @@ export default function ProjectDetailPagina() {
             </div>
 
             <div className="flex items-center justify-between pt-1">
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[#8FA6B2]">
                 Bucket: <code className="bg-gray-100 px-1 rounded">project-bestanden</code>
               </p>
               <button onClick={() => setActieveStap(3)} disabled={aantalGeladen === 0}
-                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors font-medium">
+                className="px-4 py-2 text-sm bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] disabled:opacity-40 transition-colors font-medium">
                 Opgeslagen — naar stap 3 →
               </button>
             </div>
@@ -642,7 +642,7 @@ export default function ProjectDetailPagina() {
 
   // ═══════════════════════════════════════════════════════════════
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[#F5F7F9]">
       <Sidebar
         actiefProjectId={id}
         actieveStap={actieveStap}
@@ -655,19 +655,19 @@ export default function ProjectDetailPagina() {
 
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-20 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#DEE6EA] bg-white sticky top-0 z-20 flex-shrink-0 h-[54px]">
           <div>
-            <div className="text-xs text-gray-400">Stap {actieveStap} van 10</div>
-            <h1 className="text-base font-semibold text-gray-900 mt-0.5">{STAP_LABELS[actieveStap]}</h1>
+            <div className="text-xs text-[#8FA6B2]">Stap {actieveStap} van 10</div>
+            <h1 className="text-sm font-semibold text-[#1B2B35] mt-0.5">{STAP_LABELS[actieveStap]}</h1>
           </div>
           <div className="flex items-center gap-2">
             {actieveStap > 1 && (
-              <button onClick={() => setActieveStap(s => s - 1)} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
+              <button onClick={() => setActieveStap(s => s - 1)} className="px-3 py-1.5 text-xs border border-[#DEE6EA] rounded-lg hover:bg-[#F5F7F9] text-[#587080] transition-colors">
                 ← Vorige
               </button>
             )}
             {actieveStap < STAP_MAX_UITGEWERKT && (
-              <button onClick={() => setActieveStap(s => s + 1)} className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
+              <button onClick={() => setActieveStap(s => s + 1)} className="px-3 py-1.5 text-xs bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] transition-colors">
                 Volgende →
               </button>
             )}

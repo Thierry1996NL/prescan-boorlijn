@@ -736,17 +736,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
   }
 
   // ── Sub-components ────────────────────────────────────────────
-  function Toggle({lagId,inst}){return(<button onClick={()=>wijzig(lagId,"zichtbaar",!inst.zichtbaar)} className={`relative inline-flex flex-shrink-0 rounded-full transition-colors ${inst.zichtbaar?"bg-orange-500":"bg-gray-200"}`} style={{width:36,height:20}}><span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform ${inst.zichtbaar?"translate-x-4":"translate-x-0.5"}`} style={{marginTop:2}}/></button>);}
+  function Toggle({lagId,inst}){return(<button onClick={()=>wijzig(lagId,"zichtbaar",!inst.zichtbaar)} className={`relative inline-flex flex-shrink-0 rounded-full transition-colors ${inst.zichtbaar?"bg-[#007A5A]":"bg-gray-200"}`} style={{width:36,height:20}}><span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform ${inst.zichtbaar?"translate-x-4":"translate-x-0.5"}`} style={{marginTop:2}}/></button>);}
 
-  function SlotIcoon({lagId}){const isOpen=vergrendeld[lagId]===true;return(<button onClick={()=>setVergrendeld(v=>({...v,[lagId]:!isOpen}))} title={isOpen?"Vergrendelen":"Bewerken"} className={`w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 ${isOpen?"text-orange-500 hover:text-orange-700":"text-gray-300 hover:text-gray-500 hover:bg-gray-100"}`}>{isOpen?(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>):(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>)}</button>);}
+  function SlotIcoon({lagId}){const isOpen=vergrendeld[lagId]===true;return(<button onClick={()=>setVergrendeld(v=>({...v,[lagId]:!isOpen}))} title={isOpen?"Vergrendelen":"Bewerken"} className={`w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 ${isOpen?"text-[#007A5A] hover:text-[#007A5A]":"text-gray-300 hover:text-gray-500 hover:bg-gray-100"}`}>{isOpen?(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>):(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>)}</button>);}
 
-  function ResetKnop({lagId}){return(<button onClick={()=>setResetConfirm(lagId)} title="Terugzetten naar standaard" className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 flex-shrink-0 transition-colors"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>);}
+  function ResetKnop({lagId}){return(<button onClick={()=>setResetConfirm(lagId)} title="Terugzetten naar standaard" className="w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-[#007A5A] hover:bg-[#F0FAF5] flex-shrink-0 transition-colors"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>);}
 
   function ResetBevestiging({lagId}){
     if(resetConfirm!==lagId)return null;
     const isK=lagId.startsWith("klic_");const thema=lagId.replace("klic_","");
     const std=isK?standaardThemaInst(thema):standaardInst(bestanden.find(b=>b.id===lagId)?.type??"");
-    return(<div className="mt-1.5 flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:std.kleur}}/><span className="text-xs text-orange-700 flex-1">Terugzetten naar standaard?</span><button onClick={()=>setResetConfirm(null)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-white transition-colors">Nee</button><button onClick={()=>voerResetUit(lagId)} className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-2 py-0.5 rounded transition-colors font-medium">Ja</button></div>);
+    return(<div className="mt-1.5 flex items-center gap-2 bg-[#E5F3EC] border border-[#007A5A]/20 rounded-lg px-3 py-2"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:std.kleur}}/><span className="text-xs text-[#007A5A] flex-1">Terugzetten naar standaard?</span><button onClick={()=>setResetConfirm(null)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-white transition-colors">Nee</button><button onClick={()=>voerResetUit(lagId)} className="text-xs text-white bg-[#007A5A] hover:bg-[#00915F] px-2 py-0.5 rounded transition-colors font-medium">Ja</button></div>);
   }
 
   function LaagControls({lagId,inst}){
@@ -808,7 +808,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-gray-700 group-hover:text-blue-600 truncate">{DOC_TYPE_LABELS[doc.type]||doc.type}</div>
+                  <div className="text-xs font-medium text-gray-700 group-hover:text-[#007A5A] truncate">{DOC_TYPE_LABELS[doc.type]||doc.type}</div>
                   <div className="text-xs text-gray-400 truncate">{doc.naam}</div>
                 </div>
                 <div className="text-xs text-gray-300 flex-shrink-0">{doc.grootte?(doc.grootte/1024).toFixed(0)+" KB":""}</div>
@@ -843,20 +843,20 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           {/* Filterbox knop */}
           {!tekenModus&&!kaartBox&&(
             <button onClick={startTekenBox} title="Teken een filterbox om alleen dat gebied te tonen"
-              className="flex items-center gap-1 px-2.5 py-1 text-xs border border-gray-200 rounded-lg hover:bg-orange-50 hover:border-orange-300 text-gray-500 hover:text-orange-600 transition-colors font-medium">
+              className="flex items-center gap-1 px-2.5 py-1 text-xs border border-gray-200 rounded-lg hover:bg-[#F0FAF5] hover:border-orange-300 text-gray-500 hover:text-[#007A5A] transition-colors font-medium">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
               Filterbox
             </button>
           )}
           {tekenModus&&(
-            <span className="px-2.5 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg font-medium animate-pulse">
+            <span className="px-2.5 py-1 text-xs bg-[#E5F3EC] text-[#007A5A] rounded-lg font-medium animate-pulse">
               {boxStartRef.current?"Klik 2e hoek…":"Klik 1e hoek…"}
             </span>
           )}
           {kaartBox&&!tekenModus&&(
             <div className="flex gap-1">
               <button onClick={startTekenBox} title="Nieuwe filterbox tekenen"
-                className="flex items-center gap-1 px-2 py-1 text-xs border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50 transition-colors font-medium">
+                className="flex items-center gap-1 px-2 py-1 text-xs border border-orange-300 text-[#007A5A] rounded-lg hover:bg-[#F0FAF5] transition-colors font-medium">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                 Opnieuw
               </button>
@@ -867,7 +867,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
           {/* Opslaan */}
           <button onClick={handleOpslaan} disabled={opslaanActief}
-            className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-medium transition-colors flex-shrink-0 ${ingeslagen?"bg-green-500 text-white":"bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50"}`}>
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-medium transition-colors flex-shrink-0 ${ingeslagen?"bg-green-500 text-white":"bg-[#007A5A] text-white hover:bg-[#00915F] disabled:opacity-50"}`}>
             {ingeslagen?(
               <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Opgeslagen</>
             ):(
@@ -886,7 +886,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
               <div className="px-4 py-3 border-b border-gray-100">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Achtergrond</div>
                 <div className="space-y-1">
-                  {ACHTERGROND.map(a=>(<button key={a.id} onClick={()=>wisselAchtergrond(a.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-orange-50 text-orange-700":"text-gray-600 hover:bg-gray-50"}`}><div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-orange-500 bg-orange-500":"border-gray-300"}`}/><span className="text-xs font-medium">{a.label}</span></button>))}
+                  {ACHTERGROND.map(a=>(<button key={a.id} onClick={()=>wisselAchtergrond(a.id)} className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-[#E5F3EC] text-[#007A5A]":"text-gray-600 hover:bg-gray-50"}`}><div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-[#007A5A] bg-[#007A5A]":"border-gray-300"}`}/><span className="text-xs font-medium">{a.label}</span></button>))}
                 </div>
               </div>
 
@@ -911,7 +911,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
               {klicBestanden.map(b=>(<div key={b.id}>
                 <div className="px-4 py-2 bg-gray-50">
                   <div className="flex items-center gap-2"><span>🗂️</span><div className="flex-1 min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{b.naam}</div><div className="text-xs text-gray-400">KLIC-melding · IMKL</div></div></div>
-                  {bestandStatus[b.id]&&<div className={`text-xs mt-1 ml-6 ${bestandStatus[b.id].startsWith("✓")?"text-green-600":bestandStatus[b.id].startsWith("✗")?"text-red-500":"text-orange-500"}`}>{bestandStatus[b.id]}</div>}
+                  {bestandStatus[b.id]&&<div className={`text-xs mt-1 ml-6 ${bestandStatus[b.id].startsWith("✓")?"text-green-600":bestandStatus[b.id].startsWith("✗")?"text-red-500":"text-[#007A5A]"}`}>{bestandStatus[b.id]}</div>}
                 </div>
                 {klicThemas.length>0?klicThemas.map(thema=>{const lagId=`klic_${thema}`;const inst=instellingen[lagId]??standaardThemaInst(thema);const config=THEMA[thema]??{label:thema};const n=klicLagen[thema]?.features?.length;
                 return(<div key={lagId} className="px-4 py-2 space-y-1 border-t border-gray-50">
@@ -951,12 +951,12 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
 
           {/* Tekenmodus aanwijzing op kaart */}
           {tekenModus&&(
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 bg-orange-500 text-white rounded-xl shadow-lg text-sm font-medium pointer-events-none">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 bg-[#007A5A] text-white rounded-xl shadow-lg text-sm font-medium pointer-events-none">
               {boxStartRef.current?"Klik voor de 2e hoek":"Klik voor de 1e hoek van de filterbox"}
             </div>
           )}
           {kaartBox&&!tekenModus&&(
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-3 py-1.5 bg-white border border-orange-300 rounded-lg shadow text-xs text-orange-600 font-medium pointer-events-none">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] px-3 py-1.5 bg-white border border-orange-300 rounded-lg shadow text-xs text-[#007A5A] font-medium pointer-events-none">
               Filterbox actief — alleen dit gebied is zichtbaar
             </div>
           )}

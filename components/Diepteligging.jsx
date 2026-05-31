@@ -316,7 +316,7 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
     if(hoek===null)return"text-gray-400";
     const abs=Math.abs(hoek);
     if(abs>15)return"text-red-600 font-bold";
-    if(abs>8)return"text-orange-500 font-semibold";
+    if(abs>8)return"text-[#007A5A] font-semibold";
     return"text-green-600";
   };
 
@@ -350,7 +350,7 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
           <tbody>
             {segmenten.map((s,i)=>{
               const isStart=i===0,isEinde=i===segmenten.length-1;
-              const labelKleur=isStart?"text-green-700 bg-green-50":isEinde?"text-red-700 bg-red-50":"text-orange-700 bg-orange-50";
+              const labelKleur=isStart?"text-green-700 bg-green-50":isEinde?"text-red-700 bg-red-50":"text-[#007A5A] bg-[#E5F3EC]";
               return(<tr key={i} className={`border-b border-gray-50 hover:bg-gray-50 ${isStart?"bg-green-50/30":isEinde?"bg-red-50/30":""}`}>
                 <td className="px-3 py-2">
                   <span className={`inline-block w-6 h-6 rounded-full text-center leading-6 text-xs font-bold ${labelKleur}`}>
@@ -358,7 +358,7 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
                   </span>
                 </td>
                 <td className="px-3 py-2 font-mono font-semibold text-gray-800">{s.afstand.toFixed(1)}m</td>
-                <td className="px-3 py-2 font-mono text-orange-600">{s.diepte.toFixed(2)}m</td>
+                <td className="px-3 py-2 font-mono text-[#007A5A]">{s.diepte.toFixed(2)}m</td>
                 <td className="px-3 py-2 font-mono text-blue-700">{s.nap!==null?s.nap.toFixed(2)+"m":"—"}</td>
                 <td className="px-3 py-2 font-mono text-green-700">{s.mv!==null?s.mv.toFixed(2)+"m":"—"}</td>
                 {/* Segment naar volgende */}
@@ -386,8 +386,8 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
                   <div className="flex items-center gap-0.5">
                     {!isStart&&!isEinde&&(
                       <>
-                        <button onClick={()=>wijzigDiepte(i,-0.1)} title="Minder diep" className="w-6 h-6 rounded bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs">↑</button>
-                        <button onClick={()=>wijzigDiepte(i,+0.1)} title="Meer diep"   className="w-6 h-6 rounded bg-gray-100 hover:bg-orange-100 text-gray-600 hover:text-orange-700 text-xs">↓</button>
+                        <button onClick={()=>wijzigDiepte(i,-0.1)} title="Minder diep" className="w-6 h-6 rounded bg-gray-100 hover:bg-[#E5F3EC] text-gray-600 hover:text-[#007A5A] text-xs">↑</button>
+                        <button onClick={()=>wijzigDiepte(i,+0.1)} title="Meer diep"   className="w-6 h-6 rounded bg-gray-100 hover:bg-[#E5F3EC] text-gray-600 hover:text-[#007A5A] text-xs">↓</button>
                         <button onClick={()=>wijzigAfstand(i,-1)}  title="1m naar voren" className="w-6 h-6 rounded bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs">←</button>
                         <button onClick={()=>wijzigAfstand(i,+1)}  title="1m naar achter" className="w-6 h-6 rounded bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 text-xs">→</button>
                         <button onClick={()=>verwijder(i)} title="Verwijder" className="w-6 h-6 rounded bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 text-xs ml-0.5">×</button>
@@ -402,7 +402,7 @@ function DieptePuntenTabel({dieptePunten,setDieptePunten,profielPunten,totM}){
       </div>
       <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex gap-4 text-xs text-gray-500">
         <span className="text-green-600">↗ &lt;8° prima</span>
-        <span className="text-orange-500">↗ 8–15° let op</span>
+        <span className="text-[#007A5A]">↗ 8–15° let op</span>
         <span className="text-red-600 font-semibold">↗ &gt;15° te steil!</span>
         <span className="ml-auto text-gray-400">Positieve hoek = stijgend · negatief = dalend</span>
       </div>
@@ -697,9 +697,9 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
             <div><span className="text-sm font-semibold text-gray-900">6. Diepteligging</span><div className="text-xs text-gray-400">Dwarsprofiel & bodem</div></div>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-            <div className="bg-orange-50 rounded-lg px-3 py-2">
-              <div className="text-xs font-semibold text-orange-700 mb-1">Boorlijn</div>
-              <div className="text-xs text-orange-600">{boorCoords.length>=2?`${Math.round(totM)}m · ${boorCoords.length} punten · ${bearing.toFixed(0)}° ${bearing<22.5||bearing>=337.5?"N":bearing<67.5?"NO":bearing<112.5?"O":bearing<157.5?"ZO":bearing<202.5?"Z":bearing<247.5?"ZW":bearing<292.5?"W":"NW"}`:"Geen boorlijn"}</div>
+            <div className="bg-[#E5F3EC] rounded-lg px-3 py-2">
+              <div className="text-xs font-semibold text-[#007A5A] mb-1">Boorlijn</div>
+              <div className="text-xs text-[#007A5A]">{boorCoords.length>=2?`${Math.round(totM)}m · ${boorCoords.length} punten · ${bearing.toFixed(0)}° ${bearing<22.5||bearing>=337.5?"N":bearing<67.5?"NO":bearing<112.5?"O":bearing<157.5?"ZO":bearing<202.5?"Z":bearing<247.5?"ZW":bearing<292.5?"W":"NW"}`:"Geen boorlijn"}</div>
             </div>
 
             {/* Kaartrotatie-knop */}
@@ -711,7 +711,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
               {geroteerd?"Kaart + profiel horizontaal uitgelijnd":"Klik om bore horizontaal te zetten"}
             </div>
             <button onClick={haalHoogteOp} disabled={hoogteBezig||boorCoords.length<2}
-              className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${hoogteBezig||boorCoords.length<2?"bg-gray-100 text-gray-400 cursor-not-allowed":"bg-orange-500 hover:bg-orange-600 text-white shadow-sm"}`}>
+              className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${hoogteBezig||boorCoords.length<2?"bg-gray-100 text-gray-400 cursor-not-allowed":"bg-[#007A5A] hover:bg-[#00915F] text-white shadow-sm"}`}>
               {hoogteBezig?<span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</span>:"⛰ Analyseer hoogte (AHN4)"}
             </button>
             {hoogteInfo&&<div className={`text-xs rounded-lg px-3 py-2 leading-snug ${hoogteInfo.startsWith("❌")?"bg-red-50 text-red-600":"bg-green-50 text-green-700"}`}>{hoogteInfo}</div>}
@@ -722,7 +722,7 @@ export default function Diepteligging({project,onNaar,opgeslagenDiepte,onSave}){
                 opslaanBezig||!onSave?"bg-gray-100 text-gray-400 cursor-not-allowed"
                 :opslaanStatus==="ok"?"bg-green-500 text-white"
                 :opslaanStatus==="fout"?"bg-red-500 text-white"
-                :"bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                :"bg-[#007A5A] hover:bg-[#00915F] text-white shadow-sm"
               }`}>
               {opslaanBezig ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Opslaan…</span>
                : opslaanStatus==="ok" ? "✓ Opgeslagen!"

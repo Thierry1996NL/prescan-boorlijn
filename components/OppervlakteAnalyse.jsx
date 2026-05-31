@@ -1356,7 +1356,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
             {boorCoords.length>=2?(
               <div className="px-4 py-3 border-b border-gray-100">
                 <div className="bg-blue-50 rounded-lg px-3 py-2 flex justify-between text-xs">
-                  <span className="text-blue-600 font-medium">✓ Boorlijn</span>
+                  <span className="text-[#007A5A] font-medium">✓ Boorlijn</span>
                   <span className="text-blue-500 font-mono">{Math.round(totaalM)} m · {boorCoords.length} pts</span>
                 </div>
               </div>
@@ -1385,12 +1385,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                 style={{background:zipFeatures?"#ECFDF5":"white", borderColor:zipFeatures?"#6EE7B7":"#FED7AA"}}
               >
                 {zipBezig
-                  ? <div className="flex items-center justify-center gap-2 text-xs text-orange-600"><div className="w-3 h-3 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"/>GML bestanden verwerken...</div>
+                  ? <div className="flex items-center justify-center gap-2 text-xs text-[#007A5A]"><div className="w-3 h-3 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"/>GML bestanden verwerken...</div>
                   : zipFeatures
                   ? <div className="text-xs text-green-700 font-semibold">✅ {zipNaam}</div>
                   : <div>
                       <div className="text-xs font-semibold text-gray-600 mb-1">📦 BGT ZIP importeren</div>
-                      <div className="text-xs text-gray-400">Download van <span className="text-orange-500 font-medium">pdok.nl/lv/bgt</span><br/>Sleep ZIP hier of klik om te kiezen</div>
+                      <div className="text-xs text-gray-400">Download van <span className="text-[#007A5A] font-medium">pdok.nl/lv/bgt</span><br/>Sleep ZIP hier of klik om te kiezen</div>
                     </div>
                 }
                 <input ref={zipInputRef} type="file" accept=".zip" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)importeerBgtZip(f);e.target.value="";}}/>
@@ -1506,7 +1506,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
             {/* Analyse knop */}
             <div className="px-4 py-3 border-b border-gray-100 space-y-2">
               <button onClick={voerAnalyseUit} disabled={bezig||boorCoords.length<2}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 bg-orange-500 text-white hover:bg-orange-600">
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 bg-[#007A5A] text-white hover:bg-[#00915F]">
                 {bezig?(<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Bezig…</>):(<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>{zipFeatures?"Analyseer (ZIP)":analysePunten.length>0?"Heranalyseren":"Analyse uitvoeren"}</>)}
               </button>
               {/* Opslaan knop */}
@@ -1525,14 +1525,14 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                     } finally { setOpslaanBezig(false); }
                   }}
                   disabled={opslaanBezig}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-colors bg-[#007A5A] text-white hover:bg-[#00915F] disabled:opacity-50">
                   {opslaanBezig
                     ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Opslaan…</>
                     : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Opslaan</>
                   }
                 </button>
               )}
-              {bezig&&(<><div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden"><div className="h-1.5 bg-orange-500 rounded-full transition-all" style={{width:`${voortgang}%`}}/></div><p className="text-xs text-gray-400 text-center">{voortgang}% · {Math.round(voortgang/100*totaalPunten)}/{totaalPunten}</p></>)}
+              {bezig&&(<><div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden"><div className="h-1.5 bg-[#007A5A] rounded-full transition-all" style={{width:`${voortgang}%`}}/></div><p className="text-xs text-gray-400 text-center">{voortgang}% · {Math.round(voortgang/100*totaalPunten)}/{totaalPunten}</p></>)}
               {opgeslagen&&<p className="text-xs text-green-600 text-center">✓ Opgeslagen</p>}
               <button onClick={testBgtQuery}
                 className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
@@ -1545,7 +1545,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                   {bgtDebug.rdX&&<div className="text-gray-400 font-mono">RD X={bgtDebug.rdX} Y={bgtDebug.rdY}</div>}
                   {bgtDebug.error&&<div className="text-red-600 font-medium">Fout: {bgtDebug.error}</div>}
                   {bgtDebug.rawStart&&<div className="text-gray-500 font-mono text-xs break-all">{bgtDebug.rawStart}</div>}
-                  {bgtDebug.locatieserver&&<div className="text-blue-600">📍 Adres: {bgtDebug.locatieserver}</div>}
+                  {bgtDebug.locatieserver&&<div className="text-[#007A5A]">📍 Adres: {bgtDebug.locatieserver}</div>}
                   {bgtDebug.tried&&<div className="text-gray-400 text-xs">Geprobeerd: {bgtDebug.tried.join(", ")}</div>}
                   {bgtDebug.perCollectie&&(
                     <div className="text-xs space-y-0.5">
@@ -1555,11 +1555,11 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                     </div>
                   )}
                   {bgtDebug.features?.length===0&&!bgtDebug.error&&(
-                    <div className="text-orange-600 font-medium">⚠ 0 features — geen BGT-data gevonden</div>
+                    <div className="text-[#007A5A] font-medium">⚠ 0 features — geen BGT-data gevonden</div>
                   )}
                   {bgtDebug.features?.map((f,i)=>(
                     <div key={i} className="border-t border-gray-200 pt-1">
-                      <div className="text-blue-600 font-mono text-xs">{f.id}</div>
+                      <div className="text-[#007A5A] font-mono text-xs">{f.id}</div>
                       {Object.entries(f.properties).map(([k,v])=>(
                         <div key={k}><span className="text-gray-400">{k}:</span> <span className="text-gray-700">{String(v)}</span></div>
                       ))}
@@ -1575,7 +1575,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                 <div className="px-4 py-3 border-b border-gray-100 bg-blue-50">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-semibold text-blue-700">Punt {geselecteerdPunt===0?"S":geselecteerdPunt===analysePunten.length-1?"E":geselecteerdPunt}</span>
-                    <button onClick={()=>setGeselecteerdPunt(null)} className="text-blue-400 hover:text-blue-600 text-sm">×</button>
+                    <button onClick={()=>setGeselecteerdPunt(null)} className="text-blue-400 hover:text-[#007A5A] text-sm">×</button>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{background:p.oppervlak?.kleur??"#9ca3af"}}/>
@@ -1611,8 +1611,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                   <div className="space-y-1">
                     {ACHTERGRONDEN.map(a=>(
                       <button key={a.id} onClick={()=>wisselAchtergrond(a.id)}
-                        className={`flex items-center gap-2 w-full px-2 py-1 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-orange-50 text-orange-700":"text-gray-600 hover:bg-gray-50"}`}>
-                        <div className={`w-2.5 h-2.5 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-orange-500 bg-orange-500":"border-gray-300"}`}/>
+                        className={`flex items-center gap-2 w-full px-2 py-1 rounded-lg text-left transition-colors ${actieveAchtergrond===a.id?"bg-[#E5F3EC] text-[#007A5A]":"text-gray-600 hover:bg-gray-50"}`}>
+                        <div className={`w-2.5 h-2.5 rounded-full border-2 flex-shrink-0 ${actieveAchtergrond===a.id?"border-[#007A5A] bg-[#007A5A]":"border-gray-300"}`}/>
                         <span className="text-xs">{a.label}</span>
                       </button>
                     ))}
@@ -1637,11 +1637,11 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
             {/* ── 5.2 GeoTOP / 5.3 REGIS II (geen WMS) ─────────── */}
             {(actieveSubStap==="5.2"||actieveSubStap==="5.3")&&actOndergrondLaag&&(
               <div className="p-4 space-y-3">
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+                <div className="bg-[#E5F3EC] border border-orange-200 rounded-xl p-3 text-center">
                   <div className="text-2xl mb-1">{actSubStapDef?.emoji}</div>
-                  <div className="text-sm font-bold text-orange-800">{actOndergrondLaag.label}</div>
-                  <div className="text-xs text-orange-600 mt-0.5">{actOndergrondLaag.beschrijving}</div>
-                  <div className="mt-2 text-xs text-orange-700 bg-orange-100 rounded-lg px-2 py-1">
+                  <div className="text-sm font-bold text-[#007A5A]">{actOndergrondLaag.label}</div>
+                  <div className="text-xs text-[#007A5A] mt-0.5">{actOndergrondLaag.beschrijving}</div>
+                  <div className="mt-2 text-xs text-[#007A5A] bg-[#E5F3EC] rounded-lg px-2 py-1">
                     Niet beschikbaar als WMS — enkel download
                   </div>
                 </div>
@@ -1654,7 +1654,7 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                   <p className="text-xs text-gray-600 leading-snug">{actOndergrondLaag.risicoTekst}</p>
                 </div>
                 <a href={actOndergrondLaag.broUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors">
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#007A5A] text-white text-sm font-semibold hover:bg-[#00915F] transition-colors">
                   📋 Open in BROloket
                 </a>
                 <a href={actOndergrondLaag.pdokUrl} target="_blank" rel="noopener noreferrer"
@@ -1718,12 +1718,12 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
                   <div className="text-xs text-gray-400">Licentie: CC0 · PDOK / BRO</div>
                 </div>
                 {actieveSubStap==="5.5"&&(
-                  <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-2 py-1.5 leading-snug">
+                  <p className="text-xs text-[#007A5A] bg-blue-50 rounded-lg px-2 py-1.5 leading-snug">
                     💡 Zoom in om peilbuizen te zien. Klik op een punt voor grondwaterstand.
                   </p>
                 )}
                 {actieveSubStap==="5.6"&&(
-                  <p className="text-xs text-orange-600 bg-orange-50 rounded-lg px-2 py-1.5 leading-snug">
+                  <p className="text-xs text-[#007A5A] bg-[#E5F3EC] rounded-lg px-2 py-1.5 leading-snug">
                     💡 AHN toont maaiveld. Waterdiepte is hierin niet opgenomen.
                   </p>
                 )}
@@ -1774,15 +1774,15 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
               {actOndergrondLaag.risicoLabel} HDD-risico
             </span>
           </div>
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
-            <p className="text-sm text-orange-700 font-medium mb-2">
+          <div className="bg-[#E5F3EC] border border-orange-200 rounded-xl p-4 text-center">
+            <p className="text-sm text-[#007A5A] font-medium mb-2">
               {actOndergrondLaag.label} is niet als WMS beschikbaar via PDOK.
             </p>
-            <p className="text-xs text-orange-600 mb-3">
+            <p className="text-xs text-[#007A5A] mb-3">
               Bekijk het model op BROloket voor een dwarsdoorsnede ter plaatse van dit tracé.
             </p>
             <a href={actOndergrondLaag.broUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors">
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#007A5A] text-white text-sm font-semibold hover:bg-[#00915F] transition-colors">
               📋 Open BROloket
             </a>
           </div>
@@ -1810,8 +1810,8 @@ export default function OppervlakteAnalyse({ project, onAnalyseOpgeslagen, onZip
               <span className="font-semibold text-gray-700">WMS actief op kaart</span>
               <span className="ml-2 font-mono">{actOndergrondLaag.url.replace("https://","")}</span>
               <br/>Layer: <span className="font-mono text-gray-700">{actOndergrondLaag.layers}</span>
-              {actieveSubStap==="5.6"&&<span className="ml-3 text-orange-600">AHN toont maaiveld — geen waterdiepte</span>}
-              {actieveSubStap==="5.5"&&<span className="ml-3 text-blue-600">Zoom in om peilbuispunten te zien</span>}
+              {actieveSubStap==="5.6"&&<span className="ml-3 text-[#007A5A]">AHN toont maaiveld — geen waterdiepte</span>}
+              {actieveSubStap==="5.5"&&<span className="ml-3 text-[#007A5A]">Zoom in om peilbuispunten te zien</span>}
             </div>
           </div>
         </div>

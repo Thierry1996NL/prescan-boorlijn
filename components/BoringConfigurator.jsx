@@ -92,7 +92,7 @@ function BoringCanvas({ res, customPos, setCustomPos, selected, setSelected }) {
 
   const TB = (label, title, fn, dis) => (
     <button key={title} onClick={fn} title={title} disabled={dis}
-            className={`px-2 py-1 text-xs rounded border ${dis?"border-gray-100 text-gray-300 cursor-default":"border-gray-200 text-gray-600 hover:border-orange-300 hover:text-orange-600 cursor-pointer"}`}>
+            className={`px-2 py-1 text-xs rounded border ${dis?"border-gray-100 text-gray-300 cursor-default":"border-gray-200 text-gray-600 hover:border-orange-300 hover:text-[#007A5A] cursor-pointer"}`}>
       {label}
     </button>
   );
@@ -114,10 +114,10 @@ function BoringCanvas({ res, customPos, setCustomPos, selected, setSelected }) {
         {TB("⇹V","Verdelen V",()=>align("distV"),nSel<2)}
         <div className="w-px h-4 bg-gray-200 mx-0.5"/>
         <button onClick={() => { setCustomPos({}); setSelected(new Set()); }}
-                className="px-2 py-1 text-xs rounded border border-gray-200 text-gray-500 hover:border-orange-300 hover:text-orange-600">
+                className="px-2 py-1 text-xs rounded border border-gray-200 text-gray-500 hover:border-orange-300 hover:text-[#007A5A]">
           ↓ Zwaartekracht
         </button>
-        {nSel > 0 && <span className="text-xs text-orange-500 ml-auto">{nSel} geselecteerd</span>}
+        {nSel > 0 && <span className="text-xs text-[#007A5A] ml-auto">{nSel} geselecteerd</span>}
       </div>
       <p className="text-xs text-gray-400 text-center mb-2">Klik om te selecteren · Shift+klik voor meerdere · Slepen om te verplaatsen</p>
       <svg ref={svgRef} width={S} height={S+8} viewBox={`0 0 ${S} ${S+8}`}
@@ -177,8 +177,8 @@ function BoringCanvas({ res, customPos, setCustomPos, selected, setSelected }) {
 function MachineCard({ machine, boringD, selected, onSelect }) {
   const ok = machine.maxBoring >= boringD, isSel = selected === machine.id;
   return (
-    <div onClick={()=>ok&&onSelect(isSel?null:machine.id)} className={`relative rounded-lg p-3 border transition-all ${isSel?"border-orange-400 bg-orange-50":ok?"border-gray-200 bg-white hover:border-gray-300 cursor-pointer":"border-gray-100 bg-gray-50 opacity-40 cursor-default"}`}>
-      <div className={`absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded font-medium ${isSel?"bg-orange-100 text-orange-700":ok?"bg-green-100 text-green-700":"bg-red-100 text-red-600"}`}>
+    <div onClick={()=>ok&&onSelect(isSel?null:machine.id)} className={`relative rounded-lg p-3 border transition-all ${isSel?"border-[#007A5A] bg-[#E5F3EC]":ok?"border-gray-200 bg-white hover:border-gray-300 cursor-pointer":"border-gray-100 bg-gray-50 opacity-40 cursor-default"}`}>
+      <div className={`absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded font-medium ${isSel?"bg-[#E5F3EC] text-[#007A5A]":ok?"bg-green-100 text-green-700":"bg-red-100 text-red-600"}`}>
         {isSel?"✓ geselecteerd":ok?"compatibel":`max Ø${machine.maxBoring} mm`}
       </div>
       <div className="text-sm font-semibold text-gray-800 pr-24">{machine.brand} {machine.model}</div>
@@ -248,7 +248,7 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
 
   const StepHead = ({ num, label, done }) => (
     <div className="flex items-center gap-2.5 mb-4">
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${done?"bg-orange-500 text-white":"bg-gray-100 text-gray-400 border border-gray-200"}`}>{done?"✓":num}</div>
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${done?"bg-[#007A5A] text-white":"bg-gray-100 text-gray-400 border border-gray-200"}`}>{done?"✓":num}</div>
       <span className="text-sm font-semibold text-gray-800">{label}</span>
     </div>
   );
@@ -270,7 +270,7 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
                   <span className="text-xs font-medium text-gray-800">PE {item.dn} mantelbuis</span>
                   {pr && <span className={`text-xs ${pr.fitsOK?"text-green-600":"text-red-500"}`}>{pr.fitsOK?`${Math.round(pr.fillPct)}% gevuld`:`te vol — min Ø${Math.ceil(pr.reqID)} mm`}</span>}
                   <div className="ml-auto flex gap-1.5">
-                    <button onClick={()=>openPanel("cable",item.id)} className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded">+ kabel</button>
+                    <button onClick={()=>openPanel("cable",item.id)} className="text-xs px-2 py-1 bg-blue-50 text-[#007A5A] border border-blue-200 rounded">+ kabel</button>
                     <button onClick={()=>removeItem(item.id)} className="text-xs px-2 py-1 border border-gray-200 rounded text-gray-400 hover:text-red-500">✕</button>
                   </div>
                 </div>
@@ -303,7 +303,7 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
 
         <div className="flex gap-2 mt-1">
           {[{label:"+ Mantelbuis",mode:"mb"},{label:"+ Direct product",mode:"direct"}].map(b=>(
-            <button key={b.mode} onClick={()=>openPanel(b.mode)} className="flex-1 py-2 text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg hover:border-orange-300 hover:text-orange-500 transition-colors">{b.label}</button>
+            <button key={b.mode} onClick={()=>openPanel(b.mode)} className="flex-1 py-2 text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg hover:border-orange-300 hover:text-[#007A5A] transition-colors">{b.label}</button>
           ))}
         </div>
 
@@ -318,11 +318,11 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
                 <p className="text-xs text-gray-400 mb-2">Diameter PE SDR11:</p>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {PE_SIZES.map(pe=>(
-                    <button key={pe.dn} onClick={()=>setPeDN(pe.dn)} className={`text-xs px-2.5 py-1 rounded border transition-colors ${peDN===pe.dn?"border-orange-400 bg-orange-50 text-orange-600 font-semibold":"border-gray-200 text-gray-600"}`}>Ø{pe.dn}</button>
+                    <button key={pe.dn} onClick={()=>setPeDN(pe.dn)} className={`text-xs px-2.5 py-1 rounded border transition-colors ${peDN===pe.dn?"border-[#007A5A] bg-[#E5F3EC] text-[#007A5A] font-semibold":"border-gray-200 text-gray-600"}`}>Ø{pe.dn}</button>
                   ))}
                 </div>
                 {peData && <p className="text-xs text-gray-400 mb-3">ID {peData.id} mm · wand {peData.wall} mm</p>}
-                <button onClick={addMb} className="w-full py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600">Toevoegen</button>
+                <button onClick={addMb} className="w-full py-2 bg-[#007A5A] text-white text-sm font-medium rounded-lg hover:bg-[#00915F]">Toevoegen</button>
               </>
             ) : (
               <>
@@ -333,13 +333,13 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
                 </div>
                 <div className="space-y-1 mb-3">
                   {CATS.find(c=>c.key===catKey)?.items.map(it=>(
-                    <button key={it.label} onClick={()=>setSelItem(it)} className={`w-full flex justify-between px-2.5 py-1.5 rounded border text-left ${selItem?.label===it.label?"border-orange-400 bg-orange-50":"border-gray-200 bg-white"}`}>
+                    <button key={it.label} onClick={()=>setSelItem(it)} className={`w-full flex justify-between px-2.5 py-1.5 rounded border text-left ${selItem?.label===it.label?"border-[#007A5A] bg-[#E5F3EC]":"border-gray-200 bg-white"}`}>
                       <span className="text-xs text-gray-800">{it.label}</span>
                       <span className="text-xs text-gray-400">Ø{it.od} mm</span>
                     </button>
                   ))}
                 </div>
-                <button onClick={()=>panel.tid?addContent(panel.tid):addDirect()} disabled={!selItem} className={`w-full py-2 text-sm font-medium rounded-lg ${selItem?"bg-orange-500 text-white hover:bg-orange-600":"bg-gray-100 text-gray-400 cursor-default"}`}>Toevoegen</button>
+                <button onClick={()=>panel.tid?addContent(panel.tid):addDirect()} disabled={!selItem} className={`w-full py-2 text-sm font-medium rounded-lg ${selItem?"bg-[#007A5A] text-white hover:bg-[#00915F]":"bg-gray-100 text-gray-400 cursor-default"}`}>Toevoegen</button>
               </>
             )}
           </div>
@@ -398,7 +398,7 @@ export default function BoringConfigurator({ projectId, initialConfig, onConfigC
       <div className="flex items-center justify-between pt-1 pb-2">
         <span className={`text-xs transition-opacity duration-500 ${saved?"text-green-600 opacity-100":"opacity-0"}`}>✓ Opgeslagen</span>
         <button onClick={handleSave} disabled={saving||!items.length}
-                className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-colors ${items.length?saving?"bg-orange-300 text-white cursor-wait":"bg-orange-500 text-white hover:bg-orange-600":"bg-gray-100 text-gray-400 cursor-default"}`}>
+                className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-colors ${items.length?saving?"bg-orange-300 text-white cursor-wait":"bg-[#007A5A] text-white hover:bg-[#00915F]":"bg-gray-100 text-gray-400 cursor-default"}`}>
           {saving?"Opslaan…":"Configuratie opslaan"}
         </button>
       </div>

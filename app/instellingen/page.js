@@ -4,15 +4,15 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 const STAP_CFG = [
-  {nr:1,kleur:"#F97316",bg:"#FFF7ED",icon:"⚙️",naam:"Boring configuratie",     omschrijving:"Diameter, machine, mantelbuis, vulgraad"},
-  {nr:2,kleur:"#7C3AED",bg:"#F5F3FF",icon:"📂",naam:"Ontwerp inladen",          omschrijving:"KLIC bestanden, NEN-1775 kleuren"},
-  {nr:3,kleur:"#0891B2",bg:"#ECFEFF",icon:"🗺️",naam:"Ontwerp bekijken",         omschrijving:"KLIC kruisingen, vrijwaringszones"},
-  {nr:4,kleur:"#1D4ED8",bg:"#EFF6FF",icon:"✏️",naam:"Boorlijn tekenen",          omschrijving:"Tracé, inslaghoeken, afstanden"},
-  {nr:5,kleur:"#059669",bg:"#ECFDF5",icon:"🌿",naam:"Oppervlakteanalyse",        omschrijving:"BGT risiconiveaus, vergunningen"},
-  {nr:6,kleur:"#7C3AED",bg:"#F5F3FF",icon:"📊",naam:"Diepteligging",             omschrijving:"AHN4, NAP-waarden, segmenthoeken"},
-  {nr:7,kleur:"#0891B2",bg:"#ECFEFF",icon:"🚜",naam:"Machine locatie",           omschrijving:"Ruimtebehoefte, bentoniet"},
-  {nr:8,kleur:"#374151",bg:"#F9FAFB",icon:"🌐",naam:"3D ontwerp",                omschrijving:"Ruimtelijke conflicten"},
-  {nr:9,kleur:"#F97316",bg:"#FFF7ED",icon:"📋",naam:"Eindontwerp",               omschrijving:"Volledigheidscheck prescan"},
+  {nr:1,kleur:"#007A5A",bg:"#E5F3EC",icon:"⚙️",naam:"Boring configuratie",     omschrijving:"Diameter, machine, mantelbuis, vulgraad"},
+  {nr:2,kleur:"#007A5A",bg:"#E5F3EC",icon:"📂",naam:"Ontwerp inladen",          omschrijving:"KLIC bestanden, NEN-1775 kleuren"},
+  {nr:3,kleur:"#007A5A",bg:"#E5F3EC",icon:"🗺️",naam:"Ontwerp bekijken",         omschrijving:"KLIC kruisingen, vrijwaringszones"},
+  {nr:4,kleur:"#007A5A",bg:"#E5F3EC",icon:"✏️",naam:"Boorlijn tekenen",          omschrijving:"Tracé, inslaghoeken, afstanden"},
+  {nr:5,kleur:"#007A5A",bg:"#E5F3EC",icon:"🌿",naam:"Oppervlakteanalyse",        omschrijving:"BGT risiconiveaus, vergunningen"},
+  {nr:6,kleur:"#007A5A",bg:"#E5F3EC",icon:"📊",naam:"Diepteligging",             omschrijving:"AHN4, NAP-waarden, segmenthoeken"},
+  {nr:7,kleur:"#007A5A",bg:"#E5F3EC",icon:"🚜",naam:"Machine locatie",           omschrijving:"Ruimtebehoefte, bentoniet"},
+  {nr:8,kleur:"#0D1520",bg:"#F5F7F9",icon:"🌐",naam:"3D ontwerp",                omschrijving:"Ruimtelijke conflicten"},
+  {nr:9,kleur:"#007A5A",bg:"#E5F3EC",icon:"📋",naam:"Eindontwerp",               omschrijving:"Volledigheidscheck prescan"},
 ];
 
 const STANDAARD_BASE = [
@@ -99,9 +99,9 @@ export default function InstellingenPage() {
           {[["bots","🤖 AI Bots"],["kennisbank","📚 Globale kennisbank"]].map(([id,label]) => (
             <button key={id} onClick={() => setTabblad(id)} style={{
               padding: "10px 20px", fontSize: 13, fontWeight: tabblad===id ? 700 : 400,
-              color: tabblad===id ? "#F97316" : "#6B7280",
+              color: tabblad===id ? "#007A5A" : "#6B7280",
               background: "none", border: "none", cursor: "pointer",
-              borderBottom: tabblad===id ? "2px solid #F97316" : "2px solid transparent",
+              borderBottom: tabblad===id ? "2px solid #007A5A" : "2px solid transparent",
               marginBottom: -1,
             }}>{label}</button>
           ))}
@@ -115,7 +115,7 @@ export default function InstellingenPage() {
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#1F2937" }}>AI Bot instellingen per stap</div>
                 <div style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>Voeg eigen instructies toe aan elke stap-bot. Ze worden toegevoegd bovenop de standaard prompts.</div>
               </div>
-              <button onClick={slaAllePromtsOp} style={{ padding: "8px 16px", background: "#F97316", color: "white", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              <button onClick={slaAllePromtsOp} style={{ padding: "8px 16px", background: "#007A5A", color: "white", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
                 💾 Alles opslaan
               </button>
             </div>

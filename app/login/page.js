@@ -4,6 +4,27 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase-queries";
 import { useRouter } from "next/navigation";
 
+function BorevexaIcon({ size = 36 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      <rect width="44" height="44" rx="9" fill="#0D1520"/>
+      <line x1="4" y1="17" x2="40" y2="17" stroke="white" strokeWidth="1" opacity=".35"/>
+      <line x1="9" y1="17" x2="5" y2="21" stroke="white" strokeWidth=".8" opacity=".22"/>
+      <line x1="16" y1="17" x2="12" y2="21" stroke="white" strokeWidth=".8" opacity=".22"/>
+      <line x1="23" y1="17" x2="19" y2="21" stroke="white" strokeWidth=".8" opacity=".22"/>
+      <line x1="30" y1="17" x2="26" y2="21" stroke="white" strokeWidth=".8" opacity=".22"/>
+      <line x1="37" y1="17" x2="33" y2="21" stroke="white" strokeWidth=".8" opacity=".22"/>
+      <line x1="9" y1="9" x2="9" y2="17" stroke="white" strokeWidth="1" strokeDasharray="2 1.5" opacity=".28"/>
+      <circle cx="9" cy="17" r="2.2" fill="#00F5B4"/>
+      <path d="M9 17 C18 34 28 36 31 36" stroke="white" strokeWidth="2.6" fill="none" strokeDasharray="8 3.5" pathLength="100" strokeLinecap="round"/>
+      <rect x="29.5" y="33.8" width="5" height="4.4" rx="1.2" fill="#7FFBDB"/>
+      <polygon points="34.5,33.8 43,36 34.5,36" fill="#7FFBDB"/>
+      <polygon points="34.5,38.2 43,36 34.5,36" fill="#7FFBDB"/>
+      <polygon points="38,34.8 43,36 38,37.2" fill="#00F5B4"/>
+    </svg>
+  );
+}
+
 export default function LoginPagina() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -25,43 +46,45 @@ export default function LoginPagina() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-[#F5F7F9] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <span className="text-2xl font-bold text-gray-900">Prescan</span>
-            <span className="text-2xl font-bold text-blue-600">AI</span>
+        <div className="flex flex-col items-center mb-8 gap-3">
+          <BorevexaIcon size={48} />
+          <div className="text-center">
+            <div className="text-[22px] font-bold tracking-tight text-[#0D1520] leading-none">
+              Bore<span className="text-[#007A5A]">vexa</span>
+            </div>
+            <p className="text-xs text-[#8FA6B2] mt-1">Prescan, Ontwerp &amp; Calculatie</p>
           </div>
-          <p className="text-sm text-gray-400">Gestuurde boringen · HDD</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-          <h1 className="text-base font-semibold text-gray-900 mb-5">Inloggen</h1>
+        <div className="bg-white border border-[#DEE6EA] rounded-xl p-6 shadow-sm">
+          <h1 className="text-sm font-semibold text-[#1B2B35] mb-5">Inloggen</h1>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5 font-medium">E-mailadres</label>
+              <label className="block text-xs text-[#587080] mb-1.5 font-medium">E-mailadres</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="naam@bedrijf.nl"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
+                className="w-full border border-[#DEE6EA] rounded-lg px-3 py-2.5 text-sm text-[#1B2B35] placeholder-[#B0C4CE] outline-none focus:border-[#007A5A] focus:ring-1 focus:ring-[#007A5A]/10 transition-colors"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5 font-medium">Wachtwoord</label>
+              <label className="block text-xs text-[#587080] mb-1.5 font-medium">Wachtwoord</label>
               <input
                 type="password"
                 value={wachtwoord}
                 onChange={(e) => setWachtwoord(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-colors"
+                className="w-full border border-[#DEE6EA] rounded-lg px-3 py-2.5 text-sm text-[#1B2B35] placeholder-[#B0C4CE] outline-none focus:border-[#007A5A] focus:ring-1 focus:ring-[#007A5A]/10 transition-colors"
               />
             </div>
 
@@ -74,12 +97,16 @@ export default function LoginPagina() {
             <button
               type="submit"
               disabled={laden}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors mt-1"
+              className="w-full bg-[#007A5A] hover:bg-[#00915F] disabled:bg-[#DEE6EA] disabled:text-[#8FA6B2] text-white text-sm font-semibold py-2.5 rounded-lg transition-colors mt-1"
             >
               {laden ? "Bezig..." : "Inloggen"}
             </button>
           </form>
         </div>
+
+        <p className="text-center text-xs text-[#B0C4CE] mt-6">
+          © 2026 Borevexa · Made in the Netherlands 🇳🇱
+        </p>
       </div>
     </div>
   );

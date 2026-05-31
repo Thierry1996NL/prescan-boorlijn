@@ -66,17 +66,17 @@ export default function ProjectenPagina() {
     if (!status) return "bg-gray-100 text-gray-500";
     const s = status.toLowerCase();
     if (s.includes("actief"))       return "bg-green-100 text-green-700";
-    if (s.includes("uitvoering"))   return "bg-blue-100 text-blue-700";
+    if (s.includes("uitvoering"))   return "bg-[#E5F3EC] text-[#007A5A]";
     if (s.includes("afgerond"))     return "bg-gray-100 text-gray-600";
     if (s.includes("hold"))         return "bg-yellow-100 text-yellow-700";
     return "bg-gray-100 text-gray-500";
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[#F5F7F9]">
       <Sidebar gebruiker={gebruiker} />
 
-      <main className="flex-1 min-w-0 p-6 overflow-auto">
+      <main className="flex-1 min-w-0 p-8 overflow-auto max-w-[1200px]">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -87,7 +87,7 @@ export default function ProjectenPagina() {
           </div>
           <button
             onClick={() => setModaalOpen(true)}
-            className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+            className="px-4 py-2 text-sm bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] transition-colors font-medium"
           >
             + Nieuw project
           </button>
@@ -99,7 +99,7 @@ export default function ProjectenPagina() {
             <p className="text-sm text-gray-400">Laden…</p>
           </div>
         ) : projecten.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 bg-white border border-gray-200 rounded-xl text-center gap-3">
+          <div className="flex flex-col items-center justify-center h-64 bg-white border border-[#DEE6EA] rounded-xl text-center gap-3">
             <div className="text-3xl">📁</div>
             <div>
               <p className="text-sm font-medium text-gray-700">Nog geen projecten</p>
@@ -107,19 +107,19 @@ export default function ProjectenPagina() {
             </div>
             <button
               onClick={() => setModaalOpen(true)}
-              className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+              className="px-4 py-2 text-sm bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] transition-colors"
             >
               + Nieuw project
             </button>
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-white border border-[#DEE6EA] rounded-xl overflow-hidden">
             {/* Tabelheader */}
-            <div className="grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Project</span>
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Opdrachtgever</span>
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Locatie</span>
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+            <div className="grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-gray-100 bg-[#F5F7F9]">
+              <span className="text-xs font-semibold text-[#8FA6B2] uppercase tracking-wide">Project</span>
+              <span className="text-xs font-semibold text-[#8FA6B2] uppercase tracking-wide">Opdrachtgever</span>
+              <span className="text-xs font-semibold text-[#8FA6B2] uppercase tracking-wide">Locatie</span>
+              <span className="text-xs font-semibold text-[#8FA6B2] uppercase tracking-wide">Status</span>
               <span />
             </div>
 
@@ -128,8 +128,8 @@ export default function ProjectenPagina() {
               <button
                 key={proj.id}
                 onClick={() => router.push(`/project/${proj.id}`)}
-                className={`grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 items-center w-full px-5 py-3.5 text-left hover:bg-orange-50 transition-colors ${
-                  i !== 0 ? "border-t border-gray-100" : ""
+                className={`grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 items-center w-full px-5 py-3.5 text-left hover:bg-[#F5F7F9] transition-colors ${
+                  i !== 0 ? "border-t border-[#DEE6EA]" : ""
                 }`}
               >
                 <div>
@@ -175,7 +175,7 @@ export default function ProjectenPagina() {
                       required={required}
                       value={nieuw[key] ?? ""}
                       onChange={e => setNieuw(n => ({ ...n, [key]: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#007A5A] outline-none"
                     />
                   </div>
                 ))}
@@ -185,7 +185,7 @@ export default function ProjectenPagina() {
                   <select
                     value={nieuw.materiaal}
                     onChange={e => setNieuw(n => ({ ...n, materiaal: e.target.value }))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#007A5A] outline-none"
                   >
                     {["PE100", "PE80", "PVC", "Staal", "GVK", "Anders"].map(m => (
                       <option key={m}>{m}</option>
@@ -199,7 +199,7 @@ export default function ProjectenPagina() {
                     value={nieuw.bijzonderheden}
                     onChange={e => setNieuw(n => ({ ...n, bijzonderheden: e.target.value }))}
                     rows={3}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-400 outline-none resize-none"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#007A5A] outline-none resize-none"
                   />
                 </div>
 
@@ -214,7 +214,7 @@ export default function ProjectenPagina() {
                   <button
                     type="submit"
                     disabled={opslaan || !nieuw.naam}
-                    className="flex-1 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                    className="flex-1 px-4 py-2 text-sm bg-[#007A5A] text-white rounded-lg hover:bg-[#00915F] disabled:opacity-50 transition-colors"
                   >
                     {opslaan ? "Aanmaken…" : "Project aanmaken"}
                   </button>

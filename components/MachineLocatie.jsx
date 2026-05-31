@@ -392,7 +392,7 @@ export default function MachineLocatie({project,onSave,boringConfig}){
             <div className="border-t border-gray-100 pt-3">
               <button onClick={handleOpslaan} disabled={!onSave||opslaanStatus==="bezig"}
                 className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  opslaanStatus==="ok"?"bg-green-500 text-white":opslaanStatus==="fout"?"bg-red-500 text-white":"bg-blue-600 hover:bg-blue-700 text-white shadow-sm"}`}>
+                  opslaanStatus==="ok"?"bg-green-500 text-white":opslaanStatus==="fout"?"bg-red-500 text-white":"bg-[#007A5A] hover:bg-[#00915F] text-white shadow-sm"}`}>
                 {opslaanStatus==="bezig"?"Opslaan…":opslaanStatus==="ok"?"✓ Opgeslagen!":opslaanStatus==="fout"?"✗ Fout":"💾 Locaties opslaan"}
               </button>
             </div>
