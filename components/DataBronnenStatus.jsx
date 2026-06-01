@@ -54,8 +54,7 @@ const ALLE_BRONNEN = [
   },
   // ── Esri Nederland ──
   { id:"esri_nl_topo",   naam:"Esri NL Basiskaarten",  sub:"Topo, Canvas, Stratenkaart, Luchtfoto (EPSG:28992)", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer?f=json", stappen:[3,4,5,6,7,8] },
-  { id:"esri_world",     naam:"Esri World Services",    sub:"Satelliet, Topo, Street, Ocean (Web Mercator → RD)", url:"https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer?f=json",   stappen:[3,4,5,6,7,8] },
-},
+  { id:"esri_world",     naam:"Esri World Services",    sub:"Satelliet, Topo, Street, Ocean (Web Mercator → RD)", url:"https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=json",   stappen:[3,4,5,6,7,8] },
 ];
 
 // ─── Verbindingscheck ────────────────────────────────────────────
