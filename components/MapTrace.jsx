@@ -68,10 +68,18 @@ function afstandM([lat1,lng1],[lat2,lng2]) {
 
 // ─── Achtergrond en overlay configuratie ─────────────────────────
 const ACHTERGRONDEN = [
-  { id:"brt_standaard", label:"BRT Standaard", url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png" },
-  { id:"brt_grijs",     label:"BRT Grijs",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png" },
-  { id:"brt_pastel",    label:"BRT Pastel",    url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png" },
-  { id:"luchtfoto",     label:"Luchtfoto",     url:null, wms:true },
+  // ── PDOK (EPSG:28992 native WMTS) ──
+  { id:"brt_standaard", groep:"PDOK",    label:"BRT Standaard",     url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/{z}/{x}/{y}.png", opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"brt_grijs",     groep:"PDOK",    label:"BRT Grijs",         url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",     opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"brt_pastel",    groep:"PDOK",    label:"BRT Pastel",        url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",    opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
+  { id:"luchtfoto",     groep:"PDOK",    label:"Luchtfoto (PDOK)",  wms:true, url:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", layers:"Actueel_ortho25", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© PDOK, Beeldmateriaal NL"} },
+  // ── Esri Nederland (EPSG:28992 via WMS) ──
+  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD",          wms:true, url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer/WMSServer",      layers:"0", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland, Community Maps"} },
+  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo",        wms:true, url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer/WMSServer",  layers:"0", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
+  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)",   wms:true, url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer/WMSServer",     layers:"0", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_1950",  groep:"Esri NL", label:"Historische kaart 1950",wms:true, url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer/WMSServer",layers:"0", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_1975",  groep:"Esri NL", label:"Historische kaart 1975",wms:true, url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1975/MapServer/WMSServer",layers:"0", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_2000",  groep:"Esri NL", label:"Historische kaart 2000",wms:true, url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_2000/MapServer/WMSServer",layers:"0", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
 ];
 
 // ─── RD New CRS helpers (zelfde als stap 3) ───────────────────────
@@ -274,14 +282,14 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       // Helper: zet achtergrond laag
       function zetAchtergrond(id) {
         if (basisLaagRef.current) { kaart.removeLayer(basisLaagRef.current); basisLaagRef.current = null; }
-        if (id === "luchtfoto") {
-          basisLaagRef.current = L.tileLayer.wms("https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
-            { layers:"Actueel_ortho25", format:"image/jpeg", transparent:false, maxZoom:22, attribution:"© PDOK", zIndex:1 }
+        const cfg = ACHTERGRONDEN.find(a => a.id === id) ?? ACHTERGRONDEN[0];
+        if (cfg.wms) {
+          basisLaagRef.current = L.tileLayer.wms(cfg.url,
+            { layers: cfg.layers ?? "0", ...(cfg.opties ?? {}), zIndex:1 }
           ).addTo(kaart);
         } else {
-          const cfg = ACHTERGRONDEN.find(a => a.id === id) ?? ACHTERGRONDEN[0];
           basisLaagRef.current = L.tileLayer(cfg.url,
-            { maxZoom:22, maxNativeZoom:13, minZoom:0, tileSize:256, attribution:"© PDOK BRT, © Kadaster", zIndex:1 }
+            { maxZoom:22, maxNativeZoom:13, minZoom:0, tileSize:256, attribution:"© PDOK BRT, © Kadaster", ...(cfg.opties ?? {}), zIndex:1 }
           ).addTo(kaart);
         }
       }
@@ -793,21 +801,39 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
             <div className="m-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
               <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
                 <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Achtergrond</span>
-                <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-[#8FA6B2]">EPSG:28992</span>
+                  <div className="w-2 h-2 rounded-full bg-[#007A5A]"/>
+                </div>
               </div>
-              <div className="p-2 space-y-0.5">
-                {ACHTERGRONDEN.map(a => (
-                  <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
-                    className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
-                      actieveAchtergrond===a.id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-[#1B2B35] hover:bg-[#F5F7F9]"
-                    }`}>
-                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${
-                      actieveAchtergrond===a.id ? "border-[#007A5A] bg-[#007A5A]" : "border-[#DEE6EA]"
-                    }`}/>
-                    <span className="text-xs font-medium">{a.label}</span>
-                    {actieveAchtergrond===a.id&&<span className="ml-auto text-[10px] text-[#007A5A] font-semibold">actief</span>}
-                  </button>
-                ))}
+              <div className="p-2">
+                {["PDOK","Esri NL"].map(groep=>{
+                  const lagen=ACHTERGRONDEN.filter(a=>(a.groep??'PDOK')===groep);
+                  return(
+                    <div key={groep}>
+                      <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider"
+                          style={{color: groep==="Esri NL"?"#5B7FA6":"#8FA6B2"}}>{groep}</span>
+                        {groep==="Esri NL"&&<span className="text-[9px] bg-[#EEF5FF] text-[#5B7FA6] border border-[#C5DEFF] rounded-full px-1.5 font-semibold">WMS</span>}
+                        <div className="flex-1 h-px bg-[#F0F4F6]"/>
+                      </div>
+                      <div className="space-y-0.5">
+                        {lagen.map(a => (
+                          <button key={a.id} onClick={() => wisselAchtergrond(a.id)}
+                            className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                              actieveAchtergrond===a.id ? "bg-[#E5F3EC] text-[#007A5A]" : "text-[#1B2B35] hover:bg-[#F5F7F9]"
+                            }`}>
+                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${
+                              actieveAchtergrond===a.id ? "border-[#007A5A] bg-[#007A5A]" : "border-[#DEE6EA]"
+                            }`}/>
+                            <span className="text-xs font-medium flex-1">{a.label}</span>
+                            {actieveAchtergrond===a.id&&<span className="text-[10px] text-[#007A5A] font-semibold">actief</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

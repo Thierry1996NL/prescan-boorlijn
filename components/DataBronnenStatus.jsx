@@ -52,6 +52,28 @@ const ALLE_BRONNEN = [
     url: "https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0?SERVICE=WMS&REQUEST=GetCapabilities",
     stappen: [3, 4, 7, 8],
   },
+  // ── Esri Nederland ──
+  {
+    id: "esri_topo",
+    naam: "Esri Topo RD",
+    sub: "ArcGIS basiskaart Nederland",
+    url: "https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
+    stappen: [3, 4, 7, 8],
+  },
+  {
+    id: "esri_luchtfoto",
+    naam: "Esri Luchtfoto (HR)",
+    sub: "ArcGIS luchtfoto hoge resolutie",
+    url: "https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
+    stappen: [4, 7, 8],
+  },
+  {
+    id: "esri_historisch",
+    naam: "Esri Historische tijdreis",
+    sub: "ArcGIS historische kaarten (1950/1975/2000)",
+    url: "https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
+    stappen: [3, 4],
+  },
 ];
 
 // ─── Verbindingscheck ────────────────────────────────────────────
