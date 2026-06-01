@@ -29,11 +29,13 @@ const ACHTERGROND = [
   { id:"brt_grijs",     groep:"PDOK",    label:"BRT Grijs",         url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",     opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"brt_pastel",    groep:"PDOK",    label:"BRT Pastel",        url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",    opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"luchtfoto",     groep:"PDOK",    label:"Luchtfoto (PDOK)",  wms:true, url:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", layers:"Actueel_ortho25", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© PDOK, Beeldmateriaal NL"} },
-  // ── Esri Nederland (EPSG:28992 · L.GridLayer /export) ──
-  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD",       url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer",       opties:{attribution:"© Esri Nederland, Community Maps"} },
-  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo",     url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer",  opties:{attribution:"© Esri Nederland"} },
-  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)",url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Luchtfoto/MapServer",  opties:{attribution:"© Esri Nederland"} },
-  { id:"esri_waterkaart", groep:"Esri NL", label:"Esri Waterkaart",    url:"https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer", opties:{attribution:"© Esri, GEBCO, NOAA, NGS"} },
+  // ── Esri Nederland (EPSG:28992 · L.esri.tiledMapLayer) ──
+  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland, Community Maps"} },
+  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
+  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_1950",  groep:"Esri NL", label:"Historische kaart 1950", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_1975",  groep:"Esri NL", label:"Historische kaart 1975", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1975/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  { id:"esri_hist_2000",  groep:"Esri NL", label:"Historische kaart 2000", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_2000/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
 ];
 
 const OVERLAYS = [
@@ -64,33 +66,16 @@ async function laadJSZip() {
   return window.JSZip;
 }
 
-// ─── Esri GridLayer via ArcGIS REST /export ──────────────────
-// Gebruikt /export?bbox=... zodat geen tile-schema mismatch mogelijk is
-function maakEsriExportLayer(L, serviceUrl, attrib) {
-  const EsriExport = L.GridLayer.extend({
-    createTile(coords, done) {
-      const img = document.createElement("img");
-      img.alt = "";
-      const ts = this.getTileSize();
-      const nwPx = coords.scaleBy(ts);
-      const sePx = nwPx.add([ts.x, ts.y]);
-      const crs  = this._map.options.crs;
-      const nwRD  = crs.project(this._map.unproject(nwPx, coords.z));
-      const seRD  = crs.project(this._map.unproject(sePx, coords.z));
-      const xMin = Math.min(nwRD.x, seRD.x).toFixed(3);
-      const yMin = Math.min(nwRD.y, seRD.y).toFixed(3);
-      const xMax = Math.max(nwRD.x, seRD.x).toFixed(3);
-      const yMax = Math.max(nwRD.y, seRD.y).toFixed(3);
-      const url  = `${serviceUrl}/export?bbox=${xMin},${yMin},${xMax},${yMax}`
-                 + `&bboxSR=28992&size=${ts.x},${ts.y}&imageSR=28992`
-                 + `&format=png32&transparent=false&f=image`;
-      img.onload  = () => done(null, img);
-      img.onerror = (e) => done(e, img);
-      img.src = url;
-      return img;
-    }
-  });
-  return new EsriExport({ attribution: attrib ?? "© Esri Nederland", zIndex:1 });
+// ─── Esri Leaflet loader ──────────────────────────────────────
+async function laadEsriLeaflet() {
+  if (!window.L?.esri) {
+    await new Promise((ok,err)=>{
+      const s=document.createElement("script");
+      s.src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js";
+      s.onload=ok; s.onerror=err;
+      document.head.appendChild(s);
+    });
+  }
 }
 
 // ─── RD CRS ──────────────────────────────────────────────────────
@@ -479,17 +464,28 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       });
 
       // Achtergrond functions
-      function voegAchtergrondToe(id){
+      async function voegAchtergrondToe(id){
         if(basisLaagRef.current){try{kaart.removeLayer(basisLaagRef.current);}catch{}basisLaagRef.current=null;}
         const cfg=ACHTERGROND.find(a=>a.id===id)??ACHTERGROND[0];
         if(cfg.groep==="Esri NL"){
-          // Esri NL via ArcGIS REST /export — perfecte RD-bounding-box per tile, geen tile-schema conflict
+          // Esri NL via esri-leaflet tiledMapLayer — leest tiling schema uit service metadata
           try{
-            const laag = maakEsriExportLayer(L, cfg.url, cfg.opties?.attribution);
-            laag.addTo(kaart);
-            basisLaagRef.current = laag;
+            await laadEsriLeaflet();
+            if(window.L?.esri?.tiledMapLayer){
+              // Registreer EPSG:28992 bij proj4 zodat esri-leaflet de projectie begrijpt
+              if(window.proj4 && !window.proj4.defs("EPSG:28992")){
+                window.proj4.defs("EPSG:28992","+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs");
+              }
+              const laag=L.esri.tiledMapLayer({
+                url: cfg.url,
+                attribution: cfg.opties?.attribution ?? "© Esri Nederland",
+                zIndex: 1,
+              });
+              laag.addTo(kaart);
+              basisLaagRef.current=laag;
+            } else { throw new Error("esri-leaflet niet beschikbaar"); }
           }catch(e){
-            console.warn("Esri export layer mislukt, fallback naar BRT:",e);
+            console.warn("Esri tiledMapLayer mislukt, fallback naar BRT:",e);
             const fb=L.tileLayer(ACHTERGROND[0].url,{...ACHTERGROND[0].opties,zIndex:1});
             fb.addTo(kaart);basisLaagRef.current=fb;
           }
@@ -512,9 +508,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       kaart._voegOverlayToe=voegOverlayToe;
       kaart._verwijderOverlay=verwijderOverlay;
       voegAchtergrondToe(opgeslagenInst.__achtergrond??"brt_standaard");
-      // Gebruik ook localStorage-waarden zodat UI-state en kaart-state synchroon zijn
-      const _initOvIds = _ls3?.ov ?? opgeslagenInst.__overlays ?? [];
-      for(const id of _initOvIds) voegOverlayToe(id);
+      for(const id of(opgeslagenInst.__overlays??[])) voegOverlayToe(id);
 
       // Herstel opgeslagen filterbox op de kaart
       if(opgeslagenInst.__kaartBox){

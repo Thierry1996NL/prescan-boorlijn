@@ -43,10 +43,12 @@ const ONDERLEGGERS = [
   { groep:"PDOK", naam:"Luchtfoto (PDOK)", type:"WMS",  crs:"EPSG:28992", url:"service.pdok.nl/hwh/luchtfotorgb",opmerking:"PDOK WMS; app vraagt op in EPSG:28992 via bounding box.",                stappen:[4,7,8] },
   { groep:"PDOK", naam:"AHN4 Hoogtemodel", type:"WMS",  crs:"EPSG:28992", url:"service.pdok.nl/rws/ahn/…",       opmerking:"PDOK WMS; hoogtepunten in RD New. Wordt gebruikt voor dwarsprofiel.",    stappen:[5,6,7] },
   // Esri NL
-  { groep:"Esri NL", naam:"Esri Topo RD",       type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Topo",       opmerking:"ArcGIS MapServer /export. EPSG:28992 native. RD-bounding-box per tile — geen tile-schema conflict.",  stappen:[3,4,7,8] },
-  { groep:"Esri NL", naam:"Esri Open Topo",      type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Open_Topo",  opmerking:"ArcGIS MapServer /export. Open topografische variant van Esri Topo RD.",                               stappen:[3,4,7,8] },
-  { groep:"Esri NL", naam:"Esri Luchtfoto (HR)", type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Luchtfoto",  opmerking:"ArcGIS MapServer /export. Hoge resolutie luchtfoto Esri Nederland.",                                     stappen:[4,7,8] },
-  { groep:"Esri NL", naam:"Esri Waterkaart",     type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/Ocean/World_Ocean_Base", opmerking:"Esri World Ocean Base (Web Mercator). /export reprojecteert automatisch naar EPSG:28992. Globale dienst.", stappen:[3,4,5,6,7,8] },
+  { groep:"Esri NL", naam:"Esri Topo RD",          type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Topo",       opmerking:"ArcGIS MapServer WMS. EPSG:28992 native. Esri 96 DPI tile-schema (≠ PDOK), via WMS geen probleem.", stappen:[3,4,7,8] },
+  { groep:"Esri NL", naam:"Esri Open Topo",         type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Open_Topo",  opmerking:"ArcGIS MapServer WMS. Open topografische variant van Esri Topo RD.",                                   stappen:[3,4,7,8] },
+  { groep:"Esri NL", naam:"Esri Luchtfoto (HR)",    type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/HR_Luchtfoto_Actueel",          opmerking:"ArcGIS MapServer WMS. Hoge resolutie luchtfoto Esri Nederland, actueel.",                               stappen:[4,7,8] },
+  { groep:"Esri NL", naam:"Historische kaart 1950", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_1950",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 1950. Waardevol voor HDD historische analyse.",                       stappen:[3,4] },
+  { groep:"Esri NL", naam:"Historische kaart 1975", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_1975",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 1975. Historische infrastructuur.",                                   stappen:[3,4] },
+  { groep:"Esri NL", naam:"Historische kaart 2000", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_2000",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 2000. Recent historisch referentiekaart.",                            stappen:[3,4] },
 ];
 
 // ─── Overlays ────────────────────────────────────────────────────
