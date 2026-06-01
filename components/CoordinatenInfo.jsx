@@ -42,13 +42,20 @@ const ONDERLEGGERS = [
   { groep:"PDOK", naam:"BRT Pastel",       type:"WMTS", crs:"EPSG:28992", url:"service.pdok.nl/brt/…/pastel",    opmerking:"Native RD New WMTS. Pastellerige stijlvariant van BRT.",                 stappen:[3,4,5,6,7,8] },
   { groep:"PDOK", naam:"Luchtfoto (PDOK)", type:"WMS",  crs:"EPSG:28992", url:"service.pdok.nl/hwh/luchtfotorgb",opmerking:"PDOK WMS; app vraagt op in EPSG:28992 via bounding box.",                stappen:[4,7,8] },
   { groep:"PDOK", naam:"AHN4 Hoogtemodel", type:"WMS",  crs:"EPSG:28992", url:"service.pdok.nl/rws/ahn/…",       opmerking:"PDOK WMS; hoogtepunten in RD New. Wordt gebruikt voor dwarsprofiel.",    stappen:[5,6,7] },
-  // Esri NL
-  { groep:"Esri NL", naam:"Esri Topo RD",          type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Topo",       opmerking:"ArcGIS MapServer WMS. EPSG:28992 native. Esri 96 DPI tile-schema (≠ PDOK), via WMS geen probleem.", stappen:[3,4,7,8] },
-  { groep:"Esri NL", naam:"Esri Open Topo",         type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Open_Topo",  opmerking:"ArcGIS MapServer WMS. Open topografische variant van Esri Topo RD.",                                   stappen:[3,4,7,8] },
-  { groep:"Esri NL", naam:"Esri Luchtfoto (HR)",    type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/HR_Luchtfoto_Actueel",          opmerking:"ArcGIS MapServer WMS. Hoge resolutie luchtfoto Esri Nederland, actueel.",                               stappen:[4,7,8] },
-  { groep:"Esri NL", naam:"Historische kaart 1950", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_1950",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 1950. Waardevol voor HDD historische analyse.",                       stappen:[3,4] },
-  { groep:"Esri NL", naam:"Historische kaart 1975", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_1975",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 1975. Historische infrastructuur.",                                   stappen:[3,4] },
-  { groep:"Esri NL", naam:"Historische kaart 2000", type:"WMS", crs:"EPSG:28992", url:"tiles.arcgis.com/…/Historische_tijdreis_2000",     opmerking:"ArcGIS MapServer WMS. Nederland ca. 2000. Recent historisch referentiekaart.",                            stappen:[3,4] },
+  // Esri Nederland — EPSG:28992
+  { groep:"Esri NL", naam:"Esri Topo RD",            type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Topo",              opmerking:"Kleur topografische kaart. /export native EPSG:28992.",       stappen:[3,4,7,8] },
+  { groep:"Esri NL", naam:"Esri Open Topo",           type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Open_Topo",          opmerking:"Open topografische variant Topo RD.",                        stappen:[3,4,7,8] },
+  { groep:"Esri NL", naam:"Esri Lichtgrijs Canvas",   type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Canvas",             opmerking:"Neutrale lichtgrijze ondergrond voor data-overlay.",         stappen:[3,4,5,6,7,8] },
+  { groep:"Esri NL", naam:"Esri Donkergrijs Canvas",  type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Donkergrijze_Canvas", opmerking:"Donkere achtergrond voor heldere kleurlagen.",               stappen:[3,4,5,6,7,8] },
+  { groep:"Esri NL", naam:"Esri Stratenkaart",        type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Stratenkaart",        opmerking:"HERE-based stratenkaart, gedetailleerde wegenlaag.",         stappen:[3,4,7,8] },
+  { groep:"Esri NL", naam:"Esri Luchtfoto (HR)",      type:"WMS", crs:"EPSG:28992", url:"services.arcgisonline.nl/Basiskaarten/Luchtfoto",           opmerking:"Hoge resolutie luchtfoto Esri Nederland, actueel.",          stappen:[4,7,8] },
+  // Esri World — EPSG:3857, auto-reproject via /export
+  { groep:"Esri World", naam:"Esri Satelliet",        type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/World_Imagery",                   opmerking:"Wereldwijde satellietbeelden. /export reprojecteert →28992.",stappen:[3,4,7,8] },
+  { groep:"Esri World", naam:"Esri World Topo",       type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/World_Topo_Map",                   opmerking:"Globale topografische kaart. /export reprojecteert →28992.", stappen:[3,4] },
+  { groep:"Esri World", naam:"Esri World Street Map", type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/World_Street_Map",                 opmerking:"Globale stratenkaart (HERE/TomTom). Auto-reproject.",        stappen:[3,4] },
+  { groep:"Esri World", naam:"Esri World Light Gray", type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/Canvas/World_Light_Gray_Base",     opmerking:"Globale lichtgrijze canvas. Auto-reproject →28992.",        stappen:[3,4,5,6,7,8] },
+  { groep:"Esri World", naam:"Esri Reliëfkaart",      type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/World_Shaded_Relief",              opmerking:"Schaduwreliëf (GTOPO30/SRTM). Auto-reproject →28992.",      stappen:[5,6] },
+  { groep:"Esri World", naam:"Esri Waterkaart",       type:"WMS", crs:"EPSG:3857",  url:"services.arcgisonline.com/Ocean/World_Ocean_Base",           opmerking:"Esri World Ocean Base. Auto-reproject →28992.",             stappen:[3,4,5,6,7,8] },
 ];
 
 // ─── Overlays ────────────────────────────────────────────────────

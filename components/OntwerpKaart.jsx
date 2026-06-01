@@ -29,13 +29,21 @@ const ACHTERGROND = [
   { id:"brt_grijs",     groep:"PDOK",    label:"BRT Grijs",         url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",     opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"brt_pastel",    groep:"PDOK",    label:"BRT Pastel",        url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",    opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"luchtfoto",     groep:"PDOK",    label:"Luchtfoto (PDOK)",  wms:true, url:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", layers:"Actueel_ortho25", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© PDOK, Beeldmateriaal NL"} },
-  // ── Esri Nederland (EPSG:28992 · L.esri.tiledMapLayer) ──
-  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland, Community Maps"} },
-  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
-  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_1950",  groep:"Esri NL", label:"Historische kaart 1950", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_1975",  groep:"Esri NL", label:"Historische kaart 1975", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1975/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_2000",  groep:"Esri NL", label:"Historische kaart 2000", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_2000/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  // ── Esri Nederland — EPSG:28992 native via /export ──────────
+  { id:"esri_topo_rd",       groep:"Esri NL", label:"Esri Topo RD",           url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer",                    opties:{attribution:"© Esri NL, Community Maps"} },
+  { id:"esri_open_topo",     groep:"Esri NL", label:"Esri Open Topo",         url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer",               opties:{attribution:"© Esri NL"} },
+  { id:"esri_canvas",        groep:"Esri NL", label:"Esri Lichtgrijs Canvas", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Canvas/MapServer",                  opties:{attribution:"© Esri NL, Community Maps"} },
+  { id:"esri_donker_canvas", groep:"Esri NL", label:"Esri Donkergrijs Canvas",url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Donkergrijze_Canvas/MapServer",     opties:{attribution:"© Esri NL, Community Maps"} },
+  { id:"esri_stratenkaart",  groep:"Esri NL", label:"Esri Stratenkaart",      url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Stratenkaart/MapServer",            opties:{attribution:"© Esri NL, HERE, Community Maps"} },
+  { id:"esri_luchtfoto",     groep:"Esri NL", label:"Esri Luchtfoto (HR)",    url:"https://services.arcgisonline.nl/arcgis/rest/services/Luchtfoto/Luchtfoto/MapServer",                  opties:{attribution:"© Esri NL"} },
+  // ── Esri World — via /export bboxSR=4326, imageSR=28992 ──────
+  // Correct pad: /ArcGIS/ (hoofdletter) voor services.arcgisonline.com
+  { id:"esri_world_imagery",    groep:"Esri World", label:"Esri Satelliet",        url:"https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",              opties:{attribution:"© Esri, Maxar, Earthstar Geographics"} },
+  { id:"esri_world_topo",       groep:"Esri World", label:"Esri World Topo",       url:"https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer",             opties:{attribution:"© Esri, HERE, DeLorme"} },
+  { id:"esri_world_street",     groep:"Esri World", label:"Esri World Street Map", url:"https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer",           opties:{attribution:"© Esri, HERE, DeLorme, TomTom"} },
+  { id:"esri_world_gray",       groep:"Esri World", label:"Esri World Light Gray", url:"https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer",opties:{attribution:"© Esri, HERE, Garmin, FAO"} },
+  { id:"esri_world_relief",     groep:"Esri World", label:"Esri Reliëfkaart",      url:"https://services.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer",        opties:{attribution:"© Esri, USGS, NOAA"} },
+  { id:"esri_waterkaart",       groep:"Esri World", label:"Esri Waterkaart",       url:"https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer",     opties:{attribution:"© Esri, GEBCO, NOAA, NGS"} },
 ];
 
 const OVERLAYS = [
@@ -66,16 +74,40 @@ async function laadJSZip() {
   return window.JSZip;
 }
 
-// ─── Esri Leaflet loader ──────────────────────────────────────
-async function laadEsriLeaflet() {
-  if (!window.L?.esri) {
-    await new Promise((ok,err)=>{
-      const s=document.createElement("script");
-      s.src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js";
-      s.onload=ok; s.onerror=err;
-      document.head.appendChild(s);
-    });
-  }
+// ─── Esri GridLayer via ArcGIS REST /export ──────────────────
+// Gebruikt WGS84 bbox (bboxSR=4326) — werkt voor ALLE ArcGIS diensten
+// imageSR=28992 zorgt dat de output in RD New terugkomt → perfecte uitlijning
+function maakEsriExportLayer(L, serviceUrl, attrib) {
+  const EsriExport = L.GridLayer.extend({
+    createTile(coords, done) {
+      const img  = document.createElement("img");
+      img.alt    = "";
+      const ts   = this.getTileSize();
+      const nwPx = coords.scaleBy(ts);
+      const sePx = nwPx.add([ts.x, ts.y]);
+
+      // Zet pixel-coords om naar WGS84 lat/lon
+      // bboxSR=4326 wordt universeel begrepen (ook door global Esri services)
+      const nwLL = this._map.unproject(nwPx, coords.z);
+      const seLL = this._map.unproject(sePx, coords.z);
+      const xMin = Math.min(nwLL.lng, seLL.lng).toFixed(8);
+      const yMin = Math.min(nwLL.lat, seLL.lat).toFixed(8);
+      const xMax = Math.max(nwLL.lng, seLL.lng).toFixed(8);
+      const yMax = Math.max(nwLL.lat, seLL.lat).toFixed(8);
+
+      // imageSR=28992: server reprojecteert output naar RD New
+      const url = `${serviceUrl}/export`
+                + `?bbox=${xMin},${yMin},${xMax},${yMax}`
+                + `&bboxSR=4326&size=${ts.x},${ts.y}&imageSR=28992`
+                + `&format=png32&transparent=false&f=image`;
+
+      img.onload  = () => done(null, img);
+      img.onerror = () => done(null, img); // stille fallback, niet blokkeren
+      img.src = url;
+      return img;
+    }
+  });
+  return new EsriExport({ attribution: attrib ?? "© Esri", zIndex:1, keepBuffer:2 });
 }
 
 // ─── RD CRS ──────────────────────────────────────────────────────
@@ -464,28 +496,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       });
 
       // Achtergrond functions
-      async function voegAchtergrondToe(id){
+      function voegAchtergrondToe(id){
         if(basisLaagRef.current){try{kaart.removeLayer(basisLaagRef.current);}catch{}basisLaagRef.current=null;}
         const cfg=ACHTERGROND.find(a=>a.id===id)??ACHTERGROND[0];
-        if(cfg.groep==="Esri NL"){
-          // Esri NL via esri-leaflet tiledMapLayer — leest tiling schema uit service metadata
+        if(cfg.groep==="Esri NL"||cfg.groep==="Esri World"){
+          // Esri NL via ArcGIS REST /export — perfecte RD-bounding-box per tile, geen tile-schema conflict
           try{
-            await laadEsriLeaflet();
-            if(window.L?.esri?.tiledMapLayer){
-              // Registreer EPSG:28992 bij proj4 zodat esri-leaflet de projectie begrijpt
-              if(window.proj4 && !window.proj4.defs("EPSG:28992")){
-                window.proj4.defs("EPSG:28992","+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs");
-              }
-              const laag=L.esri.tiledMapLayer({
-                url: cfg.url,
-                attribution: cfg.opties?.attribution ?? "© Esri Nederland",
-                zIndex: 1,
-              });
-              laag.addTo(kaart);
-              basisLaagRef.current=laag;
-            } else { throw new Error("esri-leaflet niet beschikbaar"); }
+            const laag = maakEsriExportLayer(L, cfg.url, cfg.opties?.attribution);
+            laag.addTo(kaart);
+            basisLaagRef.current = laag;
           }catch(e){
-            console.warn("Esri tiledMapLayer mislukt, fallback naar BRT:",e);
+            console.warn("Esri export layer mislukt, fallback naar BRT:",e);
             const fb=L.tileLayer(ACHTERGROND[0].url,{...ACHTERGROND[0].opties,zIndex:1});
             fb.addTo(kaart);basisLaagRef.current=fb;
           }
@@ -508,7 +529,9 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       kaart._voegOverlayToe=voegOverlayToe;
       kaart._verwijderOverlay=verwijderOverlay;
       voegAchtergrondToe(opgeslagenInst.__achtergrond??"brt_standaard");
-      for(const id of(opgeslagenInst.__overlays??[])) voegOverlayToe(id);
+      // Gebruik ook localStorage-waarden zodat UI-state en kaart-state synchroon zijn
+      const _initOvIds = _ls3?.ov ?? opgeslagenInst.__overlays ?? [];
+      for(const id of _initOvIds) voegOverlayToe(id);
 
       // Herstel opgeslagen filterbox op de kaart
       if(opgeslagenInst.__kaartBox){
@@ -987,8 +1010,7 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
           {actieveTab==="docs"?(
             <DocumentenLijst/>
           ):(
-            <>
-              {/* ── ACHTERGROND BOX ── */}
+            <>              {/* ── ACHTERGROND BOX ── */}
               <div className="m-3 mb-2 border border-[#DEE6EA] rounded-lg overflow-hidden">
                 <div className="px-3 py-2 bg-[#F5F7F9] border-b border-[#DEE6EA] flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#587080] uppercase tracking-wide">Achtergrond</span>
@@ -998,14 +1020,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
                   </div>
                 </div>
                 <div className="p-2">
-                  {["PDOK","Esri NL"].map(groep=>{
+                  {["PDOK","Esri NL","Esri World"].map(groep=>{
                     const lagen=ACHTERGROND.filter(a=>(a.groep??'PDOK')===groep);
+                    if(!lagen.length) return null;
+                    const kleur = groep==="Esri NL"?"#5B7FA6": groep==="Esri World"?"#7C3AED":"#8FA6B2";
                     return(
                       <div key={groep}>
                         <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider"
-                            style={{color: groep==="Esri NL"?"#5B7FA6":"#8FA6B2"}}>{groep}</span>
-                          {groep==="Esri NL"&&<span className="text-[9px] bg-[#EEF5FF] text-[#5B7FA6] border border-[#C5DEFF] rounded-full px-1.5 font-semibold">WMS</span>}
+                          <span className="text-[10px] font-bold uppercase tracking-wider" style={{color:kleur}}>{groep}</span>
+                          {groep!=="PDOK"&&<span className="text-[9px] border rounded-full px-1.5 font-semibold" style={{color:kleur,background:`${kleur}15`,borderColor:`${kleur}40`}}>
+                            {groep==="Esri NL"?"EPSG:28992":"world"}
+                          </span>}
                           <div className="flex-1 h-px bg-[#F0F4F6]"/>
                         </div>
                         <div className="space-y-0.5">
