@@ -53,27 +53,10 @@ const ALLE_BRONNEN = [
     stappen: [3, 4, 7, 8],
   },
   // ── Esri Nederland ──
-  {
-    id: "esri_topo",
-    naam: "Esri Topo RD",
-    sub: "ArcGIS basiskaart Nederland",
-    url: "https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
-    stappen: [3, 4, 7, 8],
-  },
-  {
-    id: "esri_luchtfoto",
-    naam: "Esri Luchtfoto (HR)",
-    sub: "ArcGIS luchtfoto hoge resolutie",
-    url: "https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
-    stappen: [4, 7, 8],
-  },
-  {
-    id: "esri_historisch",
-    naam: "Esri Historische tijdreis",
-    sub: "ArcGIS historische kaarten (1950/1975/2000)",
-    url: "https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer/WMSServer?SERVICE=WMS&REQUEST=GetCapabilities",
-    stappen: [3, 4],
-  },
+  { id:"esri_topo",   naam:"Esri Topo / Open Topo", sub:"ArcGIS basiskaart Nederland", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer?f=json", stappen:[3,4,7,8] },
+  { id:"esri_lucht",  naam:"Esri Luchtfoto (HR)",    sub:"ArcGIS luchtfoto hoge resolutie", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Luchtfoto/MapServer?f=json", stappen:[4,7,8] },
+  { id:"esri_water",  naam:"Esri Waterkaart",         sub:"World Ocean Base (Esri globaal)", url:"https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer?f=json", stappen:[3,4,5,6,7,8] },
+},
 ];
 
 // ─── Verbindingscheck ────────────────────────────────────────────

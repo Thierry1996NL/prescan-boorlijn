@@ -29,13 +29,11 @@ const ACHTERGROND = [
   { id:"brt_grijs",     groep:"PDOK",    label:"BRT Grijs",         url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:28992/{z}/{x}/{y}.png",     opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"brt_pastel",    groep:"PDOK",    label:"BRT Pastel",        url:"https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/pastel/EPSG:28992/{z}/{x}/{y}.png",    opties:{minZoom:0,maxNativeZoom:13,maxZoom:22,tileSize:256,attribution:"© PDOK BRT, © Kadaster"} },
   { id:"luchtfoto",     groep:"PDOK",    label:"Luchtfoto (PDOK)",  wms:true, url:"https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0", layers:"Actueel_ortho25", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© PDOK, Beeldmateriaal NL"} },
-  // ── Esri Nederland (EPSG:28992 · L.esri.tiledMapLayer) ──
-  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland, Community Maps"} },
-  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo", url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer", opties:{format:"image/png", transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
-  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/HR_Luchtfoto_Actueel/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:22,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_1950",  groep:"Esri NL", label:"Historische kaart 1950", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1950/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_1975",  groep:"Esri NL", label:"Historische kaart 1975", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1975/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
-  { id:"esri_hist_2000",  groep:"Esri NL", label:"Historische kaart 2000", url:"https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_2000/MapServer", opties:{format:"image/jpeg",transparent:false,maxZoom:19,attribution:"© Esri Nederland"} },
+  // ── Esri Nederland (EPSG:28992 · L.GridLayer /export) ──
+  { id:"esri_topo_rd",    groep:"Esri NL", label:"Esri Topo RD",       url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Topo/MapServer",       opties:{attribution:"© Esri Nederland, Community Maps"} },
+  { id:"esri_open_topo",  groep:"Esri NL", label:"Esri Open Topo",     url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Open_Topo/MapServer",  opties:{attribution:"© Esri Nederland"} },
+  { id:"esri_luchtfoto",  groep:"Esri NL", label:"Esri Luchtfoto (HR)",url:"https://services.arcgisonline.nl/arcgis/rest/services/Basiskaarten/Luchtfoto/MapServer",  opties:{attribution:"© Esri Nederland"} },
+  { id:"esri_waterkaart", groep:"Esri NL", label:"Esri Waterkaart",    url:"https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer", opties:{attribution:"© Esri, GEBCO, NOAA, NGS"} },
 ];
 
 const OVERLAYS = [
@@ -514,7 +512,9 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       kaart._voegOverlayToe=voegOverlayToe;
       kaart._verwijderOverlay=verwijderOverlay;
       voegAchtergrondToe(opgeslagenInst.__achtergrond??"brt_standaard");
-      for(const id of(opgeslagenInst.__overlays??[])) voegOverlayToe(id);
+      // Gebruik ook localStorage-waarden zodat UI-state en kaart-state synchroon zijn
+      const _initOvIds = _ls3?.ov ?? opgeslagenInst.__overlays ?? [];
+      for(const id of _initOvIds) voegOverlayToe(id);
 
       // Herstel opgeslagen filterbox op de kaart
       if(opgeslagenInst.__kaartBox){
