@@ -66,16 +66,33 @@ async function laadJSZip() {
   return window.JSZip;
 }
 
-// ─── Esri Leaflet loader ──────────────────────────────────────
-async function laadEsriLeaflet() {
-  if (!window.L?.esri) {
-    await new Promise((ok,err)=>{
-      const s=document.createElement("script");
-      s.src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js";
-      s.onload=ok; s.onerror=err;
-      document.head.appendChild(s);
-    });
-  }
+// ─── Esri GridLayer via ArcGIS REST /export ──────────────────
+// Gebruikt /export?bbox=... zodat geen tile-schema mismatch mogelijk is
+function maakEsriExportLayer(L, serviceUrl, attrib) {
+  const EsriExport = L.GridLayer.extend({
+    createTile(coords, done) {
+      const img = document.createElement("img");
+      img.alt = "";
+      const ts = this.getTileSize();
+      const nwPx = coords.scaleBy(ts);
+      const sePx = nwPx.add([ts.x, ts.y]);
+      const crs  = this._map.options.crs;
+      const nwRD  = crs.project(this._map.unproject(nwPx, coords.z));
+      const seRD  = crs.project(this._map.unproject(sePx, coords.z));
+      const xMin = Math.min(nwRD.x, seRD.x).toFixed(3);
+      const yMin = Math.min(nwRD.y, seRD.y).toFixed(3);
+      const xMax = Math.max(nwRD.x, seRD.x).toFixed(3);
+      const yMax = Math.max(nwRD.y, seRD.y).toFixed(3);
+      const url  = `${serviceUrl}/export?bbox=${xMin},${yMin},${xMax},${yMax}`
+                 + `&bboxSR=28992&size=${ts.x},${ts.y}&imageSR=28992`
+                 + `&format=png32&transparent=false&f=image`;
+      img.onload  = () => done(null, img);
+      img.onerror = (e) => done(e, img);
+      img.src = url;
+      return img;
+    }
+  });
+  return new EsriExport({ attribution: attrib ?? "© Esri Nederland", zIndex:1 });
 }
 
 // ─── RD CRS ──────────────────────────────────────────────────────
@@ -464,28 +481,17 @@ export default function OntwerpKaart({ project, projectId, onOpgeslagen }) {
       });
 
       // Achtergrond functions
-      async function voegAchtergrondToe(id){
+      function voegAchtergrondToe(id){
         if(basisLaagRef.current){try{kaart.removeLayer(basisLaagRef.current);}catch{}basisLaagRef.current=null;}
         const cfg=ACHTERGROND.find(a=>a.id===id)??ACHTERGROND[0];
         if(cfg.groep==="Esri NL"){
-          // Esri NL via esri-leaflet tiledMapLayer — leest tiling schema uit service metadata
+          // Esri NL via ArcGIS REST /export — perfecte RD-bounding-box per tile, geen tile-schema conflict
           try{
-            await laadEsriLeaflet();
-            if(window.L?.esri?.tiledMapLayer){
-              // Registreer EPSG:28992 bij proj4 zodat esri-leaflet de projectie begrijpt
-              if(window.proj4 && !window.proj4.defs("EPSG:28992")){
-                window.proj4.defs("EPSG:28992","+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs");
-              }
-              const laag=L.esri.tiledMapLayer({
-                url: cfg.url,
-                attribution: cfg.opties?.attribution ?? "© Esri Nederland",
-                zIndex: 1,
-              });
-              laag.addTo(kaart);
-              basisLaagRef.current=laag;
-            } else { throw new Error("esri-leaflet niet beschikbaar"); }
+            const laag = maakEsriExportLayer(L, cfg.url, cfg.opties?.attribution);
+            laag.addTo(kaart);
+            basisLaagRef.current = laag;
           }catch(e){
-            console.warn("Esri tiledMapLayer mislukt, fallback naar BRT:",e);
+            console.warn("Esri export layer mislukt, fallback naar BRT:",e);
             const fb=L.tileLayer(ACHTERGROND[0].url,{...ACHTERGROND[0].opties,zIndex:1});
             fb.addTo(kaart);basisLaagRef.current=fb;
           }

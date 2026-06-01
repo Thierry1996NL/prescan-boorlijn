@@ -117,16 +117,32 @@ const OVERLAYS = [
   { id:"gemeenten",  label:"Gemeentegrenzen",      kleur:"#10b981", url:"https://service.pdok.nl/cbs/gebiedsindelingen/2024/wms/v1_0", layers:"gemeente_gegeneraliseerd" },
 ];
 
-// ─── Esri Leaflet loader ─────────────────────────────────────
-async function laadEsriLeaflet() {
-  if (!window.L?.esri) {
-    await new Promise((ok,err)=>{
-      const s=document.createElement("script");
-      s.src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js";
-      s.onload=ok; s.onerror=err;
-      document.head.appendChild(s);
-    });
-  }
+// ─── Esri GridLayer via ArcGIS REST /export ─────────────────
+function maakEsriExportLayer(L, serviceUrl, attrib) {
+  const EsriExport = L.GridLayer.extend({
+    createTile(coords, done) {
+      const img = document.createElement("img");
+      img.alt = "";
+      const ts = this.getTileSize();
+      const nwPx = coords.scaleBy(ts);
+      const sePx = nwPx.add([ts.x, ts.y]);
+      const crs  = this._map.options.crs;
+      const nwRD  = crs.project(this._map.unproject(nwPx, coords.z));
+      const seRD  = crs.project(this._map.unproject(sePx, coords.z));
+      const xMin = Math.min(nwRD.x, seRD.x).toFixed(3);
+      const yMin = Math.min(nwRD.y, seRD.y).toFixed(3);
+      const xMax = Math.max(nwRD.x, seRD.x).toFixed(3);
+      const yMax = Math.max(nwRD.y, seRD.y).toFixed(3);
+      const url  = `${serviceUrl}/export?bbox=${xMin},${yMin},${xMax},${yMax}`
+                 + `&bboxSR=28992&size=${ts.x},${ts.y}&imageSR=28992`
+                 + `&format=png32&transparent=false&f=image`;
+      img.onload  = () => done(null, img);
+      img.onerror = (e) => done(e, img);
+      img.src = url;
+      return img;
+    }
+  });
+  return new EsriExport({ attribution: attrib ?? "© Esri Nederland", zIndex:1 });
 }
 
 // ─── Kaart snapshot helper ────────────────────────────────────────────────────
@@ -292,24 +308,14 @@ export default function MapTrace({ project, onTraceOpgeslagen, boringConfig }) {
       const initAchtergrond = s3.__achtergrond ?? "brt_standaard";
       const initOverlays    = s3.__overlays    ?? [];
       // Helper: zet achtergrond laag
-      async function zetAchtergrond(id) {
+      function zetAchtergrond(id) {
         if (basisLaagRef.current) { kaart.removeLayer(basisLaagRef.current); basisLaagRef.current = null; }
         const cfg = ACHTERGRONDEN.find(a => a.id === id) ?? ACHTERGRONDEN[0];
         if (cfg.groep === "Esri NL") {
           try {
-            await laadEsriLeaflet();
-            if (window.L?.esri?.tiledMapLayer) {
-              if (window.proj4 && !window.proj4.defs("EPSG:28992")) {
-                window.proj4.defs("EPSG:28992", "+proj=sterea +lat_0=52.15517440 +lon_0=5.38720621 +k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +towgs84=565.417,50.3319,465.552,-0.398957,0.343988,-1.8774,4.0725 +units=m +no_defs");
-              }
-              basisLaagRef.current = L.esri.tiledMapLayer({
-                url: cfg.url,
-                attribution: cfg.opties?.attribution ?? "© Esri Nederland",
-                zIndex: 1,
-              }).addTo(kaart);
-            } else { throw new Error("esri-leaflet niet beschikbaar"); }
+            basisLaagRef.current = maakEsriExportLayer(L, cfg.url, cfg.opties?.attribution).addTo(kaart);
           } catch(e) {
-            console.warn("Esri tiledMapLayer mislukt, fallback:", e);
+            console.warn("Esri export layer mislukt, fallback:", e);
             basisLaagRef.current = L.tileLayer(ACHTERGRONDEN[0].url,
               { ...ACHTERGRONDEN[0].opties, zIndex:1 }
             ).addTo(kaart);
