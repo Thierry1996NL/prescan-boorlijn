@@ -1,0 +1,58 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.App", "Borevexa.App\Borevexa.App.csproj", "{8958509A-B7E6-45FE-827D-EF6BA87D3D59}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.Core", "Borevexa.Core\Borevexa.Core.csproj", "{80474F36-2085-48FF-94B5-BDA9418A3AF7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.Geo", "Borevexa.Geo\Borevexa.Geo.csproj", "{EAAA3EE7-4B19-4722-8074-9D0751A29998}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.Cad", "Borevexa.Cad\Borevexa.Cad.csproj", "{3A88B17C-5B00-4527-8933-6C6D21D8B935}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{2F6DEDA7-43AA-4B00-9498-17E9B5F82869}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.GisRegression", "tools\Borevexa.GisRegression\Borevexa.GisRegression.csproj", "{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Borevexa.ReportMapContract", "tools\Borevexa.ReportMapContract\Borevexa.ReportMapContract.csproj", "{119B9DFE-A1A2-4075-A115-D6836DCB4E3F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8958509A-B7E6-45FE-827D-EF6BA87D3D59}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8958509A-B7E6-45FE-827D-EF6BA87D3D59}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8958509A-B7E6-45FE-827D-EF6BA87D3D59}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8958509A-B7E6-45FE-827D-EF6BA87D3D59}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80474F36-2085-48FF-94B5-BDA9418A3AF7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80474F36-2085-48FF-94B5-BDA9418A3AF7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80474F36-2085-48FF-94B5-BDA9418A3AF7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80474F36-2085-48FF-94B5-BDA9418A3AF7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EAAA3EE7-4B19-4722-8074-9D0751A29998}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EAAA3EE7-4B19-4722-8074-9D0751A29998}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EAAA3EE7-4B19-4722-8074-9D0751A29998}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EAAA3EE7-4B19-4722-8074-9D0751A29998}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A88B17C-5B00-4527-8933-6C6D21D8B935}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A88B17C-5B00-4527-8933-6C6D21D8B935}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A88B17C-5B00-4527-8933-6C6D21D8B935}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A88B17C-5B00-4527-8933-6C6D21D8B935}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{119B9DFE-A1A2-4075-A115-D6836DCB4E3F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{119B9DFE-A1A2-4075-A115-D6836DCB4E3F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{119B9DFE-A1A2-4075-A115-D6836DCB4E3F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{119B9DFE-A1A2-4075-A115-D6836DCB4E3F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A8B07AC5-E36F-4F6A-99DA-A0B18BCD1B8E} = {2F6DEDA7-43AA-4B00-9498-17E9B5F82869}
+		{119B9DFE-A1A2-4075-A115-D6836DCB4E3F} = {2F6DEDA7-43AA-4B00-9498-17E9B5F82869}
+	EndGlobalSection
+EndGlobal
