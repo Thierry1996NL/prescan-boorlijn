@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Fase 0 omgevingssanering (07-07-2026):
+    Alle build-output (bin/obj) gaat naar een vaste map BUITEN OneDrive.
+    OneDrive synchroniseerde eerder ~13.500 build-artefactbestanden mee, wat
+    file locks ("Device or resource busy"), trage builds en sync-stormen gaf.
+
+    Outputindeling wordt: C:\Users\ThierryPapenhuijzen\Borevexa\artifacts\bin\<Project>\<configuratie>\
+  -->
+  <PropertyGroup>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>C:\Users\ThierryPapenhuijzen\Borevexa\artifacts</ArtifactsPath>
+  </PropertyGroup>
+</Project>
