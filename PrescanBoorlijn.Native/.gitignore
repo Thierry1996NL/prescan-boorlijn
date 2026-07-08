@@ -1,0 +1,15 @@
+# Build-output (staat buiten OneDrive via Directory.Build.props / ArtifactsPath)
+bin/
+obj/
+publish/
+artifacts/
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+.idea/
+
+# Tijdelijke bestanden
+*.tmp
+*.log
