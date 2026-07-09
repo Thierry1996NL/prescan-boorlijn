@@ -1072,7 +1072,7 @@
 
                                             <Border x:Name="ProfileCanvasViewport" BorderBrush="#EEF2F4" BorderThickness="1" Background="#FBFCFD" Height="360" Margin="0,0,0,10">
                                                 <ScrollViewer x:Name="ProfileCanvasScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" PanningMode="Both">
-                                                    <Canvas x:Name="ProfileCanvas" Background="White"/>
+                                                    <Canvas x:Name="ProfileCanvas" Background="White" MouseLeftButtonDown="ProfileCanvas_OnMouseLeftButtonDown"/>
                                                 </ScrollViewer>
                                             </Border>
 
@@ -1129,7 +1129,7 @@
                                             </DockPanel>
                                             <Border BorderBrush="#EEF2F4" BorderThickness="1" Background="#FBFCFD" Margin="0,0,0,10" Padding="8">
                                                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled">
-                                                    <Canvas x:Name="SurfaceAnalysisBarCanvas" Height="94" Background="White"/>
+                                                    <Canvas x:Name="SurfaceAnalysisBarCanvas" Background="White"/>
                                                 </ScrollViewer>
                                             </Border>
                                             <TextBlock Text="Segmenten" FontWeight="Bold" Foreground="#071422" FontSize="12" Margin="0,2,0,6"/>

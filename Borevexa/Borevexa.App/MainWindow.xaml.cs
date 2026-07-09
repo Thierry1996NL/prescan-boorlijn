@@ -260,6 +260,14 @@ public partial class MainWindow : Window
     private bool _profileGeometryDirty;
     private bool _surfaceAnalysisMetricsRefreshPending;
     private Guid? _profileVisualSettingsProjectId;
+    private bool _profileCanvasInteractive;
+    private double _profileCanvasPlotLeft;
+    private double _profileCanvasPlotTop;
+    private double _profileCanvasPlotWidth;
+    private double _profileCanvasPlotHeight;
+    private double _profileCanvasMinY;
+    private double _profileCanvasMaxY;
+    private double _profileCanvasTotal;
     private bool _traceSmoothBore;
     private Guid? _traceVisualSettingsProjectId;
     private int _workDrawingScale = 200;
@@ -426,6 +434,8 @@ public partial class MainWindow : Window
         ApplyStepNavigationItem(item);
     }
 
+    private const string LastViewedStepDataKey = "last_viewed_step";
+
     private void ApplyStepNavigationItem(StepNavigationItem item)
     {
         _selectedStep = item.Step;
@@ -435,8 +445,46 @@ public partial class MainWindow : Window
         SideStepsList.SelectedItem = item;
         SidebarCompactStepsList.SelectedItem = item;
         _syncingStepSelection = false;
+        SaveLastViewedStep(item);
         ShowWorkflowPage();
         RenderWorkspace();
+    }
+
+    private void SaveLastViewedStep(StepNavigationItem item)
+    {
+        if (_selectedProject is null || item.IsReportPreview) return;
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            stepNumber = item.Step.Number,
+            substepNumber = item.Substep?.Number
+        }, JsonOptions);
+        _projects.SaveStepData(_selectedProject.Id, 0, LastViewedStepDataKey, payload);
+    }
+
+    private (int StepNumber, string? SubstepNumber)? ReadLastViewedStep(Guid projectId)
+    {
+        var json = _projects.GetStepData(projectId, 0, LastViewedStepDataKey);
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("stepNumber", out var stepNumberElement) || stepNumberElement.ValueKind != JsonValueKind.Number)
+            {
+                return null;
+            }
+
+            var substepNumber = root.TryGetProperty("substepNumber", out var substepElement) && substepElement.ValueKind == JsonValueKind.String
+                ? substepElement.GetString()
+                : null;
+            return (stepNumberElement.GetInt32(), substepNumber);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void EnsureProjectStepsMatchWorkspaces(PrescanProject project)
@@ -478,12 +526,18 @@ public partial class MainWindow : Window
         SideStepsList.ItemsSource = _stepNavigationItems;
         SidebarCompactStepsList.ItemsSource = _stepNavigationItems;
         UpdateTopProjectButton();
-        _selectedStep = _selectedProject.Steps.First();
-        _selectedSubstep = null;
+
+        var lastViewed = ReadLastViewedStep(_selectedProject.Id);
+        var lastViewedItem = lastViewed is { } lastViewedStep
+            ? FindStepNavigationItem(lastViewedStep.StepNumber, isReportPreview: false, lastViewedStep.SubstepNumber)
+              ?? FindFirstSelectableStepItem(lastViewedStep.StepNumber)
+            : null;
+        var selectedItem = lastViewedItem ?? FindFirstSelectableStepItem(_selectedProject.Steps.First().Number);
+        _selectedStep = selectedItem?.Step ?? _selectedProject.Steps.First();
+        _selectedSubstep = selectedItem?.Substep;
         _selectedReportPreviewStepNumber = null;
 
         _syncingStepSelection = true;
-        var selectedItem = FindFirstSelectableStepItem(_selectedStep.Number);
         SideStepsList.SelectedItem = selectedItem;
         SidebarCompactStepsList.SelectedItem = selectedItem;
         _syncingStepSelection = false;
@@ -7623,6 +7677,7 @@ public partial class MainWindow : Window
         _lastStepThreeRenderSignature = BuildStepThreeRenderSignature();
     }
 
+
     private string BuildStepThreeRenderSignature()
     {
         var fileSignature = string.Join("|", _projectFiles
@@ -8377,16 +8432,24 @@ public partial class MainWindow : Window
 
 
 
-    private double InterpolateSurfaceNap(double distance)
+    // KLIC-kruisingen (kabels/leidingen) plaatsen hun diepte t.o.v. het maaiveld op
+    // deze functie. Die las voorheen het maaiveld af uit de 4 sparse dieptepunten
+    // (rechtgetrokken tussen intrede/dieptepunt(en)/uittrede) — dezelfde te grove bron
+    // die we voor de zichtbare maaiveldlijn al vervangen hebben door dichte AHN4-
+    // bemonstering. Het gevolg: een kruising kon boven het (nu wél accurate) maaiveld
+    // uitsteken zodra het echte terrein afweek van die rechte lijn. Gebruik daarom
+    // dezelfde dichte, gecachte AHN4-samples als de maaiveldlijn zelf.
+    private double InterpolateSurfaceNap(double distance, double traceLength)
     {
-        if (_profilePoints.Count == 0) return 0;
-        if (distance <= _profilePoints[0].Distance) return _profilePoints[0].Surface;
-        if (distance >= _profilePoints[^1].Distance) return _profilePoints[^1].Surface;
+        var rows = GetAhnSurfaceProfileRows(traceLength);
+        if (rows.Count == 0) return _profilePoints.Count > 0 ? _profilePoints[0].Surface : 0;
+        if (distance <= rows[0].Distance) return rows[0].Surface;
+        if (distance >= rows[^1].Distance) return rows[^1].Surface;
 
-        for (var i = 1; i < _profilePoints.Count; i++)
+        for (var i = 1; i < rows.Count; i++)
         {
-            var previous = _profilePoints[i - 1];
-            var next = _profilePoints[i];
+            var previous = rows[i - 1];
+            var next = rows[i];
             if (distance > next.Distance) continue;
 
             var length = Math.Max(0.001, next.Distance - previous.Distance);
@@ -8394,7 +8457,7 @@ public partial class MainWindow : Window
             return previous.Surface + (next.Surface - previous.Surface) * ratio;
         }
 
-        return _profilePoints[^1].Surface;
+        return rows[^1].Surface;
     }
 
 
@@ -8728,27 +8791,83 @@ public partial class MainWindow : Window
         if (distance <= _profilePoints[0].Distance) return _profilePoints[0].Nap;
         if (distance >= _profilePoints[^1].Distance) return _profilePoints[^1].Nap;
 
-        for (var i = 1; i < _profilePoints.Count; i++)
-        {
-            var p1 = _profilePoints[i - 1];
-            var p2 = _profilePoints[i];
-            if (distance > p2.Distance && i < _profilePoints.Count - 1) continue;
-
-            var p0 = i - 2 >= 0 ? _profilePoints[i - 2] : p1;
-            var p3 = i + 1 < _profilePoints.Count ? _profilePoints[i + 1] : p2;
-            var segment = Math.Max(0.001, p2.Distance - p1.Distance);
-            var t = Math.Clamp((distance - p1.Distance) / segment, 0, 1);
-            return CatmullRom(p0.Nap, p1.Nap, p2.Nap, p3.Nap, t);
-        }
-
-        return _profilePoints[^1].Nap;
+        return EvaluateMonotonicHermite(_profilePoints, distance);
     }
 
-    private static double CatmullRom(double p0, double p1, double p2, double p3, double t)
+    // "Boorlijn vloeiend" gebruikte een uniforme Catmull-Rom-spline door de
+    // dieptepunten. Bij een steil segment (bv. een grote intrede-/uittredehoek) naast
+    // een vlak middenstuk kan zo'n spline flink overshoten of zelfs terug omhoog
+    // lussen — een fysiek onmogelijke boorlijn die niet overeenkomt met de simpele
+    // rechte-lijn segmentafstanden/-hoeken die ernaast getoond worden. Een monotone
+    // kubieke Hermite-spline (Fritsch-Carlson) blijft per definitie tussen de NAP-
+    // waarden van de twee omliggende dieptepunten — geen overshoot, geen lus — en
+    // levert nog steeds een vloeiende (geen geknikte) curve.
+    private static double EvaluateMonotonicHermite(IReadOnlyList<ProfilePointRow> points, double distance)
     {
+        var n = points.Count;
+        var xs = new double[n];
+        var ys = new double[n];
+        for (var i = 0; i < n; i++)
+        {
+            xs[i] = points[i].Distance;
+            ys[i] = points[i].Nap;
+        }
+
+        var deltas = new double[n - 1];
+        for (var i = 0; i < n - 1; i++)
+        {
+            var dx = Math.Max(0.0001, xs[i + 1] - xs[i]);
+            deltas[i] = (ys[i + 1] - ys[i]) / dx;
+        }
+
+        var tangents = new double[n];
+        tangents[0] = deltas[0];
+        tangents[n - 1] = deltas[n - 2];
+        for (var i = 1; i < n - 1; i++)
+        {
+            tangents[i] = (deltas[i - 1] + deltas[i]) / 2.0;
+        }
+
+        for (var i = 0; i < n - 1; i++)
+        {
+            if (deltas[i] == 0)
+            {
+                tangents[i] = 0;
+                tangents[i + 1] = 0;
+                continue;
+            }
+
+            var alpha = tangents[i] / deltas[i];
+            var beta = tangents[i + 1] / deltas[i];
+            var sumSq = alpha * alpha + beta * beta;
+            if (sumSq > 9)
+            {
+                var tau = 3.0 / Math.Sqrt(sumSq);
+                tangents[i] = tau * alpha * deltas[i];
+                tangents[i + 1] = tau * beta * deltas[i];
+            }
+        }
+
+        var segIndex = 0;
+        for (var i = 0; i < n - 1; i++)
+        {
+            segIndex = i;
+            if (distance <= xs[i + 1]) break;
+        }
+
+        var x0 = xs[segIndex];
+        var x1 = xs[segIndex + 1];
+        var h = Math.Max(0.0001, x1 - x0);
+        var t = Math.Clamp((distance - x0) / h, 0, 1);
         var t2 = t * t;
         var t3 = t2 * t;
-        return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+
+        var h00 = 2 * t3 - 3 * t2 + 1;
+        var h10 = t3 - 2 * t2 + t;
+        var h01 = -2 * t3 + 3 * t2;
+        var h11 = t3 - t2;
+
+        return h00 * ys[segIndex] + h10 * h * tangents[segIndex] + h01 * ys[segIndex + 1] + h11 * h * tangents[segIndex + 1];
     }
 
 
@@ -9912,6 +10031,12 @@ public partial class MainWindow : Window
             _gisLayerState.ApplyStepThreeCleanMapDefaults();
             AddStepThreeCheckbox("Kadaster percelen (PDOK)", "parcels");
             AddStepThreeCheckbox("Boorlijn", "boreTrace");
+            // KLIC-lagen zijn hier ook zichtbaar en filterbaar (naast de tekentools),
+            // zodat je ondergrondse kabels/leidingen kan zien terwijl je de boorlijn
+            // intekent — niet alleen op de aparte KLIC-substap.
+            AddStepThreeCheckbox("KLIC lagen", "klic");
+            AddStepThreeCheckbox("KLIC bufferzone 1 m links/rechts", "klicBuffer");
+            AddKlicThemeToggles(StepThreeOverlaysPanel);
             return;
         }
 
@@ -9929,6 +10054,14 @@ public partial class MainWindow : Window
         AddStepThreeCheckbox("BAG Adressen", "addresses");
         AddStepThreeCheckbox("AHN4 maaiveld (DTM)", "ahn4Dtm");
         AddStepThreeCheckbox("AHN4 ruw hoogtebeeld (DSM)", "ahn4Dsm");
+        if (_selectedStep?.Number == ProfileStepNumber)
+        {
+            // Uit standaard voor het dwarsprofiel (zie NormalizeProfileMapState), maar hier
+            // wel expliciet aan/uit te zetten: de grondwaterspiegeldiepte-laag is een bijna
+            // dekkende blauwe kleurvlakkaart en werd eerder abusievelijk aangezien voor een
+            // kapotte kaartondergrond.
+            AddStepThreeCheckbox("BRO Grondwaterspiegeldiepte GHG", "broGroundwaterGhg");
+        }
         if (_selectedStep?.Number == 6 && string.Equals(_selectedSubstep?.Number, "6.3", StringComparison.OrdinalIgnoreCase))
         {
             AddStepThreeCheckbox("BRO Geomorfologie 2025-01", "broGeomorphology");
@@ -9975,6 +10108,7 @@ public partial class MainWindow : Window
         AddStepThreeCheckbox("Kadaster percelen (PDOK)", "parcels");
         AddStepThreeCheckbox("Boorlijn", "boreTrace");
         AddStepThreeCheckbox("Boring label", "boreTraceInfo");
+        AddStepThreeCheckbox("AHN4 maaiveld (DTM)", "ahn4Dtm");
     }
 
 
@@ -10345,8 +10479,8 @@ public partial class MainWindow : Window
             addressesVisible = !broPointOnlyMap && !isStepFourMap && !isStepThreeMap && !isStepSixMap && selectedStepNumber != WorkDrawingStepNumber && _mapOverlayStates.TryGetValue("addresses", out var addressesVisible) && addressesVisible,
             bgtVisible = !broPointOnlyMap && !isStepThreeMap && !isStepSixMap && _mapOverlayStates.TryGetValue("bgt", out var bgtVisible) && bgtVisible,
             bagImportVisible = !broPointOnlyMap && !isStepThreeMap && !isStepSixMap && _mapOverlayStates.TryGetValue("bagImport", out var bagImportVisible) && bagImportVisible,
-            ahn4DtmVisible = false,
-            ahn4DsmVisible = false,
+            ahn4DtmVisible = !broPointOnlyMap && !isStepThreeMap && !isStepSixMap && selectedStepNumber != WorkDrawingStepNumber && _mapOverlayStates.TryGetValue("ahn4Dtm", out var ahn4DtmVisible) && ahn4DtmVisible,
+            ahn4DsmVisible = !broPointOnlyMap && !isStepThreeMap && !isStepSixMap && selectedStepNumber != WorkDrawingStepNumber && _mapOverlayStates.TryGetValue("ahn4Dsm", out var ahn4DsmVisible) && ahn4DsmVisible,
             broGeomorphologyVisible = !broPointOnlyMap && showBroGeomorphology,
             broSoilMapVisible = !broPointOnlyMap && showBroSoilMap,
             broGroundwaterGhgVisible = !broPointOnlyMap && showBroGroundwaterGhg,

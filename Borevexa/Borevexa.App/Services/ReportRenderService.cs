@@ -20,8 +20,6 @@ public sealed class ReportRenderService
             new KlicCrossingsReportRenderer(),
             new KlicEvZonesReportRenderer(),
             new BgtSegmentsReportRenderer(),
-            new BgtAnalysisReportRenderer(),
-            new AhnSurfaceProfileReportRenderer(),
             new MachineChoiceReportRenderer(),
             new ParcelSegmentsReportRenderer(),
             new ZroAnalysisReportRenderer(),

@@ -638,9 +638,10 @@ public partial class MainWindow
     {
         var panelWidth = StepSurfaceAnalysisPanel.ActualWidth;
         canvas.Width = Math.Max(520, panelWidth > 120 ? panelWidth - 44 : 860);
-        // Hoog genoeg voor: titel, de balk, de as-regel (incl. labels van korte
-        // segmenten) en een volledige (niet-afgesneden) legenda-regel.
-        canvas.Height = 104;
+        // Hoog genoeg voor: titel, de balk, de as-regel (0 m links, korte-segment-
+        // labels op een eigen regel), de legenda-regel en de totaallengte-regel
+        // onderaan.
+        canvas.Height = 140;
         AddCanvasRect(canvas, 0, 0, canvas.Width, canvas.Height, "#FFFFFF", "#E5E7EB", 0.8);
         AddCanvasText(canvas, "BGT oppervlakteprofiel", 10, 8, "#334155", 11, FontWeights.Bold);
         const double left = 28;
@@ -656,13 +657,13 @@ public partial class MainWindow
         }
 
         var axisY = top + height + 7;
+        var shortLabelY = axisY + 13;
         AddCanvasText(canvas, "0 m", left, axisY, "#64748B", 9.5, FontWeights.Normal);
-        AddCanvasText(canvas, $"{total:N1} m", left + width - 54, axisY, "#64748B", 9.5, FontWeights.Normal);
 
         // Segmenten die te smal zijn voor een label in de balk krijgen hun lengte
-        // onder de balk (op de as-regel), met een aanwijslijntje naar het segment.
-        // Links en rechts blijven de vaste asmaten (0 m / totaal) vrij.
-        var previousAxisLabelEnd = left + 30;
+        // op een eigen regel onder de as, met een aanwijslijntje naar het segment,
+        // zodat ze nooit overlappen met de "0 m"-asmaat.
+        var previousShortLabelEnd = left + 30;
         foreach (var segment in segments)
         {
             var x = left + Math.Clamp(segment.Start / Math.Max(1, total), 0, 1) * width;
@@ -677,15 +678,17 @@ public partial class MainWindow
             {
                 var label = $"{segment.Length:N1} m";
                 var estimatedWidth = label.Length * 5.5;
-                var labelX = Math.Clamp(x + w / 2 - estimatedWidth / 2, previousAxisLabelEnd + 6, left + width - 58 - estimatedWidth);
-                AddCanvasText(canvas, label, labelX, axisY, "#334155", 9, FontWeights.SemiBold);
-                AddCanvasRect(canvas, x + w / 2, top + height, 1, 4, "#94A3B8", "#94A3B8", 0);
-                previousAxisLabelEnd = labelX + estimatedWidth;
+                var minLabelX = previousShortLabelEnd + 6;
+                var maxLabelX = Math.Max(minLabelX, left + width - estimatedWidth);
+                var labelX = Math.Clamp(x + w / 2 - estimatedWidth / 2, minLabelX, maxLabelX);
+                AddCanvasText(canvas, label, labelX, shortLabelY, "#334155", 9, FontWeights.SemiBold);
+                AddCanvasRect(canvas, x + w / 2, top + height, 1, shortLabelY - (top + height) - 2, "#94A3B8", "#94A3B8", 0);
+                previousShortLabelEnd = labelX + estimatedWidth;
             }
         }
 
         var legendX = left;
-        var legendY = top + height + 26;
+        var legendY = shortLabelY + 19;
         foreach (var item in segments
                      .GroupBy(segment => segment.Label)
                      .Select(group => new { Label = group.Key, Color = group.First().Color, Length = group.Sum(segment => segment.Length) })
@@ -700,6 +703,8 @@ public partial class MainWindow
                 break;
             }
         }
+
+        AddCanvasText(canvas, $"Totale lengte: {total:N1} m", left, legendY + 20, "#334155", 9.5, FontWeights.Bold);
     }
 
     private void UpdateSurfaceAnalysisSummaryBar()

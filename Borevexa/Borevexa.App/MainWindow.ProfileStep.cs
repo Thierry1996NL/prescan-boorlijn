@@ -225,17 +225,48 @@ public partial class MainWindow
     private List<ProfileEngineeringSample> BuildProfileEngineeringSamples()
     {
         var total = Math.Max(0, _profilePoints[^1].Distance);
+
+        // Snap elk label-punt naar een van de exacte afstanden die de boorlijn zelf
+        // gebruikt om te tekenen (dezelfde bron als DrawProfileCanvas/
+        // CreateReportProfileCanvas). Los berekende afstanden (bv. elke 3 m, afgerond
+        // op 2 decimalen) konden net iets anders uitkomen dan de dicht bemonsterde
+        // curve, en een Catmull-Rom-curve kan bij een steil stuk (zoals een uittrede
+        // onder een grote hoek) tussen twee zulke net-niet-gelijke afstanden meetbaar
+        // afwijken — het bolletje leek dan los van de lijn te staan.
+        var denseRows = GetAhnSurfaceProfileRows(total);
+        var denseDistances = (denseRows.Count > 0
+                ? denseRows.Select(row => row.Distance)
+                : _profilePoints.Select(point => point.Distance))
+            .OrderBy(value => value)
+            .ToArray();
+
+        double SnapToDenseDistance(double target)
+        {
+            if (denseDistances.Length == 0) return target;
+            var index = Array.BinarySearch(denseDistances, target);
+            if (index >= 0) return denseDistances[index];
+            index = ~index;
+            if (index <= 0) return denseDistances[0];
+            if (index >= denseDistances.Length) return denseDistances[^1];
+            var before = denseDistances[index - 1];
+            var after = denseDistances[index];
+            return target - before <= after - target ? before : after;
+        }
+
         var distances = new SortedSet<double>();
         for (var distance = 0d; distance <= total + 0.01; distance += 3d)
         {
-            distances.Add(Math.Round(Math.Min(total, distance), 2));
+            distances.Add(SnapToDenseDistance(Math.Min(total, distance)));
         }
-        foreach (var point in _profilePoints) distances.Add(Math.Round(point.Distance, 2));
-        distances.Add(Math.Round(total, 2));
+        foreach (var point in _profilePoints) distances.Add(SnapToDenseDistance(point.Distance));
+        distances.Add(SnapToDenseDistance(total));
 
         return distances.Select((distance, index) =>
         {
-            var surface = InterpolateProfileValue(distance, point => point.Surface);
+            // Zelfde dichte AHN4-maaiveldbron als de grafiek en de KLIC-kruisingen,
+            // niet de oude sparse rechte-lijn-interpolatie tussen de 4 dieptepunten —
+            // anders wijkt de Profielstaat-tabel af van wat de grafiek laat zien.
+            var surface = InterpolateSurfaceNap(distance, total);
             var bore = InterpolateBoreNapAtDistance(distance);
             var depth = Math.Max(0, surface - bore);
             var angle = SegmentAngle(ProfileSegmentIndexAt(distance));
@@ -402,7 +433,14 @@ public partial class MainWindow
             Background = Brush("#FFFFFF"),
             Padding = new Thickness(12),
             Margin = new Thickness(0, 4, 0, 12),
-            Child = CreateReportAhnSurfaceHeightProfile(total, rows)
+            Child = new Viewbox
+            {
+                Child = CreateReportAhnSurfaceHeightProfile(total, rows),
+                MaxWidth = 640,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly
+            }
         });
         panel.Children.Add(CreateReportKeyValues(
             ("Boorlijnlengte", $"{total:N1} m"),
@@ -413,53 +451,19 @@ public partial class MainWindow
             ("Bron", "AHN4/maaiveldprofiel langs vastgelegde boorlijn")));
         panel.Children.Add(CreateReportNote(rows.Count < 2
             ? "Geen maaiveldprofiel beschikbaar. Genereer of sla de oppervlakteanalyse/profielpunten opnieuw op."
-            : "Dit profiel toont de maaiveldhoogte langs de boorlijn als apart AHN4-rapportblok. De rode lijn is de boorlijnhoogte uit het opgeslagen profiel ter referentie."));
+            : "Dit profiel toont de maaiveldhoogte langs de boorlijn als apart AHN4-rapportblok."));
 
         var sectionTitle = $"{DisplayReportSectionTitle(substep)} - AHN4 maaiveldprofiel";
-        return CreateReportPage(stepNumber, sectionTitle, CreateReportSection(stepNumber, sectionTitle, panel));
-    }
-
-    private UIElement CreateInlineBgtSurfaceProfileReportPage(int stepNumber, PrescanSubstep substep)
-    {
-        EnsureProfilePoints();
-        var total = GetSurfaceAnalysisTraceLength();
-        var segments = GetBgtSurfaceSegments(total);
-        var measuredLength = segments.Sum(segment => Math.Max(0, segment.Length));
-
-        var panel = new StackPanel();
-        panel.Children.Add(CreateReportSubheading("Oppervlakteanalyse dwarsprofiel"));
-        panel.Children.Add(CreateReportKeyValues(
-            ("Boorlijnlengte", $"{total:N1} m"),
-            ("BGT-segmenten", segments.Count.ToString(CultureInfo.InvariantCulture)),
-            ("Gemeten oppervlaklengte", measuredLength > 0 ? $"{measuredLength:N1} m" : "-"),
-            ("Bron", "BGT-vlakken langs vastgelegde boorlijn")));
-        panel.Children.Add(new Border
-        {
-            BorderBrush = Brush("#D7E8FA"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Background = Brush("#FFFFFF"),
-            Padding = new Thickness(12),
-            Margin = new Thickness(0, 4, 0, 12),
-            Child = CreateReportSurfaceBar(total)
-        });
-        panel.Children.Add(CreateReportSubheading("Segmenten langs boorlijn"));
-        panel.Children.Add(CreateReportSurfaceSegmentTable(segments));
-        panel.Children.Add(CreateReportNote(segments.Count == 0
-            ? "Geen BGT-oppervlakteprofiel gevonden. Controleer of BGT-vlakken actief zijn en voer de oppervlakteanalyse opnieuw uit."
-            : "Dit profiel gebruikt dezelfde segmentberekening als de kaart in substap 4.1. De lengte per oppervlak wordt langs de boorlijn gemeten."));
-
-        var sectionTitle = $"{DisplayReportSectionTitle(substep)} - oppervlakteprofiel";
         return CreateReportPage(stepNumber, sectionTitle, CreateReportSection(stepNumber, sectionTitle, panel));
     }
 
     private IReadOnlyList<UIElement> CreateInlineProfileEngineeringReportPages(int stepNumber, PrescanSubstep substep)
     {
         EnsureProfilePoints();
-        var panel = new StackPanel();
+        var mapPanel = new StackPanel();
         var profileMapPath = GetLiveMapReportPreviewImagePath(ProfileStepNumber);
-        panel.Children.Add(CreateReportSubheading("GIS kaart met horizontale boorlijn"));
-        panel.Children.Add(CreateLiveMapReportImageCard(
+        mapPanel.Children.Add(CreateReportSubheading("GIS kaart met horizontale boorlijn"));
+        mapPanel.Children.Add(CreateLiveMapReportImageCard(
             "GIS kaart met horizontale boorlijn",
             "Live rapportuitsnede uit stap 7.1: boorlijn horizontaal, kaartlagen zoals zichtbaar in de app.",
             profileMapPath,
@@ -467,44 +471,74 @@ public partial class MainWindow
             null,
             imageWidth: 648,
             imageHeight: 286));
-        panel.Children.Add(CreateReportNote(string.IsNullOrWhiteSpace(profileMapPath)
+        mapPanel.Children.Add(CreateReportNote(string.IsNullOrWhiteSpace(profileMapPath)
             ? "De profielkaart wordt gevuld zodra je 'Boorlijn horizontaal' of 'Opslaan voor rapportage' gebruikt."
-            : "Deze kaartcapture volgt de horizontale GIS-weergave van stap 7.1. Bedieningsknoppen worden bij de capture verborgen."));
-        panel.Children.Add(CreateReportSubheading("Horizontaal dwarsprofiel"));
-        panel.Children.Add(new Viewbox
+            : "Deze kaartcapture volgt de horizontale GIS-weergave van stap 7.1. Bedieningsknoppen worden bij de capture verborgen. De dieptepunten (S/2/3/E) staan als oranje markering op de boorlijn."));
+        mapPanel.Children.Add(CreateReportSubheading("Dwarsprofiel-punten"));
+        mapPanel.Children.Add(CreateReportProfilePointTable(_profilePoints));
+        var mapSectionTitle = $"{DisplayReportSectionTitle(substep)} - kaartbijlage";
+
+        // Het dwarsprofiel en de segmententabel staan op een NORMALE portret-A4-pagina
+        // (zelfde koptekst/voettekst-opmaak als de rest van het rapport), maar de
+        // inhoud zelf (grafiek + tabellen) is 90° gedraaid — de lange boorlijn past zo
+        // dwars over de pagina. Alleen de content roteren (niet de hele pagina, zoals
+        // eerder geprobeerd via CreateReportRotatedLandscapePage) voorkomt scheve
+        // koptekst en bijgesneden randen.
+        var profilePanel = new StackPanel();
+        profilePanel.Children.Add(CreateReportSubheading("Horizontaal dwarsprofiel"));
+        profilePanel.Children.Add(new Viewbox
         {
-            Child = CreateReportProfileCanvas(),
+            Child = CreateRotatedReportContent(CreateReportProfileCanvas(), 270),
             MaxWidth = 664,
             HorizontalAlignment = HorizontalAlignment.Left,
             Stretch = Stretch.Uniform,
             StretchDirection = StretchDirection.DownOnly,
             Margin = new Thickness(0, 2, 0, 0)
         });
-        panel.Children.Add(CreateReportNote(_profilePoints.Count < 2
+        profilePanel.Children.Add(CreateReportNote(_profilePoints.Count < 2
             ? $"Geen dwarsprofiel beschikbaar. Teken eerst een boorlijn in stap {DisplayStepNumber(3)}.1 en genereer daarna het profiel in stap {DisplayStepNumber(ProfileStepNumber)}.1."
             : "Het horizontale profiel wordt opgebouwd uit de opgeslagen boorlijn, profielpunten, maaiveldlijn, BGT-oppervlaktes en zichtbare KLIC-kruisingen. Maaiveldhoogtes komen uit AHN4 DTM waar beschikbaar; KLIC-dieptes zijn indicatief per thema tenzij de bron expliciete dieptegegevens bevat."));
-
+        profilePanel.Children.Add(CreateReportSubheading("KLIC-kruisingen in profiel"));
+        profilePanel.Children.Add(CreateReportKlicCrossingTable());
+        profilePanel.Children.Add(CreateReportNote("KLIC-kruisingen in het dwarsprofiel zijn 2D-kruisingen met een indicatieve diepteligging. Gebruik de originele KLIC-documentatie en proefsleuven/grondradar voor definitieve verticale ligging."));
         var sectionTitle = $"{DisplayReportSectionTitle(substep)} - horizontaal profiel";
+
+        // De segmentinformatie mag gewoon volledig horizontaal blijven (niet gedraaid).
+        // De "Profielstaat boring"-tabel heeft één kolom per sample en kan bij een
+        // lange boorlijn veel te breed worden voor de paginabreedte — die knipt
+        // CreateReportProfileEngineeringTable daarom zelf op in meerdere blokken die
+        // onder elkaar staan, in plaats van te roteren.
         var tablePanel = new StackPanel();
         tablePanel.Children.Add(CreateReportSubheading("Profielstaat boring"));
         tablePanel.Children.Add(CreateReportProfileEngineeringTable());
         tablePanel.Children.Add(CreateReportSubheading("Boorpunten en segmenten"));
         tablePanel.Children.Add(CreateReportProfileSegmentTable());
-        tablePanel.Children.Add(CreateReportSubheading("KLIC-kruisingen in profiel"));
-        tablePanel.Children.Add(CreateReportKlicCrossingTable());
-        tablePanel.Children.Add(CreateReportNote("KLIC-kruisingen in het dwarsprofiel zijn 2D-kruisingen met een indicatieve diepteligging. Gebruik de originele KLIC-documentatie en proefsleuven/grondradar voor definitieve verticale ligging."));
-
         var tableTitle = $"{DisplayReportSectionTitle(substep)} - profielstaat";
+
         return [
-            CreateReportPage(stepNumber, sectionTitle, CreateReportSection(stepNumber, sectionTitle, panel)),
+            CreateReportPage(stepNumber, mapSectionTitle, CreateReportSection(stepNumber, mapSectionTitle, mapPanel)),
+            CreateReportPage(stepNumber, sectionTitle, CreateReportSection(stepNumber, sectionTitle, profilePanel)),
             CreateReportPage(stepNumber, tableTitle, CreateReportSection(stepNumber, tableTitle, tablePanel))
         ];
     }
 
+    // Roteert alleen de inhoud 90° (via LayoutTransform, niet RenderTransform) zodat
+    // de omringende Viewbox de GEROTEERDE afmetingen (breedte/hoogte omgewisseld) als
+    // gemeten grootte ziet en er correct naar de beschikbare paginabreedte op schaalt
+    // — in tegenstelling tot het roteren van een hele, kant-en-klare pagina (koptekst/
+    // voettekst incluis), wat eerder tot bijgesneden/scheve content leidde.
+    private static UIElement CreateRotatedReportContent(UIElement content, double angle = 90)
+    {
+        var host = new Grid { LayoutTransform = new RotateTransform(angle) };
+        host.Children.Add(content);
+        return host;
+    }
+
     private Canvas CreateReportAhnSurfaceHeightProfile(double traceLength, IReadOnlyList<(double Distance, double Surface, double BoreNap)> rows)
     {
-        var canvas = new Canvas { Width = 760, Height = 245, Background = Brushes.White };
-        AddCanvasRect(canvas, 0, 0, 760, 245, "#FFFFFF", "#CBD5E1", 1);
+        const double canvasHeight = 262;
+        var canvas = new Canvas { Width = 760, Height = canvasHeight, Background = Brushes.White };
+        AddCanvasRect(canvas, 0, 0, 760, canvasHeight, "#FFFFFF", "#CBD5E1", 1);
         AddCanvasText(canvas, "AHN4 maaiveldhoogteprofiel langs boorlijn", 20, 16, "#071422", 13, FontWeights.Bold);
 
         const double left = 70;
@@ -520,8 +554,8 @@ public partial class MainWindow
         }
 
         var total = Math.Max(1, Math.Max(traceLength, rows.Max(row => row.Distance)));
-        var minValue = Math.Floor(rows.Min(row => Math.Min(row.Surface, row.BoreNap)) - 0.5);
-        var maxValue = Math.Ceiling(rows.Max(row => Math.Max(row.Surface, row.BoreNap)) + 0.5);
+        var minValue = Math.Floor(rows.Min(row => row.Surface) - 0.5);
+        var maxValue = Math.Ceiling(rows.Max(row => row.Surface) + 0.5);
         var range = Math.Max(1, maxValue - minValue);
         double X(double distance) => left + Math.Clamp(distance / total, 0, 1) * plotWidth;
         double Y(double value) => top + (maxValue - value) / range * plotHeight;
@@ -543,17 +577,17 @@ public partial class MainWindow
         }
 
         AddCanvasText(canvas, "m NAP", 18, top - 20, "#64748B", 9.5, FontWeights.SemiBold);
-        AddCanvasText(canvas, $"Afstand langs boorlijn 0 - {total:N1} m", left, top + plotHeight + 28, "#334155", 10.5, FontWeights.SemiBold);
+        var captionY = top + plotHeight + 26;
+        AddCanvasText(canvas, $"Afstand langs boorlijn 0 - {total:N1} m", left, captionY, "#334155", 10.5, FontWeights.SemiBold);
 
         var surfaceCoordinates = rows.SelectMany(row => new[] { X(row.Distance), Y(row.Surface) }).ToArray();
-        var boreCoordinates = rows.SelectMany(row => new[] { X(row.Distance), Y(row.BoreNap) }).ToArray();
         AddCanvasPolyline(canvas, "#059669", 2.8, surfaceCoordinates);
-        AddCanvasPolyline(canvas, "#E11D48", 1.8, boreCoordinates);
 
-        AddCanvasRect(canvas, left, 203, 10, 10, "#059669", "#059669", 1);
-        AddCanvasText(canvas, "Maaiveld AHN4", left + 16, 199, "#334155", 10.5, FontWeights.SemiBold);
-        AddCanvasLine(canvas, left + 138, 208, left + 158, 208, "#E11D48", 2, null);
-        AddCanvasText(canvas, "Boorlijnhoogte", left + 164, 199, "#334155", 10.5, FontWeights.SemiBold);
+        // Legend goes on its own row well below the "Afstand langs boorlijn" caption so
+        // the two never overlap (they used to sit almost on top of each other here).
+        var legendY = captionY + 24;
+        AddCanvasRect(canvas, left, legendY + 2, 10, 10, "#059669", "#059669", 1);
+        AddCanvasText(canvas, "Maaiveld AHN4", left + 16, legendY, "#334155", 10.5, FontWeights.SemiBold);
         return canvas;
     }
 
@@ -561,15 +595,20 @@ public partial class MainWindow
     {
         EnsureProfilePoints();
         LoadProfileVisualSettings();
-        const double canvasWidth = 760;
-        const double canvasHeight = 360;
+        // De pagina wordt een kwartslag gedraaide landscape-pagina (zie
+        // CreateReportRotatedLandscapePage), dus deze canvas gebruikt landscape-
+        // verhoudingen: breed genoeg voor de lange boorlijn, met een gematigde hoogte
+        // in plaats van de extreme verticale uitrekking die nodig was om in een smalle
+        // portret-pagina te passen.
+        const double canvasWidth = 1000;
+        const double canvasHeight = 640;
         var canvas = new Canvas { Width = canvasWidth, Height = canvasHeight, Background = Brushes.White, Margin = new Thickness(0, 12, 0, 0) };
         AddCanvasRect(canvas, 0, 0, canvasWidth, canvasHeight, "#FFFFFF", "#CBD5E1", 1);
         AddCanvasText(canvas, "Horizontaal dwarsprofiel langs boorlijn", 20, 15, "#071422", 13, FontWeights.Bold);
 
         if (_profilePoints.Count < 2)
         {
-            AddCanvasRect(canvas, 38, 54, 686, 250, "#F8FAFC", "#E5E7EB", 1);
+            AddCanvasRect(canvas, 38, 54, canvasWidth - 76, canvasHeight - 88, "#F8FAFC", "#E5E7EB", 1);
             AddCanvasText(canvas, "Geen opgeslagen dwarsprofiel beschikbaar", 82, 168, "#8FA6B2", 12, FontWeights.Normal);
             return canvas;
         }
@@ -582,8 +621,16 @@ public partial class MainWindow
         var minDistance = 0d;
         var maxDistance = Math.Max(1, _profilePoints.Max(point => point.Distance));
         var klicCrossings = GetVisibleKlicProfileCrossings(maxDistance);
+        // Maaiveldlijn wordt dicht bemonsterd langs de hele boorlijn (zie verderop), dus
+        // de verticale schaal moet ook dat bereik meenemen, niet alleen de 4 dieptepunten.
+        var denseSurfaceRows = GetAhnSurfaceProfileRows(maxDistance);
         var minValue = Math.Min(_profilePoints.Min(point => point.Nap), _profilePoints.Min(point => point.Surface));
         var maxValue = Math.Max(_profilePoints.Max(point => point.Nap), _profilePoints.Max(point => point.Surface));
+        if (denseSurfaceRows.Count > 0)
+        {
+            minValue = Math.Min(minValue, denseSurfaceRows.Min(row => row.Surface));
+            maxValue = Math.Max(maxValue, denseSurfaceRows.Max(row => row.Surface));
+        }
         if (klicCrossings.Count > 0)
         {
             minValue = Math.Min(minValue, klicCrossings.Min(crossing => crossing.Nap));
@@ -595,8 +642,8 @@ public partial class MainWindow
         var range = Math.Max(1, maxValue - minValue);
         const double left = 70;
         const double top = 78;
-        const double plotWidth = 642;
-        const double plotHeight = 190;
+        const double plotWidth = canvasWidth - left - 32;
+        const double plotHeight = 460;
         var plotBottom = top + plotHeight;
 
         // Horizontal legend row, kept above the plot so it never overlaps the graph.
@@ -642,6 +689,12 @@ public partial class MainWindow
             var stripTop = top - 18;
             const double stripHeight = 13;
             AddCanvasText(canvas, "BGT", 18, stripTop + 1, "#64748B", 8.5, FontWeights.Bold);
+            // Een smal segment (bv. 0,6 m groenstrook of 6 m water) kreeg voorheen
+            // helemaal geen label (w > 60 gate), waardoor de lengte nergens afleesbaar
+            // was. Zet die labels op een eigen regel onder de strip met een klein
+            // aanwijslijntje, net als bij de BGT-oppervlaktebalk in stap 4.
+            var shortLabelY = stripTop + stripHeight + 11;
+            var previousShortLabelEnd = left;
             foreach (var segment in segments)
             {
                 var x = XDistance(segment.Start);
@@ -651,58 +704,89 @@ public partial class MainWindow
                 {
                     AddCanvasText(canvas, $"{segment.Length:N0} m {segment.Label}", x + 4, stripTop + 1, "#071422", 8, FontWeights.SemiBold);
                 }
+                else
+                {
+                    var shortLabel = $"{segment.Length:N1} m";
+                    var estimatedWidth = shortLabel.Length * 5.2;
+                    var minLabelX = previousShortLabelEnd + 4;
+                    var maxLabelX = Math.Max(minLabelX, left + plotWidth - estimatedWidth);
+                    var labelX = Math.Clamp(x + w / 2 - estimatedWidth / 2, minLabelX, maxLabelX);
+                    AddCanvasLine(canvas, x + w / 2, stripTop + stripHeight, x + w / 2, shortLabelY - 2, "#94A3B8", 1, null);
+                    AddCanvasText(canvas, shortLabel, labelX, shortLabelY, "#475569", 7.5, FontWeights.SemiBold);
+                    previousShortLabelEnd = labelX + estimatedWidth;
+                }
             }
         }
 
         var surface = new List<double>();
         var bore = new List<double>();
         var borePoints = new List<Point>();
-        foreach (var point in _profilePoints)
+
+        // Boorlijn (hartlijn) dicht bemonsterd via InterpolateBoreNapAtDistance — de
+        // ZELFDE functie die de dieptepunt-bolletjes hieronder gebruikt. Eerst werd de
+        // lijn als Bezier-spline door slechts de 4 dieptepunten getekend (uniforme
+        // parametrisatie), terwijl de bolletjes een afstand-geparametriseerde Catmull-
+        // Rom gebruikten — bij ongelijk verdeelde dieptepunten (0/25/65/100%) geven die
+        // twee methodes een net iets andere curve, waardoor de bolletjes van de lijn
+        // afdreven. Door dezelfde bron dicht te bemonsteren vallen ze altijd samen.
+        var boreSampleDistances = denseSurfaceRows.Count > 0
+            ? denseSurfaceRows.Select(row => row.Distance).ToList()
+            : _profilePoints.Select(point => point.Distance).ToList();
+        foreach (var distance in boreSampleDistances)
         {
-            surface.Add(X(point));
-            surface.Add(Y(point.Surface));
-            bore.Add(X(point));
-            bore.Add(Y(point.Nap));
-            borePoints.Add(new Point(X(point), Y(point.Nap)));
+            var boreNap = InterpolateBoreNapAtDistance(distance);
+            bore.Add(XDistance(distance));
+            bore.Add(Y(boreNap));
+            borePoints.Add(new Point(XDistance(distance), Y(boreNap)));
+        }
+
+        // Maaiveldlijn dicht bemonsterd langs de hele boorlijn (zelfde bron als de AHN4-
+        // grafiek in stap 4), niet alleen op de 4 dieptepunten.
+        if (denseSurfaceRows.Count > 0)
+        {
+            foreach (var row in denseSurfaceRows)
+            {
+                surface.Add(XDistance(row.Distance));
+                surface.Add(Y(row.Surface));
+            }
+        }
+        else
+        {
+            foreach (var point in _profilePoints)
+            {
+                surface.Add(X(point));
+                surface.Add(Y(point.Surface));
+            }
         }
 
         var boringDiameterMeters = Math.Max(0.075, GetBoringDiameterMillimeters() / 1000d);
         var boreBandThickness = Math.Max(3, boringDiameterMeters * plotHeight / Math.Max(0.1, range));
         AddCanvasPolyline(canvas, "#475569", 2.2, surface.ToArray());
 
-        if (_profileSmoothBore && borePoints.Count >= 3)
+        var boreBand = new Polyline
         {
-            AddCanvasSmoothPath(canvas, "#FDA4AF", boreBandThickness, borePoints, 0.55);
-            AddCanvasSmoothPath(canvas, "#E11D48", 3.2, borePoints, 1.0);
-        }
-        else
+            Stroke = Brush("#FDA4AF"),
+            StrokeThickness = boreBandThickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            Opacity = 0.55
+        };
+        foreach (var point in borePoints)
         {
-            var boreBand = new Polyline
-            {
-                Stroke = Brush("#FDA4AF"),
-                StrokeThickness = boreBandThickness,
-                StrokeStartLineCap = PenLineCap.Round,
-                StrokeEndLineCap = PenLineCap.Round,
-                StrokeLineJoin = PenLineJoin.Round,
-                Opacity = 0.55
-            };
-            foreach (var point in borePoints)
-            {
-                boreBand.Points.Add(point);
-            }
-            canvas.Children.Add(boreBand);
-            AddCanvasPolyline(canvas, "#E11D48", 3.2, bore.ToArray());
+            boreBand.Points.Add(point);
         }
+        canvas.Children.Add(boreBand);
+        AddCanvasPolyline(canvas, "#E11D48", 3.2, bore.ToArray());
 
+        // Alle sample-letters tonen, niet alleen "a/e/j/o" — de live Dwarsprofiel-
+        // grafiek toont ze ook allemaal (DrawProfileEngineeringMarkers).
         foreach (var sample in BuildProfileEngineeringSamples())
         {
             var x = XDistance(sample.Distance);
             var y = Y(sample.BoreNap);
             AddCanvasCircle(canvas, x, y, 3.4, "#64748B", "White", 1);
-            if (sample.Code is "a" or "e" or "j" or "o" || Math.Abs(sample.Distance - maxDistance) < 0.01)
-            {
-                AddCanvasText(canvas, sample.Code, x + 4, y + 7, "#475569", 8.5, FontWeights.Bold);
-            }
+            AddCanvasText(canvas, sample.Code, x + 4, y + 7, "#475569", 8.5, FontWeights.Bold);
         }
 
         // KLIC crossings: dashed guide line + a marker on the bore line, with the
@@ -743,6 +827,24 @@ public partial class MainWindow
             AddCanvasText(canvas, label, X(point) + 6, Y(point.Nap) - 13, "#111827", 9.5, FontWeights.Bold);
         }
 
+        // Segmentafstand + -hoek per stuk boorlijn (bv. "25,9 m -7,8°") — deze stond al
+        // in de live Dwarsprofiel-grafiek maar ontbrak hier in de rapportversie.
+        for (var i = 0; i < _profilePoints.Count - 1; i++)
+        {
+            if (SegmentDistance(i) < 2.5) continue;
+            var a = _profilePoints[i];
+            var b = _profilePoints[i + 1];
+            var midX = (X(a) + X(b)) / 2;
+            var midY = (Y(a.Nap) + Y(b.Nap)) / 2 - 24 - (i % 2) * 18;
+            var angle = SegmentAngle(i);
+            var color = angle < -8 ? "#DC2626" : angle > 8 ? "#16A34A" : "#F97316";
+            var segmentLabel = $"{SegmentDistance(i):N1} m  {angle:+0.0;-0.0;0.0}°";
+            var labelWidth = 16 + segmentLabel.Length * 5.4;
+            var labelLeft = Math.Clamp(midX - labelWidth / 2, left + 2, left + plotWidth - labelWidth - 2);
+            AddCanvasRect(canvas, labelLeft, midY, labelWidth, 18, "#FFFFFF", color, 1);
+            AddCanvasText(canvas, segmentLabel, labelLeft + 6, midY + 3, color, 9.5, FontWeights.Bold);
+        }
+
         var summaryLeft = 20d;
         var summaryTop = plotBottom + 46;
         AddCanvasText(canvas, $"Lengte: {maxDistance:N1} m", summaryLeft, summaryTop, "#334155", 10.5, FontWeights.SemiBold);
@@ -780,7 +882,9 @@ public partial class MainWindow
             return border;
         }
 
-        var samples = BuildProfileEngineeringSamples().Take(12).ToList();
+        // Voorheen .Take(12): bij een langere boorlijn (elke 3 m een sample) vielen dan
+        // stilzwijgend de meeste segmenten buiten het rapport. Toon ze allemaal.
+        var samples = BuildProfileEngineeringSamples();
         var rows = new (string Label, Func<ProfileEngineeringSample, string> Value)[]
         {
             ("Code", sample => sample.Code),
@@ -790,19 +894,33 @@ public partial class MainWindow
             ("Boring NAP", sample => $"{sample.BoreNap:N2}"),
             ("Diepte", sample => $"{sample.Depth:N2}")
         };
-        var grid = new Grid { MinWidth = 620 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
-        foreach (var _ in samples) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(45) });
-        for (var i = 0; i < rows.Length; i++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
-        for (var row = 0; row < rows.Length; row++)
+        // Deze tabel heeft één kolom per sample (elke ~3 m langs de boorlijn), dus bij
+        // een langere boorlijn wordt hij al snel breder dan een A4-pagina. In plaats
+        // van roteren of afkappen: knip de samples op in blokken die wel binnen de
+        // paginabreedte passen, en zet die blokken (elk met de rijlabels herhaald)
+        // onder elkaar — "een kolom erbij beginnen" zodra het niet meer past.
+        const int labelColumnWidth = 100;
+        const int sampleColumnWidth = 45;
+        const int maxGridWidth = 620;
+        var samplesPerBlock = Math.Max(1, (maxGridWidth - labelColumnWidth) / sampleColumnWidth);
+
+        for (var blockStart = 0; blockStart < samples.Count; blockStart += samplesPerBlock)
         {
-            AddProfileEngineeringCell(grid, row, 0, rows[row].Label, true);
-            for (var column = 0; column < samples.Count; column++)
+            var blockSamples = samples.Skip(blockStart).Take(samplesPerBlock).ToList();
+            var grid = new Grid { MinWidth = labelColumnWidth + blockSamples.Count * sampleColumnWidth, Margin = new Thickness(0, blockStart == 0 ? 0 : 10, 0, 0) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(labelColumnWidth) });
+            foreach (var _ in blockSamples) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(sampleColumnWidth) });
+            for (var i = 0; i < rows.Length; i++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
+            for (var row = 0; row < rows.Length; row++)
             {
-                AddProfileEngineeringCell(grid, row, column + 1, rows[row].Value(samples[column]), false);
+                AddProfileEngineeringCell(grid, row, 0, rows[row].Label, true);
+                for (var column = 0; column < blockSamples.Count; column++)
+                {
+                    AddProfileEngineeringCell(grid, row, column + 1, rows[row].Value(blockSamples[column]), false);
+                }
             }
+            panel.Children.Add(grid);
         }
-        panel.Children.Add(grid);
         AddProfileKlicLegendToPanel(panel, GetVisibleKlicProfileCrossings(_profilePoints[^1].Distance));
         border.Child = panel;
         return border;
@@ -1112,10 +1230,57 @@ public partial class MainWindow
         ProfileCanvas.Children.Add(border);
     }
 
+    // Klikken op een leeg stuk van de Dwarsprofiel-grafiek voegt een nieuw dieptepunt
+    // toe op die positie (afstand + NAP-hoogte). Klikken op een bestaand dieptepunt-
+    // bolletje (zie de MouseLeftButtonDown hierboven in DrawProfileCanvas) verwijdert
+    // dat punt in plaats van een nieuw punt toe te voegen — die handler zet
+    // e.Handled = true zodat dit hier niet ook nog eens een punt toevoegt.
+    private void ProfileCanvas_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_selectedStep?.Number != ProfileStepNumber || _profilePoints.Count < 2) return;
+        if (!_profileCanvasInteractive || _profileCanvasPlotWidth <= 0 || _profileCanvasPlotHeight <= 0) return;
+
+        var position = e.GetPosition(ProfileCanvas);
+        var distance = Math.Clamp(
+            (position.X - _profileCanvasPlotLeft) / _profileCanvasPlotWidth * _profileCanvasTotal,
+            0,
+            _profileCanvasTotal);
+        var nap = _profileCanvasMaxY - (position.Y - _profileCanvasPlotTop) / _profileCanvasPlotHeight * (_profileCanvasMaxY - _profileCanvasMinY);
+
+        // Niet vlak bij intrede/uittrede of een bestaand punt toevoegen (die heeft al
+        // zijn eigen klikbare bolletje om te verwijderen).
+        if (distance <= _profilePoints[0].Distance + 0.5 || distance >= _profilePoints[^1].Distance - 0.5) return;
+        if (_profilePoints.Any(point => Math.Abs(point.Distance - distance) < 1.0)) return;
+
+        var traceRows = GetTraceRowsForProfile();
+        var traceDistances = BuildTraceDistances(traceRows);
+        if (traceRows.Count < 2) return;
+
+        var xy = InterpolateTracePoint(traceRows, traceDistances, distance);
+        var total = Math.Max(1, _profilePoints[^1].Distance);
+        var surface = GetProfileSurfaceNap(xy.X, xy.Y, distance, total, _profilePoints.Count);
+        var depth = Math.Max(0, surface - nap);
+        _profilePoints.Add(new ProfilePointRow(0, "Dieptepunt", xy.X, xy.Y, Math.Round(distance, 2), Math.Round(depth, 2), Math.Round(surface - depth, 2), Math.Round(surface, 2)));
+        RecalculateProfileRolesAndNap();
+        _profileHasUnsavedChanges = true;
+        _profileGeometryDirty = false;
+        RenderProfilePanel();
+        OutputText.Text = $"Dieptepunt toegevoegd\n\nPositie: {distance:N1} m\nDiepte: {depth:N2} m.";
+    }
+
     private void DrawProfileCanvas()
     {
         var viewportWidth = ProfileCanvasViewport.ActualWidth > 40 ? ProfileCanvasViewport.ActualWidth - 4 : 760;
-        var width = Math.Clamp(viewportWidth, 620d, _profileExpanded ? 1080d : 920d);
+        // Geef elke meter boorlijn een vaste hoeveelheid breedte zodat kruisingen die
+        // dicht bij elkaar liggen (bv. bij intrede/uittrede) niet meer op elkaar
+        // geplakt zitten. De canvas mag daardoor breder worden dan de zichtbare
+        // ScrollViewer (HorizontalScrollBarVisibility="Auto"), zodat je er doorheen
+        // kan scrollen in plaats van dat alles ingeklemd wordt weergegeven.
+        var traceLengthForWidth = _profilePoints.Count > 0 ? Math.Max(1, _profilePoints[^1].Distance) : 1;
+        const double pixelsPerMeter = 9d;
+        var desiredWidth = traceLengthForWidth * pixelsPerMeter + 176;
+        var maxWidth = _profileExpanded ? 2600d : 1800d;
+        var width = Math.Clamp(desiredWidth, Math.Max(620d, viewportWidth), maxWidth);
         var height = CalculateProfileCanvasHeight(width, _profileExpanded);
         ProfileCanvas.Width = width;
         ProfileCanvas.Height = height;
@@ -1140,8 +1305,17 @@ public partial class MainWindow
         var total = Math.Max(1, _profilePoints[^1].Distance);
         var klicCrossings = GetVisibleKlicProfileCrossings(total);
         var klicNaps = klicCrossings.Select(crossing => crossing.Nap).ToList();
+        // The maaiveldlijn is sampled densely along the whole boorlijn (see below), not
+        // just at the 4 dieptepunten, so the verticale schaal must take its min/max mee
+        // — anders wordt het echte maaiveldverloop afgeknipt bij een gestuurde boring.
+        var denseSurfaceRows = GetAhnSurfaceProfileRows(total);
         var profileMin = Math.Min(_profilePoints.Min(p => p.Nap), _profilePoints.Min(p => p.Surface));
         var profileMax = Math.Max(_profilePoints.Max(p => p.Nap), _profilePoints.Max(p => p.Surface));
+        if (denseSurfaceRows.Count > 0)
+        {
+            profileMin = Math.Min(profileMin, denseSurfaceRows.Min(row => row.Surface));
+            profileMax = Math.Max(profileMax, denseSurfaceRows.Max(row => row.Surface));
+        }
         if (klicNaps.Count > 0)
         {
             profileMin = Math.Min(profileMin, klicNaps.Min());
@@ -1157,6 +1331,21 @@ public partial class MainWindow
         double X(ProfilePointRow point) => XDistance(point.Distance);
         double Y(double nap) => top + plotHeight * (maxY - nap) / (maxY - minY);
         var labelBounds = new List<Rect>();
+
+        // Onthouden voor ProfileCanvas_OnMouseLeftButtonDown (klikken op de grafiek om
+        // een dieptepunt toe te voegen) — dezelfde schaal als hierboven, maar dan
+        // omgekeerd (canvaspositie -> afstand/NAP). Alleen geldig voor de eenvoudige
+        // (niet-kaart-uitgelijnde) laag-out die de Dwarsprofiel-tab gebruikt; de kaart
+        // is daar altijd verborgen, dus effectiveAligned is hier in de praktijk altijd
+        // false en FallbackX is de daadwerkelijk gebruikte mapping.
+        _profileCanvasInteractive = !effectiveAligned;
+        _profileCanvasPlotLeft = left;
+        _profileCanvasPlotTop = top;
+        _profileCanvasPlotWidth = plotWidth;
+        _profileCanvasPlotHeight = plotHeight;
+        _profileCanvasMinY = minY;
+        _profileCanvasMaxY = maxY;
+        _profileCanvasTotal = total;
 
         ProfileCanvas.Children.Add(new Rectangle { Width = width, Height = height, Fill = Brushes.White });
         DrawBgtSurfaceStrip(XDistance, surfaceStripTop, surfaceStripHeight, total, left, plotWidth);
@@ -1184,13 +1373,39 @@ public partial class MainWindow
         };
         var bore = new Polyline { Stroke = Brush("#F97316"), StrokeThickness = 3, StrokeDashArray = new DoubleCollection([5, 3]) };
         var borePoints = new List<Point>();
-        foreach (var point in _profilePoints)
+        // Dicht bemonsterd via InterpolateBoreNapAtDistance — dezelfde functie als de
+        // dieptepunt-bolletjes (DrawProfileEngineeringMarkers) verderop gebruiken. De
+        // lijn werd voorheen als Bezier-spline door alleen de 4 dieptepunten getekend
+        // (uniforme parametrisatie) terwijl de bolletjes een afstand-geparametriseerde
+        // Catmull-Rom gebruikten; bij ongelijk verdeelde punten (0/25/65/100%) week dat
+        // net genoeg af dat de bolletjes niet meer op de lijn lagen.
+        var boreSampleDistances = denseSurfaceRows.Count > 0
+            ? denseSurfaceRows.Select(row => row.Distance).ToList()
+            : _profilePoints.Select(point => point.Distance).ToList();
+        foreach (var distance in boreSampleDistances)
         {
-            var borePoint = new Point(X(point), Y(point.Nap));
-            surface.Points.Add(new Point(X(point), Y(point.Surface)));
+            var borePoint = new Point(XDistance(distance), Y(InterpolateBoreNapAtDistance(distance)));
             boreBand.Points.Add(borePoint);
             bore.Points.Add(borePoint);
             borePoints.Add(borePoint);
+        }
+
+        // Maaiveldlijn dicht bemonsterd langs de hele boorlijn (zelfde bron als de AHN4-
+        // grafiek in stap 4), niet alleen op de 4 dieptepunten — anders klopt de diepte
+        // t.o.v. het echte maaiveld niet over het volledige tracé bij een gestuurde boring.
+        if (denseSurfaceRows.Count > 0)
+        {
+            foreach (var row in denseSurfaceRows)
+            {
+                surface.Points.Add(new Point(XDistance(row.Distance), Y(row.Surface)));
+            }
+        }
+        else
+        {
+            foreach (var point in _profilePoints)
+            {
+                surface.Points.Add(new Point(X(point), Y(point.Surface)));
+            }
         }
         ProfileCanvas.Children.Add(surface);
         DrawMachineSideSymbolOnProfile(XDistance, Y);
@@ -1203,21 +1418,49 @@ public partial class MainWindow
             var y = Y(crossing.Nap);
             if (showKlicBuffer)
             {
-                var radiusX = Math.Max(8, plotWidth / total);
-                var radiusY = Math.Max(8, plotHeight / Math.Max(1, maxY - minY));
-                var buffer = new Ellipse
+                // "KLIC bufferzone 1 m links/rechts" is a horizontal veiligheidszone
+                // langs de boorlijn (1 m aan weerszijden), geen verticale. Teken dit als
+                // een horizontale tolerantie-indicator (streeplijn + twee verticale
+                // eindstreepjes op exact -1 m en +1 m), zodat direct duidelijk is dat de
+                // KLIC-kruising tot 1 m naar links of rechts kan afwijken — in plaats van
+                // een vage ovaal/doosje zonder duidelijke schaal.
+                var bufferHalfWidth = Math.Max(6, plotWidth / total);
+                const double tickHeight = 12;
+                var bufferBrush = Brush(crossing.Color);
+                var horizontalLine = new Line
                 {
-                    Width = radiusX * 2,
-                    Height = radiusY * 2,
-                    Fill = Brushes.Transparent,
-                    Stroke = Brush(crossing.Color),
+                    X1 = x - bufferHalfWidth,
+                    X2 = x + bufferHalfWidth,
+                    Y1 = y,
+                    Y2 = y,
+                    Stroke = bufferBrush,
                     StrokeThickness = 1.5,
                     StrokeDashArray = new DoubleCollection([3, 3]),
-                    Opacity = 0.8
+                    Opacity = 0.85
                 };
-                Canvas.SetLeft(buffer, x - radiusX);
-                Canvas.SetTop(buffer, y - radiusY);
-                ProfileCanvas.Children.Add(buffer);
+                var leftTick = new Line
+                {
+                    X1 = x - bufferHalfWidth,
+                    X2 = x - bufferHalfWidth,
+                    Y1 = y - tickHeight / 2,
+                    Y2 = y + tickHeight / 2,
+                    Stroke = bufferBrush,
+                    StrokeThickness = 1.5,
+                    Opacity = 0.85
+                };
+                var rightTick = new Line
+                {
+                    X1 = x + bufferHalfWidth,
+                    X2 = x + bufferHalfWidth,
+                    Y1 = y - tickHeight / 2,
+                    Y2 = y + tickHeight / 2,
+                    Stroke = bufferBrush,
+                    StrokeThickness = 1.5,
+                    Opacity = 0.85
+                };
+                ProfileCanvas.Children.Add(horizontalLine);
+                ProfileCanvas.Children.Add(leftTick);
+                ProfileCanvas.Children.Add(rightTick);
             }
 
             var marker = new Ellipse
@@ -1277,16 +1520,12 @@ public partial class MainWindow
             crossingIndex++;
         }
 
-        if (_profileSmoothBore && borePoints.Count >= 3)
-        {
-            ProfileCanvas.Children.Add(CreateSmoothProfilePath(borePoints, Brush("#FDA4AF"), boreBandThickness, null, 0.55));
-            ProfileCanvas.Children.Add(CreateSmoothProfilePath(borePoints, Brush("#F97316"), 3, new DoubleCollection([5, 3]), 1));
-        }
-        else
-        {
-            ProfileCanvas.Children.Add(boreBand);
-            ProfileCanvas.Children.Add(bore);
-        }
+        // De dichte bemonstering hierboven (InterpolateBoreNapAtDistance, met Catmull-
+        // Rom-smoothing als "Boorlijn vloeiend" aanstaat) is zelf al vloeiend genoeg; een
+        // aparte Bezier-spline (CreateSmoothProfilePath) door dezelfde punten is niet
+        // meer nodig en zou de dieptepunt-bolletjes weer van de lijn kunnen laten afwijken.
+        ProfileCanvas.Children.Add(boreBand);
+        ProfileCanvas.Children.Add(bore);
 
         DrawProfileEngineeringMarkers(XDistance, Y);
         DrawProfileAngleCallout("Intrede", SegmentAngle(0), X(_profilePoints[0]), Y(_profilePoints[0].Nap), 24, -30);
@@ -1353,14 +1592,34 @@ public partial class MainWindow
         {
             var x = X(point);
             var y = Y(point.Nap);
+            var isDeletable = point.Index > 1 && point.Index < _profilePoints.Count;
             var dot = new Ellipse
             {
                 Width = 13,
                 Height = 13,
                 Fill = point.Index == 1 ? Brush("#4B5563") : point.Index == _profilePoints.Count ? Brush("#DC2626") : Brush("#F97316"),
                 Stroke = Brushes.White,
-                StrokeThickness = 2
+                StrokeThickness = 2,
+                Cursor = isDeletable ? Cursors.Hand : Cursors.Arrow
             };
+            if (isDeletable)
+            {
+                dot.ToolTip = "Klik om dit dieptepunt te verwijderen";
+                var pointIndex = point.Index;
+                dot.MouseLeftButtonDown += (_, args) =>
+                {
+                    var removeAt = _profilePoints.FindIndex(candidate => candidate.Index == pointIndex);
+                    if (removeAt > 0 && removeAt < _profilePoints.Count - 1)
+                    {
+                        _profilePoints.RemoveAt(removeAt);
+                        _profileGeometryDirty = true;
+                        _profileHasUnsavedChanges = true;
+                        RenderProfilePanel();
+                        OutputText.Text = "Dieptepunt verwijderd.";
+                    }
+                    args.Handled = true;
+                };
+            }
             Canvas.SetLeft(dot, x - 6.5);
             Canvas.SetTop(dot, y - 6.5);
             ProfileCanvas.Children.Add(dot);
@@ -1416,24 +1675,24 @@ public partial class MainWindow
         LoadProfileVisualSettings();
         if (!regenerate && _profilePoints.Count >= 2) return;
 
-        if (!regenerate)
-        {
-            var loaded = ReadStoredProfile(
-                _projects.GetStepData(_selectedProject.Id, ProfileStepNumber, "diepteprofiel_3d") ??
-                _projects.GetStepData(_selectedProject.Id, LegacyProfileStepNumber, "diepteprofiel_3d"));
-            if (loaded.Count >= 2)
-            {
-                _profilePoints = RefreshProfileSurfaces(loaded, preferStoredFallback: true);
-                _profileHasUnsavedChanges = false;
-                _profileGeometryDirty = false;
-                return;
-            }
-        }
-
         EnsureStoredBoreTraceLoaded();
         var traceRows = GetTraceRowsForProfile();
         if (traceRows.Count < 2)
         {
+            if (!regenerate)
+            {
+                var loadedWithoutTrace = ReadStoredProfile(
+                    _projects.GetStepData(_selectedProject.Id, ProfileStepNumber, "diepteprofiel_3d") ??
+                    _projects.GetStepData(_selectedProject.Id, LegacyProfileStepNumber, "diepteprofiel_3d"));
+                if (loadedWithoutTrace.Count >= 2)
+                {
+                    _profilePoints = RefreshProfileSurfaces(loadedWithoutTrace, preferStoredFallback: true);
+                    _profileHasUnsavedChanges = false;
+                    _profileGeometryDirty = false;
+                    return;
+                }
+            }
+
             _profilePoints = [];
             return;
         }
@@ -1447,6 +1706,28 @@ public partial class MainWindow
         }
 
         var total = Math.Max(1, distances[^1]);
+
+        if (!regenerate)
+        {
+            var loaded = ReadStoredProfile(
+                _projects.GetStepData(_selectedProject.Id, ProfileStepNumber, "diepteprofiel_3d") ??
+                _projects.GetStepData(_selectedProject.Id, LegacyProfileStepNumber, "diepteprofiel_3d"));
+            // The stored dwarsprofiel can predate later edits that lengthened the
+            // boorlijn (bv. opgeslagen op 54,6 m terwijl de boorlijn inmiddels 102,7 m
+            // is) — the maaiveldlijn (dense-sampled straight from the actual trace) then
+            // runs well past where the opgeslagen boorlijn/dieptepunten stoppen, which
+            // looks like the two disagree. Treat a stored profile whose end distance
+            // meaningfully undershoots the current boorlijn as stale and regenerate it
+            // against the actual trace instead of silently keeping the shorter one.
+            var isStale = loaded.Count >= 2 && total - loaded[^1].Distance > 0.5;
+            if (loaded.Count >= 2 && !isStale)
+            {
+                _profilePoints = RefreshProfileSurfaces(loaded, preferStoredFallback: true);
+                _profileHasUnsavedChanges = false;
+                _profileGeometryDirty = false;
+                return;
+            }
+        }
         var depthDistances = new[] { 0, total * 0.25, total * 0.65, total };
         _profilePoints = depthDistances.Select((distance, index) =>
         {
@@ -1504,21 +1785,110 @@ public partial class MainWindow
             : $"Geen boorlijn beschikbaar. Teken en sla eerst een boorlijn op in stap {DisplayStepNumber(3)}.1.";
     }
 
+    // Samples the AHN4 maaiveldhoogte densely along the actual boorlijn (every ~3 m,
+    // plus every trace vertex) instead of reusing the 4 fixed cross-section profile
+    // points (0%/25%/65%/100%) from EnsureProfilePoints. Those 4 points exist for the
+    // dwarsprofiel-diepteberekening in stap 7, not for an accurate terrain profile, and
+    // reusing them here produced an almost straight-line "maaiveld" over the whole
+    // trace instead of following the real AHN4 hoogteverloop.
+    private IReadOnlyList<(double Distance, double Surface, double BoreNap)>? _cachedAhnSurfaceProfileRows;
+    private string? _cachedAhnSurfaceProfileSignature;
+
     private IReadOnlyList<(double Distance, double Surface, double BoreNap)> GetAhnSurfaceProfileRows(double traceLength)
     {
         EnsureProfilePoints();
-        if (_profilePoints.Count >= 2)
+        var traceRows = GetTraceRowsForProfile();
+        if (traceRows.Count < 2) return [];
+
+        // DrawProfileCanvas/CreateReportProfileCanvas re-render on almost every UI
+        // interaction (zoom, uitklappen, resize) — without this cache, every one of
+        // those redid the full dense sampling below, and each sample that missed the
+        // AHN4 point cache is a synchronous, blocking PDOK request. That repeated,
+        // uncached cost is what made the chart briefly render in a corrupted/half-drawn
+        // state. Only recompute when the actual boorlijn/trace changes.
+        var signature = string.Join("|",
+            _currentBoreTraceJson?.GetHashCode(StringComparison.Ordinal).ToString(CultureInfo.InvariantCulture) ?? "",
+            traceRows.Count.ToString(CultureInfo.InvariantCulture),
+            traceLength.ToString("F1", CultureInfo.InvariantCulture));
+        if (_cachedAhnSurfaceProfileRows is not null && string.Equals(_cachedAhnSurfaceProfileSignature, signature, StringComparison.Ordinal))
         {
-            return _profilePoints
-                .OrderBy(point => point.Distance)
-                .Select(point => (
-                    Distance: Math.Clamp(point.Distance, 0, Math.Max(1, traceLength)),
-                    Surface: point.Surface,
-                    BoreNap: point.Nap))
-                .ToArray();
+            return _cachedAhnSurfaceProfileRows;
         }
 
-        return [];
+        var distances = new List<double> { 0 };
+        for (var i = 1; i < traceRows.Count; i++)
+        {
+            var previous = traceRows[i - 1];
+            var current = traceRows[i];
+            distances.Add(distances[^1] + Math.Sqrt(Math.Pow(current.X - previous.X, 2) + Math.Pow(current.Y - previous.Y, 2)));
+        }
+
+        var traceTotal = distances[^1];
+        var total = Math.Max(1, Math.Max(traceLength, traceTotal));
+
+        // 0,5 m geeft de meest nauwkeurige maaiveldlijn, maar elke nieuwe sample-positie
+        // is een synchrone AHN4-WMS-aanroep (TryFetchAhn4DtmSurfaceNap) — bij hele lange
+        // boorlijnen zou dat honderden/duizenden blokkerende requests kunnen geven. Cap
+        // daarom het aantal samples (max ~400) door de stap te vergroten boven ~200 m.
+        const double preferredStepMeters = 0.5;
+        const double maxSamples = 400;
+        var stepMeters = Math.Max(preferredStepMeters, traceTotal / maxSamples);
+        var sampleDistances = new SortedSet<double> { 0, traceTotal };
+        for (var distance = stepMeters; distance < traceTotal; distance += stepMeters)
+        {
+            sampleDistances.Add(distance);
+        }
+        foreach (var vertexDistance in distances)
+        {
+            sampleDistances.Add(vertexDistance);
+        }
+
+        var rows = sampleDistances.Select((distance, index) =>
+        {
+            var xy = InterpolateTracePoint(traceRows, distances, distance);
+            var surface = GetProfileSurfaceNap(xy.X, xy.Y, distance, total, index);
+            return (Distance: distance, Surface: surface, BoreNap: InterpolateBoreNapAtDistance(distance));
+        }).ToArray();
+
+        DespikeAhnSurfaceRows(rows);
+
+        _cachedAhnSurfaceProfileSignature = signature;
+        _cachedAhnSurfaceProfileRows = rows;
+        return rows;
+    }
+
+    // Een enkele foutieve AHN4-sample (bv. een WMS-glitch, of een brug/duiker die
+    // per ongeluk in het "maaiveld"-model lekt) kan een scherpe piek geven die met
+    // 0,5 m-bemonstering meteen opvalt tussen verder vlakke buurpunten. Vervang een
+    // sample die sterk afwijkt van de mediaan van zijn buren door die mediaan, zodat
+    // een geïsoleerde uitschieter het profiel en de diepteberekening niet verstoort.
+    private static void DespikeAhnSurfaceRows((double Distance, double Surface, double BoreNap)[] rows)
+    {
+        if (rows.Length < 5) return;
+
+        const int window = 2;
+        const double spikeThresholdMeters = 1.0;
+        var original = rows.Select(row => row.Surface).ToArray();
+
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var lo = Math.Max(0, i - window);
+            var hi = Math.Min(rows.Length - 1, i + window);
+            var neighbors = new List<double>();
+            for (var j = lo; j <= hi; j++)
+            {
+                if (j == i) continue;
+                neighbors.Add(original[j]);
+            }
+            if (neighbors.Count == 0) continue;
+
+            neighbors.Sort();
+            var median = neighbors[neighbors.Count / 2];
+            if (Math.Abs(original[i] - median) > spikeThresholdMeters)
+            {
+                rows[i] = (rows[i].Distance, median, rows[i].BoreNap);
+            }
+        }
     }
 
     private double GetProfileSurfaceNap(double x, double y, double distance, double total, int index, double? storedFallback = null)
@@ -1637,7 +2007,7 @@ public partial class MainWindow
                             var distanceOnTrace = traceDistances[traceIndex - 1] + traceSegmentLength * traceRatio;
                             var normalizedDistance = profileTotal * distanceOnTrace / Math.Max(1, traceDistances[^1]);
                             var depth = KlicThemeDepth(theme);
-                            var nap = InterpolateSurfaceNap(normalizedDistance) - depth;
+                            var nap = InterpolateSurfaceNap(normalizedDistance, profileTotal) - depth;
                             var label = BuildKlicProfileLabel(feature, theme);
                             crossings.Add(new KlicProfileCrossing(
                                 Math.Round(normalizedDistance, 2),
@@ -1684,9 +2054,6 @@ public partial class MainWindow
     private static bool IsProfileReportSubstep(int stepNumber, string substepNumber) =>
         stepNumber == ProfileStepNumber &&
         string.Equals(substepNumber, "7.1", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsSurfaceProfileReportSubstep(int stepNumber, string substepNumber) =>
-        stepNumber == 4 && string.Equals(substepNumber, "4.2", StringComparison.OrdinalIgnoreCase);
 
     private sealed record KlicProfileCrossing(double Distance, double Nap, string Label, string Theme, string Color, double Depth, bool IsIndicativeDepth);
 
@@ -2262,6 +2629,47 @@ public partial class MainWindow
         var workDrawing = _selectedStep?.Number == WorkDrawingStepNumber;
         SendMapMessage($"{{\"type\":\"profileMode\",\"enabled\":{enabled.ToString().ToLowerInvariant()}}}");
         SendMapMessage($"{{\"type\":\"workDrawingMode\",\"enabled\":{workDrawing.ToString().ToLowerInvariant()},\"scale\":{_workDrawingScale}}}");
+
+        if (enabled)
+        {
+            SendProfilePointLabelsToMap();
+        }
+        else
+        {
+            ClearProfilePointLabelsFromMap();
+        }
+    }
+
+    // Toont de dieptepunten (S/2/3/E) als kleine labels bovenop de GIS-kaart, op de
+    // exacte RD-positie van elk profielpunt — zowel live (stap 7.1 GIS kaart) als in
+    // de vastgezette rapportcapture (CaptureLiveMapForReportPreviewAsync).
+    private void SendProfilePointLabelsToMap()
+    {
+        if (!_mapLibreLoaded || StepThreeMapView.CoreWebView2 is null) return;
+        if (_profilePoints.Count == 0)
+        {
+            ClearProfilePointLabelsFromMap();
+            return;
+        }
+
+        var pointCount = _profilePoints.Count;
+        var labels = _profilePoints
+            .Select(point =>
+            {
+                var wgs = RdToWgs84(point.X, point.Y);
+                var code = point.Index == 1 ? "S" : point.Index == pointCount ? "E" : point.Index.ToString(CultureInfo.InvariantCulture);
+                return new { code, lon = wgs[0], lat = wgs[1] };
+            })
+            .Where(label => double.IsFinite(label.lon) && double.IsFinite(label.lat))
+            .ToList();
+
+        SendMapMessage(JsonSerializer.Serialize(new { type = "profilePointLabels", labels }, JsonOptions));
+    }
+
+    private void ClearProfilePointLabelsFromMap()
+    {
+        if (!_mapLibreLoaded || StepThreeMapView.CoreWebView2 is null) return;
+        SendMapMessage(JsonSerializer.Serialize(new { type = "profilePointLabels", labels = Array.Empty<object>() }, JsonOptions));
     }
 
     private static double SoundingProfileDepthY(double depth, double plotTop, double plotHeight, double endDepth)

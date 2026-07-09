@@ -53,10 +53,10 @@ public sealed class GisMapWorkspaceRegistry
             // Stap 3 levert meerdere rapportbeelden op (OSM-cover, BAG, luchtfoto, KLIC-
             // varianten); alle andere stappen vergrendelen één enkel kaartbeeld.
             [3] = Create(3, GisMapWorkspacePurpose.Boreline, sendsTrace: true, multiVariantReportCapture: true),
-            [4] = Create(4, GisMapWorkspacePurpose.SurfaceAnalysis, requiresScopedState: false, sendsTrace: true, sendsSurfaceAnalysis: true),
+            [4] = Create(4, GisMapWorkspacePurpose.SurfaceAnalysis, sendsTrace: true, sendsSurfaceAnalysis: true),
             [5] = Create(5, GisMapWorkspacePurpose.Environment),
             [6] = Create(6, GisMapWorkspacePurpose.Subsurface, sendsTrace: true),
-            [_profileStepNumber] = Create(_profileStepNumber, GisMapWorkspacePurpose.Profile, requiresScopedState: false, sendsTrace: true),
+            [_profileStepNumber] = Create(_profileStepNumber, GisMapWorkspacePurpose.Profile, sendsTrace: true),
             [8] = Create(8, GisMapWorkspacePurpose.Machine),
             [9] = Create(9, GisMapWorkspacePurpose.Soundings),
             [_threeDStepNumber] = Create(_threeDStepNumber, GisMapWorkspacePurpose.ThreeD)
@@ -89,15 +89,23 @@ public sealed class GisMapWorkspaceRegistry
     {
         if (_definitions.TryGetValue(stepNumber, out var definition)) return definition;
 
+        // A step outside the map-workspace range has no map at all, so per-substep map
+        // scoping is meaningless there — this is the one legitimate case without scoped
+        // state. Every *map* workspace step, registered or not, is scoped; see Create().
         return IsMapWorkspaceStep(stepNumber)
             ? Create(stepNumber, GisMapWorkspacePurpose.Generic)
-            : Create(stepNumber, GisMapWorkspacePurpose.Generic, requiresScopedState: false, supportsReportLock: false, supportsLiveCapture: false);
+            : CreateNonMapWorkspace(stepNumber);
     }
 
+    // RULE: every map-workspace step scopes its map state (layers, camera, report lock,
+    // live capture) per substep — no exceptions. This is what keeps two substeps of the
+    // same step (e.g. 4.2 vs 4.3) from silently overwriting each other's layer choices,
+    // camera position and locked report image. Do not add a "requiresScopedState: false"
+    // escape hatch back here for a map-bearing step; if a step's substeps should share
+    // one map view, that is a product decision to revisit deliberately, not a default.
     private static GisMapWorkspaceDefinition Create(
         int stepNumber,
         GisMapWorkspacePurpose purpose,
-        bool requiresScopedState = true,
         bool supportsReportLock = true,
         bool supportsLiveCapture = true,
         bool sendsTrace = false,
@@ -106,12 +114,23 @@ public sealed class GisMapWorkspaceRegistry
         new(
             stepNumber,
             purpose,
-            requiresScopedState,
+            RequiresScopedState: true,
             supportsReportLock,
             supportsLiveCapture,
             sendsTrace,
             sendsSurfaceAnalysis,
             multiVariantReportCapture);
+
+    private static GisMapWorkspaceDefinition CreateNonMapWorkspace(int stepNumber) =>
+        new(
+            stepNumber,
+            GisMapWorkspacePurpose.Generic,
+            RequiresScopedState: false,
+            SupportsReportLock: false,
+            SupportsLiveCapture: false,
+            SendsTraceBeforeCapture: false,
+            SendsSurfaceAnalysisBeforeCapture: false,
+            HasMultiVariantReportCapture: false);
 
     private static string? BuildContextKey(int stepNumber, PrescanSubstep? selectedSubstep, GisMapWorkspaceDefinition definition)
     {

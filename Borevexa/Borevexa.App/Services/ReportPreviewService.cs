@@ -320,6 +320,13 @@ public sealed class ReportPreviewService
         if (!scopedDataKey.Equals(ReportLockDataKey, StringComparison.OrdinalIgnoreCase))
         {
             _projects.SaveStepData(projectId, stepNumber, scopedDataKey, json);
+            // A scoped substep lock/unlock must never also overwrite the shared,
+            // unscoped legacy key — other substeps of the same step (which may briefly
+            // fall back to that legacy key, e.g. before their own substep selection is
+            // set) would otherwise inherit this substep's lock state. MapStateService.
+            // SaveStepMapState already returns early here; this sibling method was
+            // missing that return, causing exactly that cross-substep pollution.
+            return;
         }
 
         _projects.SaveStepData(projectId, stepNumber, ReportLockDataKey, json);

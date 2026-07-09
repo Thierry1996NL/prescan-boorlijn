@@ -155,6 +155,76 @@ public sealed class GisLayerStateService
         SetAll(BgtSurfaces, true);
     }
 
+    // Dwarsprofiel (stap 7.2) GIS-kaart: luchtfoto als ondergrond + KLIC zichtbaar, zodat
+    // de vastgezette kaartcapture in het rapport direct de boorlijn tegen de echte
+    // luchtfoto en kabels/leidingen toont, in plaats van de kale BRT-ondergrond zonder
+    // KLIC die hier voorheen standaard stond.
+    public void ApplyProfileMapDefaults()
+    {
+        BaseLayer = "pdok-aerial";
+        foreach (var key in Overlays.Keys.ToList())
+        {
+            Overlays[key] = false;
+        }
+
+        Overlays["baseMap"] = true;
+        Overlays["parcels"] = true;
+        Overlays["klic"] = true;
+        Overlays["klicBuffer"] = true;
+        Overlays["boreTrace"] = true;
+        Overlays["boreTraceInfo"] = false;
+        Overlays["boreTraceNumbers"] = false;
+        Overlays["boreTraceLengths"] = false;
+
+        SetAll(ProjectLayers, true);
+        SetAll(KlicThemes, true);
+        SetAll(BgtSurfaces, true);
+    }
+
+    // Substep 4.3 (AHN4/maaiveld hoogte bepalen) is a focused view: only the boorlijn
+    // and the AHN4-maaiveldhoogtekaart, nothing else. Safe to mutate the shared
+    // dictionary here because step 4 now has per-substep scoped map state (see
+    // GisMapWorkspaceRegistry) — this only ever gets saved under 4.3's own context.
+    public void ApplyAhn4HeightMapDefaults()
+    {
+        BaseLayer = "pdok-brt";
+        foreach (var key in Overlays.Keys.ToList())
+        {
+            Overlays[key] = false;
+        }
+
+        Overlays["baseMap"] = true;
+        Overlays["ahn4Dtm"] = true;
+        Overlays["boreTrace"] = true;
+        Overlays["boreTraceInfo"] = false;
+        Overlays["boreTraceNumbers"] = false;
+        Overlays["boreTraceLengths"] = false;
+
+        SetAll(ProjectLayers, false);
+        SetAll(KlicThemes, false);
+        SetAll(BgtSurfaces, false);
+    }
+
+    // Guards against stale scoped map_state rows saved for substep 7.2 before
+    // ApplyProfileMapDefaults existed (or leaked in from another step): forces the BRO
+    // groundwater/soil/geomorphology WMS overlays off even if a persisted JSON blob still
+    // has them set to true. Those layers are near-opaque choropleth fills covering the
+    // whole viewport (bro-grondwaterspiegeldiepte in particular renders as a solid dark
+    // blue/navy fill) and were mistaken for a broken base-layer render.
+    public void NormalizeProfileMapState()
+    {
+        Overlays["ahn4Dtm"] = false;
+        Overlays["ahn4Dsm"] = false;
+        Overlays["broGeomorphology"] = false;
+        Overlays["broSoilMap"] = false;
+        Overlays["broGroundwaterGhg"] = false;
+        Overlays["broGroundwaterGlg"] = false;
+        Overlays["broGroundwaterGvg"] = false;
+        Overlays["broGroundwaterGt"] = false;
+        Overlays["broGroundwaterDocumentation"] = false;
+        Overlays["baseMap"] = true;
+    }
+
     public void NormalizeSurfaceAnalysisMapState()
     {
         foreach (var key in new[]

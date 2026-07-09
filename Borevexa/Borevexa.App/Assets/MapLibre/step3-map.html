@@ -218,6 +218,25 @@
       padding: 3px 6px;
       box-shadow: 0 1px 5px rgba(15, 23, 42, .24);
     }
+    .trace-label.profile-point {
+      border-color: #F97316;
+      background: #ffffff;
+      color: #9A3412;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 2px 6px;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, .2);
+    }
+    .trace-label.profile-point-dot {
+      width: 9px;
+      height: 9px;
+      padding: 0;
+      border-radius: 999px;
+      background: #F97316;
+      border-color: #ffffff;
+      border-width: 2px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, .3);
+    }
     .machine-symbol-layer {
       position: absolute;
       inset: 0;
@@ -343,6 +362,7 @@
     const overlays = { parcels: false, buildings: false, addresses: false, bgt: true, bagImport: true, ahn4Dtm: true, ahn4Dsm: false, broGeomorphology: false, broSoilMap: false, broGroundwaterGhg: false, broGroundwaterGlg: false, broGroundwaterGvg: false, broGroundwaterGt: false, broGroundwaterDocumentation: false, klic: true, klicBuffer: true, designImport: true, customImport: true };
     const klicThemes = {};
     let klicCrossingLabels = [];
+    let profilePointLabels = [];
     const bgtSurfaces = { asfalt: true, groenstrook: true, water: true, onverhard: true, bebouwing: true, spoor: true, overig: true };
     let traceEnabled = false;
     let traceDrawing = false;
@@ -1696,6 +1716,12 @@
           addMachineItem(event.lngLat);
           return;
         }
+        // Terwijl een boorlijn wordt getekend mag een klik vlak op/over een KLIC- of
+        // BGT-lijn nooit een info-popup openen: die popup blijft op de kaart staan en
+        // vangt daarna kliks af, waardoor het tekenen van de boorlijn lijkt te
+        // "stoppen". Laat de klik in dat geval gewoon doorlopen naar de generieke
+        // kaartklik, die het punt aan de boorlijn toevoegt.
+        if (traceEnabled && traceDrawing) return;
         if (isMapToolInteracting() || (machinesEnabled && !featureInfoMode) || !featureInfoMode) return;
         const feature = event.features && event.features[0];
         if (!feature) return;
@@ -1706,8 +1732,11 @@
         if (layerType === "KLIC" && !geometryType.includes("LineString")) return;
         sendSelectedFeature(feature, event.lngLat);
       });
-      map.on("mouseenter", layerId, () => { if (!isMapToolInteracting()) map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", layerId, () => { if (!isMapToolInteracting()) map.getCanvas().style.cursor = activeMapTool === "select" ? "grab" : ""; });
+      // Niet de teken-cursor overschrijven met "pointer" terwijl een boorlijn wordt
+      // getekend — anders lijkt het net alsof tekenen stopt zodra de cursor over een
+      // KLIC/BGT-lijn beweegt.
+      map.on("mouseenter", layerId, () => { if (!isMapToolInteracting() && !(traceEnabled && traceDrawing)) map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", layerId, () => { if (!isMapToolInteracting() && !(traceEnabled && traceDrawing)) map.getCanvas().style.cursor = activeMapTool === "select" ? "grab" : ""; });
     }
 
     function setProjectLayers(layers) {
@@ -2953,6 +2982,31 @@
         }
       }
       renderKlicCrossingLabels(container);
+      renderProfilePointLabels(container);
+    }
+
+    function renderProfilePointLabels(container) {
+      if (!container || !mapReady || !profileMode || !Array.isArray(profilePointLabels)) return;
+      const width = Math.max(1, map.getContainer().clientWidth);
+      const height = Math.max(1, map.getContainer().clientHeight);
+      profilePointLabels.forEach(label => {
+        const lon = Number(label.lon);
+        const lat = Number(label.lat);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+        const point = map.project([lon, lat]);
+        if (point.x < -40 || point.y < -40 || point.x > width + 40 || point.y > height + 40) return;
+        const dot = document.createElement("div");
+        dot.className = "trace-label profile-point-dot";
+        dot.style.left = `${point.x}px`;
+        dot.style.top = `${point.y}px`;
+        container.appendChild(dot);
+        const element = document.createElement("div");
+        element.className = "trace-label profile-point";
+        element.textContent = String(label.code || "");
+        element.style.left = `${point.x}px`;
+        element.style.top = `${point.y - 20}px`;
+        container.appendChild(element);
+      });
     }
 
     function renderKlicCrossingLabels(container) {
@@ -3904,6 +3958,10 @@
       }
       if (message.type === "klicCrossingLabels") {
         klicCrossingLabels = Array.isArray(message.labels) ? message.labels : [];
+        renderTraceDomLabels();
+      }
+      if (message.type === "profilePointLabels") {
+        profilePointLabels = Array.isArray(message.labels) ? message.labels : [];
         renderTraceDomLabels();
       }
       if (message.type === "base") {

@@ -544,6 +544,41 @@ public partial class MainWindow
         bool expandFinalConclusionPreview,
         bool includeChapterIntro = false)
     {
+        // Report pages are built by looping over every substep of a step (see
+        // CreateStepReportPreviewPages / CreateCustomerFinalReportPreviewPages), but
+        // every map-state helper this method calls into (GetLiveMapReportPreviewImagePath,
+        // GetReportLockJson, GetCurrentMapWorkspaceRuntime, ...) reads the *live*
+        // _selectedStep/_selectedSubstep fields, not the substep whose page is currently
+        // being generated. Without this temporary override, every substep's report page
+        // resolves to whichever substep the user currently has open in the live app —
+        // the "identical/duplicate map images across substeps" bug. Restore the real
+        // selection afterwards so building a report has no visible effect on the live UI.
+        var previousSelectedStep = _selectedStep;
+        var previousSelectedSubstep = _selectedSubstep;
+        if (_selectedProject is not null)
+        {
+            _selectedStep = _selectedProject.Steps.FirstOrDefault(step => step.Number == stepNumber) ?? _selectedStep;
+            _selectedSubstep = substep;
+        }
+
+        try
+        {
+            return CreateInlineSubstepReportPagesCoreForSelectedSubstep(stepNumber, substep, root, expandFinalConclusionPreview, includeChapterIntro);
+        }
+        finally
+        {
+            _selectedStep = previousSelectedStep;
+            _selectedSubstep = previousSelectedSubstep;
+        }
+    }
+
+    private IReadOnlyList<UIElement> CreateInlineSubstepReportPagesCoreForSelectedSubstep(
+        int stepNumber,
+        PrescanSubstep substep,
+        JsonElement root,
+        bool expandFinalConclusionPreview,
+        bool includeChapterIntro = false)
+    {
         if (stepNumber == 0)
         {
             return CreateInlineReportStartSubstepPages(substep);
@@ -574,6 +609,27 @@ public partial class MainWindow
             return CreateInlineBroProfileSourceReportPages(stepNumber, substep, root);
         }
 
+        // Substep 4.3 gets its own dedicated kaart+grafiek pagina
+        // (CreateInlineAhnSurfaceProfileReportPage) that already contains every figure
+        // (boorlijnlengte, profielpunten, maaiveld min/max) plus the actual profile
+        // chart. The generic "Inhoud" text page duplicates those same figures from a
+        // separate (often stale, e.g. "0 profielpunten") data snapshot, so it is skipped
+        // here rather than shown twice with conflicting numbers.
+        if (IsAhnSurfaceProfileReportSubstep(stepNumber, substep.Number))
+        {
+            return [CreateInlineAhnSurfaceProfileReportPage(stepNumber, substep)];
+        }
+
+        // Zelfde reden als bij substep 4.3: de generieke "Inhoud"-pagina toont alleen
+        // een kale profielpuntentabel op een verder lege pagina, terwijl
+        // CreateInlineProfileEngineeringReportPages() de kaart, grafiek en tabellen al
+        // compleet opbouwt (en de boorpuntentabel nu zelfs samen met de kaart op
+        // dezelfde pagina zet).
+        if (IsProfileReportSubstep(stepNumber, substep.Number))
+        {
+            return CreateInlineProfileEngineeringReportPages(stepNumber, substep);
+        }
+
         var pages = new List<UIElement>
         {
             CreateInlineSubstepReportPage(
@@ -597,14 +653,6 @@ public partial class MainWindow
                 pages.Add(CreateInlineKlicMapReportPage(stepNumber, substep, data));
                 pages.Add(CreateInlineKlicCrossingDetailReportPage(stepNumber, substep));
             }
-            else if (IsSurfaceProfileReportSubstep(stepNumber, substep.Number))
-            {
-                pages.Add(CreateInlineBgtSurfaceProfileReportPage(stepNumber, substep));
-            }
-            else if (IsAhnSurfaceProfileReportSubstep(stepNumber, substep.Number))
-            {
-                pages.Add(CreateInlineAhnSurfaceProfileReportPage(stepNumber, substep));
-            }
             else if (IsSubsurfaceMapReportSubstep(stepNumber, substep.Number))
             {
                 pages.Add(CreateInlineSubsurfaceMapReportPage(stepNumber, substep, data));
@@ -616,10 +664,6 @@ public partial class MainWindow
         {
             pages.Add(CreateInlineEnvironmentParcelSegmentPage(stepNumber, substep));
             pages.AddRange(CreateReportParcelOwnerMapPages(BuildParcelOwnerAnalysis(), stepNumber));
-        }
-        else if (IsProfileReportSubstep(stepNumber, substep.Number))
-        {
-            pages.AddRange(CreateInlineProfileEngineeringReportPages(stepNumber, substep));
         }
 
         return pages;
@@ -2438,24 +2482,46 @@ public partial class MainWindow
 
     private Canvas CreateReportSurfaceBar(double traceLength)
     {
-        var canvas = new Canvas { Width = 760, Height = 104, Background = Brushes.White };
+        var canvas = new Canvas { Width = 760, Height = 140, Background = Brushes.White };
         var total = Math.Max(1, traceLength);
         var segments = GetBgtSurfaceSegments(total);
-        AddCanvasText(canvas, "0 m", 0, 4, "#587080", 11, FontWeights.Normal);
-        AddCanvasText(canvas, $"{traceLength:N0} m", 690, 4, "#587080", 11, FontWeights.Normal);
+        const double left = 0;
+        const double top = 28;
+        const double width = 704;
+        const double height = 26;
+        AddCanvasText(canvas, "0 m", left, top + height + 7, "#587080", 11, FontWeights.Normal);
 
         if (segments.Count == 0)
         {
-            AddCanvasRect(canvas, 0, 28, 704, 26, "#F8FAFC", "#CBD5E1", 1);
-            AddCanvasText(canvas, "Geen BGT-oppervlakteprofiel beschikbaar", 12, 62, "#8FA6B2", 11, FontWeights.Normal);
+            AddCanvasRect(canvas, left, top, width, height, "#F8FAFC", "#CBD5E1", 1);
+            AddCanvasText(canvas, "Geen BGT-oppervlakteprofiel beschikbaar", left + 12, top + 34, "#8FA6B2", 11, FontWeights.Normal);
             return canvas;
         }
 
+        var axisY = top + height + 7;
+        var shortLabelY = axisY + 15;
+        var previousShortLabelEnd = left + 30;
         foreach (var segment in segments)
         {
-            var left = Math.Clamp(segment.Start / total * 704, 0, 704);
-            var width = Math.Max(3, Math.Clamp((segment.End - segment.Start) / total * 704, 0, 704 - left));
-            AddCanvasRect(canvas, left, 28, width, 26, segment.Color, segment.Color, 1);
+            var segLeft = Math.Clamp(segment.Start / total * width, 0, width);
+            var segWidth = Math.Max(3, Math.Clamp((segment.End - segment.Start) / total * width, 0, width - segLeft));
+            AddCanvasRect(canvas, left + segLeft, top, segWidth, height, segment.Color, segment.Color, 1);
+            if (segWidth > 56)
+            {
+                var insideLabel = segWidth > 130 ? $"{segment.Length:N0} m {segment.Label}" : $"{segment.Length:N0} m";
+                AddCanvasText(canvas, insideLabel, left + segLeft + 6, top + 5, "#071422", 10.5, FontWeights.Bold);
+            }
+            else
+            {
+                var label = $"{segment.Length:N1} m";
+                var estimatedWidth = label.Length * 6;
+                var minLabelX = previousShortLabelEnd + 6;
+                var maxLabelX = Math.Max(minLabelX, left + width - estimatedWidth);
+                var labelX = Math.Clamp(left + segLeft + segWidth / 2 - estimatedWidth / 2, minLabelX, maxLabelX);
+                AddCanvasText(canvas, label, labelX, shortLabelY, "#334155", 10, FontWeights.SemiBold);
+                AddCanvasRect(canvas, left + segLeft + segWidth / 2, top + height, 1, shortLabelY - (top + height) - 2, "#94A3B8", "#94A3B8", 0);
+                previousShortLabelEnd = labelX + estimatedWidth;
+            }
         }
 
         var grouped = segments
@@ -2464,13 +2530,16 @@ public partial class MainWindow
             .OrderByDescending(item => item.Meters)
             .Take(4)
             .ToList();
-        var x = 0d;
+        var legendY = shortLabelY + 20;
+        var x = left;
         foreach (var item in grouped)
         {
-            AddCanvasRect(canvas, x, 68, 10, 10, item.Color, item.Color, 1);
-            AddCanvasText(canvas, $"{item.Label} {item.Meters:N0} m", x + 16, 64, "#334155", 11, FontWeights.SemiBold);
+            AddCanvasRect(canvas, x, legendY + 4, 10, 10, item.Color, item.Color, 1);
+            AddCanvasText(canvas, $"{item.Label} {item.Meters:N0} m", x + 16, legendY, "#334155", 11, FontWeights.SemiBold);
             x += Math.Min(220, 78 + item.Label.Length * 6);
         }
+
+        AddCanvasText(canvas, $"Totale lengte: {traceLength:N1} m", left, legendY + 22, "#334155", 11, FontWeights.Bold);
         return canvas;
     }
 

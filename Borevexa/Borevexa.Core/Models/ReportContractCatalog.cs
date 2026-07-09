@@ -22,7 +22,6 @@ public static class ReportContractCatalog
         Contract(3, "3.3", [ReportDataKeys.KlicEvZones], [ReportDataKeys.BoreTraceGeoJson, ReportDataKeys.MapState], "klic-ev-zones"),
 
         Contract(4, "4.1", [ReportDataKeys.SurfaceAnalysis], [ReportDataKeys.MapState], "bgt-segments"),
-        Contract(4, "4.2", [ReportDataKeys.SurfaceAnalysis, ReportDataKeys.BoreTraceGeoJson], [ReportDataKeys.ReportLock], "bgt-analysis"),
         Contract(4, "4.3", [ReportDataKeys.SurfaceAnalysis, ReportDataKeys.BoreTraceGeoJson], [ReportDataKeys.MapState, ReportDataKeys.ReportLock], "ahn4-surface-profile", outputKind: "profile"),
 
         Contract(5, "5.1", [ReportDataKeys.ParcelOwnerAnalysis], [ReportDataKeys.EnvironmentSegments], "parcel-segments"),

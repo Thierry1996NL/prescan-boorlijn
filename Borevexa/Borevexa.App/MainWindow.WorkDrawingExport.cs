@@ -278,9 +278,21 @@ public partial class MainWindow
         var boringDiameterMeters = Math.Max(0.075, GetBoringDiameterMillimeters() / 1000d);
         var boreBandWidth = Math.Max(2, boringDiameterMeters * (plotBottom - plotTop) / Math.Max(0.1, span));
         var boreCenterWidth = Math.Max(2, Math.Min(4, boreBandWidth * 0.45));
-        var borePoints = _profilePoints.Select(point => new Point(X(point), Y(point.Nap))).ToList();
+        // Zelfde dichte-bemonstering-aanpak als de app/rapportgrafiek: maaiveld uit AHN4
+        // langs de hele boorlijn, boorlijn/hartlijn via InterpolateBoreNapAtDistance —
+        // dezelfde bron als de dieptepunt-bolletjes hieronder, zodat die niet meer van
+        // de lijn afwijken (was voorheen een losse Bezier-spline door slechts 4 punten).
+        var denseSurfaceRows = GetAhnSurfaceProfileRows(maxDistance);
+        var boreSampleDistances = denseSurfaceRows.Count > 0
+            ? denseSurfaceRows.Select(row => row.Distance).ToList()
+            : _profilePoints.Select(point => point.Distance).ToList();
+        var borePoints = boreSampleDistances
+            .Select(distance => new Point(XDistance(distance), Y(InterpolateBoreNapAtDistance(distance))))
+            .ToList();
         var bore = string.Join(" ", borePoints.Select(point => $"{F(point.X)},{F(point.Y)}"));
-        var surface = string.Join(" ", _profilePoints.Select(point => $"{F(X(point))},{F(Y(point.Surface))}"));
+        var surface = string.Join(" ", denseSurfaceRows.Count > 0
+            ? denseSurfaceRows.Select(row => $"{F(XDistance(row.Distance))},{F(Y(row.Surface))}")
+            : _profilePoints.Select(point => $"{F(X(point))},{F(Y(point.Surface))}"));
         var sb = new StringBuilder();
         sb.AppendLine($"<svg viewBox=\"0 0 {F(width)} {F(height)}\" width=\"100%\" height=\"100%\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">");
         sb.AppendLine($"<rect x=\"0\" y=\"0\" width=\"{F(width)}\" height=\"{F(height)}\" fill=\"#fff\" stroke=\"#cbd5e1\"/>");
@@ -294,17 +306,8 @@ public partial class MainWindow
         }
         sb.AppendLine("</g>");
         sb.AppendLine($"<polyline points=\"{surface}\" fill=\"none\" stroke=\"#475569\" stroke-width=\"2.2\"/>");
-        if (_profileSmoothBore && borePoints.Count >= 3)
-        {
-            var borePath = SmoothSvgPathData(borePoints, F);
-            sb.AppendLine($"<path d=\"{borePath}\" fill=\"none\" stroke=\"#FDA4AF\" stroke-width=\"{F(boreBandWidth)}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.55\"/>");
-            sb.AppendLine($"<path d=\"{borePath}\" fill=\"none\" stroke=\"#E11D48\" stroke-width=\"{F(boreCenterWidth)}\" stroke-dasharray=\"9 5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
-        }
-        else
-        {
-            sb.AppendLine($"<polyline points=\"{bore}\" fill=\"none\" stroke=\"#FDA4AF\" stroke-width=\"{F(boreBandWidth)}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.55\"/>");
-            sb.AppendLine($"<polyline points=\"{bore}\" fill=\"none\" stroke=\"#E11D48\" stroke-width=\"{F(boreCenterWidth)}\" stroke-dasharray=\"9 5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
-        }
+        sb.AppendLine($"<polyline points=\"{bore}\" fill=\"none\" stroke=\"#FDA4AF\" stroke-width=\"{F(boreBandWidth)}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.55\"/>");
+        sb.AppendLine($"<polyline points=\"{bore}\" fill=\"none\" stroke=\"#E11D48\" stroke-width=\"{F(boreCenterWidth)}\" stroke-dasharray=\"9 5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
         foreach (var sample in BuildProfileEngineeringSamples())
         {
             var markerPoint = ProfileBorePointAtDistance(sample.Distance, XDistance, Y);

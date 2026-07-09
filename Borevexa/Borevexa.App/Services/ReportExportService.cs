@@ -135,6 +135,7 @@ public sealed class ReportExportService(ProjectRepository projects, JsonSerializ
 
         var basePath = Path.Combine(exportDir, BuildPreviewBaseName(project.Name, stepNumber, substepNumber, sectionName, exportedAt, quality));
         var htmlPath = basePath + ".html";
+        var pdfPath = basePath + ".pdf";
         var manifestPath = basePath + ".manifest.json";
         var targetPngPaths = pngPaths
             .Select((pngPath, index) =>
@@ -159,12 +160,14 @@ public sealed class ReportExportService(ProjectRepository projects, JsonSerializ
                 .Replace("__BOREVEXA_PREVIEW_IMAGE__", new Uri(targetPngPaths[0]).AbsoluteUri),
             Encoding.UTF8);
 
+        var pdfCreated = TryPrintHtmlToPdfWithEdge(htmlPath, pdfPath);
+
         var result = new ReportExportResult(
             htmlPath,
-            targetPngPaths[0],
+            pdfCreated ? pdfPath : targetPngPaths[0],
             manifestPath,
             exportedAt,
-            "html-preview",
+            pdfCreated ? "pdf-preview" : "html-preview",
             BuildVersionLabel(exportedAt, quality));
 
         WriteManifest(manifestPath, "rapportpreview", project, stepNumber, substepNumber, sectionName, title, result, quality);
@@ -173,7 +176,7 @@ public sealed class ReportExportService(ProjectRepository projects, JsonSerializ
 
         if (openAfterExport)
         {
-            Process.Start(new ProcessStartInfo(htmlPath) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(pdfCreated ? pdfPath : htmlPath) { UseShellExecute = true });
         }
 
         return result;

@@ -35,9 +35,8 @@ public static class StepReportCatalog
         4 =>
         [
             ChapterIntroduction(4, "Oppervlakteanalyse", "Hoofdstukinleiding voor BGT-segmenten, oppervlakten en AHN4-maaiveldhoogte."),
-            Substep(4, "4.1", "4.2", "BGT-segmenten", "BGT-segmenten en oppervlakken langs de boorlijn."),
-            Substep(4, "4.2", "4.3", "BGT Analyse langs boorlijn", "Herstel-, vergunning- en uitvoeringssignalen per BGT-segment."),
-            Substep(4, "4.3", "4.4", "AHN4/maaiveld hoogte bepalen", "GIS kaart met boorlijn en AHN4 maaiveldhoogteprofiel.")
+            Substep(4, "4.1", "4.2", "BGT Analyse langs boorlijn", "BGT-segmenten en oppervlakken langs de boorlijn."),
+            Substep(4, "4.3", "4.3", "AHN4/maaiveld hoogte bepalen", "GIS kaart met boorlijn en AHN4 maaiveldhoogteprofiel.")
         ],
         5 =>
         [

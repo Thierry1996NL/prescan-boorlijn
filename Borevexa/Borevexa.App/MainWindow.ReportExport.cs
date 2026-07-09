@@ -332,7 +332,9 @@ public partial class MainWindow
                 quality,
                 openAfterExport);
             RefreshWorkflowReportStatus(_selectedStep.Number);
-            return $"Rapportpreview geexporteerd ({result.VersionLabel})\n\nHTML:\n{result.HtmlPath}\n\nManifest:\n{result.ManifestPath}\n\n{previewPages.Count} A4-pagina('s) opgenomen. Alleen de huidige processtap/substap is opgenomen. Gebruik in de browser: Afdrukken -> Opslaan als PDF.";
+            return result.Format == "pdf-preview"
+                ? $"Rapportpreview geexporteerd als PDF ({result.VersionLabel})\n\nPDF:\n{result.ImagePath}\n\nHTML:\n{result.HtmlPath}\n\n{previewPages.Count} A4-pagina('s) opgenomen. Alleen de huidige processtap/substap is opgenomen."
+                : $"Rapportpreview geexporteerd ({result.VersionLabel})\n\nHTML:\n{result.HtmlPath}\n\nManifest:\n{result.ManifestPath}\n\n{previewPages.Count} A4-pagina('s) opgenomen. Alleen de huidige processtap/substap is opgenomen. Kon geen PDF genereren (Microsoft Edge niet gevonden) - gebruik in de browser: Afdrukken -> Opslaan als PDF.";
         }
         catch (Exception exception)
         {
@@ -438,10 +440,10 @@ body{margin:0;background:#e8eef2;font-family:Arial,Segoe UI,sans-serif;color:#10
 .toolbar{max-width:297mm;margin:14px auto}
 .print{background:#2f3a45;color:white;border:0;border-radius:1px;padding:10px 16px;font-weight:700}
 .hint{margin-left:10px;color:#748494;font-size:12px}
-.sheet{width:210mm;min-height:297mm;margin:14px auto;background:white;box-sizing:border-box;page-break-after:always}
-.sheet.landscape{page:landscape;width:297mm;min-height:210mm}
+.sheet{position:relative;width:210mm;height:297mm;margin:14px auto;background:white;box-sizing:border-box;page-break-after:always;overflow:hidden}
+.sheet.landscape{page:landscape;width:297mm;height:210mm}
 .sheet:last-child{page-break-after:auto}
-.sheet img{display:block;width:100%;height:auto}
+.sheet img{display:block;width:100%;height:100%;object-fit:contain}
 @media print{body{background:white}.toolbar{display:none}.sheet{margin:0;box-shadow:none}}
 </style>
 </head>

@@ -113,6 +113,12 @@ public partial class MainWindow
         try
         {
             if (IsBorelineStep(stepNumber)) RequestBoreTraceSave();
+            // "Opslaan voor rapportage" op stap 7 vergrendelde tot nu toe alleen het
+            // kaartbeeld — de dieptepunten (dwarsprofiel/segmenten) werden alleen
+            // opgeslagen via de losse "Sla dieptepunten op"-knop. Live-bewerkingen (bv.
+            // via de nieuwe klik-op-de-grafiek-tools) konden zo ongemerkt verloren gaan
+            // bij een herstart, terwijl de kaart al als "definitief" was vastgezet.
+            if (stepNumber == ProfileStepNumber) SaveDepthProfile();
 
             SaveProjectSnapshot();
             SaveMapStateForStep(stepNumber, false);
@@ -207,6 +213,13 @@ public partial class MainWindow
             stepNumber
         }, JsonOptions);
         _reportPreview.SaveReportLockJson(_selectedProject.Id, stepNumber, payload, GetCurrentMapStateContextKey(stepNumber));
+        // Repair any leftover pollution from the (now-fixed) SaveReportLockJson bug that
+        // used to always overwrite the shared, unscoped legacy lock key regardless of
+        // which substep triggered it — a stale "locked" flag there could make an
+        // unrelated substep of this step appear locked even after being unlocked here.
+        // Explicitly clearing it on every unlock is a safe, idempotent no-op once the
+        // legacy key is already clean.
+        _reportPreview.SaveReportLockJson(_selectedProject.Id, stepNumber, payload);
         _mapLocked = false;
         SendMapMessage(JsonSerializer.Serialize(new { type = "mapLock", locked = false }, JsonOptions));
         UpdateMapLockButton();
@@ -214,8 +227,11 @@ public partial class MainWindow
         OutputText.Text = $"Kaart ontgrendeld voor rapportage\n\nStap {stepNumber} kan weer worden aangepast. Zet hem opnieuw vast zodra de kaart en analyse definitief zijn.";
     }
 
-    // Kopieert een capture naar een vast, per-stap vergrendeld bestand zodat het
-    // "vastgezette" rapportbeeld niet meebeweegt met latere live captures.
+    // Kopieert een capture naar een vast, per-stap-EN-substap vergrendeld bestand zodat
+    // het "vastgezette" rapportbeeld niet meebeweegt met latere live captures. Zonder de
+    // context-key in de bestandsnaam delen alle substeps van dezelfde stap (bv. 4.1 en
+    // 4.3) letterlijk hetzelfde bestand en overschrijft vastzetten in de ene substap het
+    // vastgezette beeld van de andere.
     private string FreezeLockedMapImage(int stepNumber, string imagePath)
     {
         if (_selectedProject is null || string.IsNullOrWhiteSpace(imagePath) || !System.IO.File.Exists(imagePath))
@@ -230,7 +246,9 @@ public partial class MainWindow
                 "Borevexa",
                 "ReportLocks");
             Directory.CreateDirectory(dir);
-            var frozenPath = System.IO.Path.Combine(dir, $"project-{_selectedProject.Id}-step-{stepNumber}-kaart.png");
+            var contextSuffix = MapStateService.NormalizeContextKey(GetCurrentMapStateContextKey(stepNumber));
+            var fileNameSuffix = string.IsNullOrWhiteSpace(contextSuffix) ? "" : $"-{contextSuffix}";
+            var frozenPath = System.IO.Path.Combine(dir, $"project-{_selectedProject.Id}-step-{stepNumber}{fileNameSuffix}-kaart.png");
             System.IO.File.Copy(imagePath, frozenPath, true);
             return frozenPath;
         }
@@ -358,6 +376,13 @@ public partial class MainWindow
             if (runtime.Definition.SendsSurfaceAnalysisBeforeCapture)
             {
                 SendMapMessage(JsonSerializer.Serialize(new { type = "surfaceAnalysisRequest" }, JsonOptions));
+            }
+
+            // De dieptepunten (S/2/3/E) moeten ook op de vastgezette kaartcapture van
+            // stap 7 te zien zijn, niet alleen in de Dwarsprofiel-grafiek.
+            if (stepNumber == ProfileStepNumber)
+            {
+                SendProfilePointLabelsToMap();
             }
 
             return await _reportMapCapture.CaptureLiveMapAsync(stepNumber, StepThreeMapView.CoreWebView2, refreshPreview, force, runtime.ScopedReportVariantKey);
@@ -1012,20 +1037,21 @@ public partial class MainWindow
 
     private void SaveStepThreeState() => SaveMapStateForStep(_selectedStep?.Number ?? 3, true);
 
-    private void ApplyStoredMapStateForCurrentStep()
+    private void ApplyStoredMapStateForCurrentStep(bool restoreCameraToMap = true)
     {
         if (_selectedProject is null || _selectedStep is null) return;
 
         var json = GetCurrentMapStateJson(_selectedStep.Number);
         if (string.IsNullOrWhiteSpace(json))
         {
-            if (TryApplyReportLockMapStateForCurrentStep(restoreCamera: false))
+            if (TryApplyReportLockMapStateForCurrentStep(restoreCamera: restoreCameraToMap))
             {
                 return;
             }
 
             _lastMapCamera = null;
             ApplyDefaultMapStateForCurrentStep();
+            if (restoreCameraToMap) SendDefaultCameraToMapForCurrentStep();
             return;
         }
 
@@ -1040,16 +1066,32 @@ public partial class MainWindow
             MapStateService.ApplyBooleanDictionary(root, "projectLayerVisibility", _projectLayerStates);
 
             _lastMapCamera = MapStateService.ReadCamera(root) ?? _lastMapCamera;
-            if (_selectedStep.Number == 4)
+            if (_selectedStep.Number == 4 && !IsAhn4HeightSubstep())
             {
                 _gisLayerState.NormalizeSurfaceAnalysisMapState();
                 _mapBgtSurfaceSamples = [];
+            }
+            else if (_selectedStep.Number == ProfileStepNumber)
+            {
+                _gisLayerState.NormalizeProfileMapState();
+            }
+
+            // ApplyStoredMapStateForCurrentStep is called both on genuine step navigation
+            // (where the live MapLibre camera needs to be moved to match the persisted
+            // state) and from render-surface recovery after a tab switch/resize (where the
+            // camera never actually left its position and restoring it here would just
+            // snap the map back to the last *saved* checkpoint, discarding any live pan
+            // that happened since). Only the former should pass restoreCameraToMap: true.
+            if (restoreCameraToMap && _mapLibreLoaded && _lastMapCamera is JsonElement cameraToRestore)
+            {
+                SendMapMessage(JsonSerializer.Serialize(new { type = "restoreCamera", camera = cameraToRestore }, JsonOptions));
             }
         }
         catch
         {
             _lastMapCamera = null;
             ApplyDefaultMapStateForCurrentStep();
+            if (restoreCameraToMap) SendDefaultCameraToMapForCurrentStep();
             // Invalid legacy map-state should not block opening the map.
         }
     }
@@ -1076,6 +1118,11 @@ public partial class MainWindow
             MapStateService.ApplyBooleanDictionary(root, "bgtSurfaces", _bgtSurfaceStates);
             MapStateService.ApplyBooleanDictionary(root, "projectLayerVisibility", _projectLayerStates);
 
+            if (_selectedStep.Number == ProfileStepNumber)
+            {
+                _gisLayerState.NormalizeProfileMapState();
+            }
+
             var camera = MapStateService.ReadCamera(root);
             if (camera is not JsonElement cameraElement) return false;
 
@@ -1095,11 +1142,28 @@ public partial class MainWindow
 
     private void ApplyDefaultMapStateForCurrentStep()
     {
+        if (_selectedStep?.Number == ProfileStepNumber)
+        {
+            _gisLayerState.ApplyProfileMapDefaults();
+            return;
+        }
+
         if (_selectedStep?.Number != 4) return;
 
-        _gisLayerState.ApplySurfaceAnalysisMapDefaults();
+        if (IsAhn4HeightSubstep())
+        {
+            _gisLayerState.ApplyAhn4HeightMapDefaults();
+        }
+        else
+        {
+            _gisLayerState.ApplySurfaceAnalysisMapDefaults();
+        }
+
         _mapBgtSurfaceSamples = [];
     }
+
+    private bool IsAhn4HeightSubstep() =>
+        _selectedStep?.Number == 4 && string.Equals(_selectedSubstep?.Number, "4.3", StringComparison.OrdinalIgnoreCase);
 
     private void SendDefaultCameraToMapForCurrentStep()
     {
@@ -1198,7 +1262,7 @@ public partial class MainWindow
             // Cannot jiggle a size we don't control; fall back to a repaint burst.
             SendProjectLayersToMap();
             SendTraceStateToMap();
-            ApplyStoredMapStateForCurrentStep();
+            ApplyStoredMapStateForCurrentStep(restoreCameraToMap: false);
             SendMapMessage("{\"type\":\"recover\"}");
             _mapRecoveryRunning = false;
             afterRecovered?.Invoke();
